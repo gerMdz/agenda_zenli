@@ -6,6 +6,8 @@ Calcular horarios libres a partir de servicio/sesiones, profesionales, franjas r
 
 La consulta de disponibilidad es orientativa: al confirmar, recalcular y asignar dentro de una transacción. Usar bloqueos transaccionales consistentes y exclusiones GiST como defensa final ante concurrencia.
 
+Con las dependencias de Composer y los binarios locales de PostgreSQL instalados, `bash tests/agenda-postgresql.sh` crea un clúster temporal, aplica las migraciones con datos ficticios y verifica que solo una de dos confirmaciones concurrentes pueda ocupar el espacio. Usa un socket Unix privado y elimina el clúster al terminar. `php tests/agenda-availability.php` prueba el cálculo en memoria.
+
 ## Estados (borrador v2)
 
 `PENDIENTE`, `CONFIRMADA`, `RECHAZADA`, `CANCELADA`, `VENCIDA`, `COMPLETADA`, `AUSENTE`. La conversación también usó `EXPIRADA`; unificar nomenclatura antes de codificar enums y API.

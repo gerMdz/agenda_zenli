@@ -9,15 +9,15 @@ use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
 
-final class Availability
+final class Disponibilidad
 {
     /**
      * Consulta para una sesión individual en el espacio compartido.
      *
-     * @param list<WeeklyHours> $weeklyHours Franjas de profesionales activos y habilitados para el tratamiento.
-     * @param list<TimeRange> $spaceBusy Bloqueos y ocupaciones activas del espacio.
-     * @param array<string, list<TimeRange>> $professionalBusy Bloqueos y ocupaciones activas por profesional.
-     * @return list<AvailableSlot>
+     * @param list<HorarioSemanal> $weeklyHours Franjas de profesionales activos y habilitados para el tratamiento.
+     * @param list<Intervalo> $spaceBusy Bloqueos y ocupaciones activas del espacio.
+     * @param array<string, list<Intervalo>> $professionalBusy Bloqueos y ocupaciones activas por profesional.
+     * @return list<TurnoDisponible>
      */
     public function forDay(
         DateTimeImmutable $day,
@@ -43,7 +43,7 @@ final class Availability
         foreach ($weeklyHours as $hours) {
             $window = $hours->onDay($day);
             if ($window !== null) {
-                $windowsByProfessional[$hours->professionalId][] = $window;
+                $windowsByProfessional[$hours->profesionalId][] = $window;
             }
         }
 
@@ -51,33 +51,33 @@ final class Availability
         foreach ($windowsByProfessional as $professionalId => $windows) {
             $busy = array_merge($spaceBusy, $professionalBusy[$professionalId] ?? []);
             foreach ($this->mergeWindows($windows) as $window) {
-                for ($start = $window->start->add($preparation); $start < $window->end; $start = $start->add($step)) {
+                for ($start = $window->inicio->add($preparation); $start < $window->fin; $start = $start->add($step)) {
                     $end = $start->add($duration);
                     $occupiedUntil = $end->add($cleanup);
-                    if ($occupiedUntil > $window->end) {
+                    if ($occupiedUntil > $window->fin) {
                         break;
                     }
 
-                    $occupation = new TimeRange($start->sub($preparation), $occupiedUntil);
+                    $occupation = new Intervalo($start->sub($preparation), $occupiedUntil);
                     if ($this->isFree($occupation, $busy)) {
-                        $slots[] = new AvailableSlot((string) $professionalId, new TimeRange($start, $end), $occupation);
+                        $slots[] = new TurnoDisponible((string) $professionalId, new Intervalo($start, $end), $occupation);
                     }
                 }
             }
         }
 
-        usort($slots, static fn (AvailableSlot $a, AvailableSlot $b): int =>
-            [$a->session->start, $a->professionalId] <=> [$b->session->start, $b->professionalId]
+        usort($slots, static fn (TurnoDisponible $a, TurnoDisponible $b): int =>
+            [$a->sesion->inicio, $a->profesionalId] <=> [$b->sesion->inicio, $b->profesionalId]
         );
 
         return $slots;
     }
 
-    /** @param list<TimeRange> $busy */
-    private function isFree(TimeRange $candidate, array $busy): bool
+    /** @param list<Intervalo> $busy */
+    private function isFree(Intervalo $candidate, array $busy): bool
     {
         foreach ($busy as $range) {
-            if ($candidate->overlaps($range)) {
+            if ($candidate->seSuperpone($range)) {
                 return false;
             }
         }
@@ -86,20 +86,20 @@ final class Availability
     }
 
     /**
-     * @param list<TimeRange> $windows
-     * @return list<TimeRange>
+     * @param list<Intervalo> $windows
+     * @return list<Intervalo>
      */
     private function mergeWindows(array $windows): array
     {
-        usort($windows, static fn (TimeRange $a, TimeRange $b): int => $a->start <=> $b->start);
+        usort($windows, static fn (Intervalo $a, Intervalo $b): int => $a->inicio <=> $b->inicio);
 
         $merged = [];
         foreach ($windows as $window) {
             $last = array_key_last($merged);
-            if ($last === null || $merged[$last]->end < $window->start) {
+            if ($last === null || $merged[$last]->fin < $window->inicio) {
                 $merged[] = $window;
-            } elseif ($merged[$last]->end < $window->end) {
-                $merged[$last] = new TimeRange($merged[$last]->start, $window->end);
+            } elseif ($merged[$last]->fin < $window->fin) {
+                $merged[$last] = new Intervalo($merged[$last]->inicio, $window->fin);
             }
         }
 

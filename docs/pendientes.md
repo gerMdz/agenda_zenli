@@ -18,5 +18,6 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 ## Integración de agenda
 
 - Resolver el paso entre inicios que usará la consulta pública y cómo se configurará.
-- Integrar el cálculo con la lectura de horarios, bloqueos y ocupaciones desde PostgreSQL. Resolver la vigencia de reservas pendientes al construir esa consulta.
-- Validar el esquema y definir una transacción que vuelva a comprobar disponibilidad al confirmar. Las exclusiones GiST del borrador protegen ocupaciones entre sí. Como los bloqueos y horarios viven en otras tablas, sus escrituras deben coordinarse con las reservas mediante el mismo protocolo de bloqueo y verificarse con pruebas de concurrencia.
+- Implementar el flujo de reservas pendientes, incluida la expiración y liberación transaccional de sus ocupaciones. Mientras exista una ocupación, el cálculo la considera ocupada.
+- Aplicar el bloqueo del espacio en las futuras escrituras de horarios y bloqueos, y verificar la concurrencia de esas operaciones con las confirmaciones. Las exclusiones GiST protegen las ocupaciones entre sí, pero no cubren las otras tablas.
+- Implementar la capa de aplicación que autoriza las confirmaciones y aplica las políticas comerciales antes de exponer una ruta. Validar el esquema completo en la versión de PostgreSQL prevista para el despliegue.

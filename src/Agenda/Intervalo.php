@@ -7,19 +7,19 @@ namespace App\Agenda;
 use DateTimeImmutable;
 use InvalidArgumentException;
 
-final readonly class TimeRange
+final readonly class Intervalo
 {
     public function __construct(
-        public DateTimeImmutable $start,
-        public DateTimeImmutable $end,
+        public DateTimeImmutable $inicio,
+        public DateTimeImmutable $fin,
     ) {
-        if ($end <= $start) {
+        if ($fin <= $inicio) {
             throw new InvalidArgumentException('El fin debe ser posterior al inicio.');
         }
     }
 
-    public function overlaps(self $other): bool
+    public function seSuperpone(self $other): bool
     {
-        return $this->start < $other->end && $other->start < $this->end;
+        return $this->inicio < $other->fin && $other->inicio < $this->fin;
     }
 }
