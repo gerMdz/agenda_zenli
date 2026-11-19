@@ -18,7 +18,7 @@ import brandImage from './image/index.png'
         </a>
       </address>
       <p>Lun, mié y vie · 10:00 a 20:00<br>Mar, jue y sáb · 11:00 a 19:00</p>
-      <a class="contact" href="https://wa.me/5492612186201">Reservas al 261 218 6201</a>
+      <a class="contact" href="https://wa.me/5492616356192">Reservas al 261 635 6192</a>
     </section>
   </main>
 </template>
