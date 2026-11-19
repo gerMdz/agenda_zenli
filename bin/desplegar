@@ -36,7 +36,13 @@ dc config --quiet
 
 paso='actualizar el código'
 printf 'Actualizando el código de la rama actual…\n'
-git pull --ff-only
+if ! git pull --ff-only; then
+    printf 'Ramas divergentes: integrando con merge…\n'
+    git pull --no-ff --no-edit || {
+        printf 'No se pudo integrar el código. Revisá los conflictos manualmente.\n' >&2
+        exit 1
+    }
+fi
 
 paso='esperar a PostgreSQL'
 dc up --no-build --no-recreate --wait --wait-timeout 90 database
