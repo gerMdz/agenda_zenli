@@ -1,6 +1,6 @@
 # Zenli
 
-Proyecto Symfony para el centro de masoterapia Zenli. El entorno de desarrollo usa Symfony 7.4, Nginx, PHP 8.4 con PHP-FPM, Doctrine y PostgreSQL 17.
+Proyecto Symfony para la carga de agenda inspirada en el centro Zenli. El entorno de desarrollo usa Symfony 7.4, Nginx, PHP 8.4 con PHP-FPM, Doctrine y PostgreSQL 17.
 
 ## Arranque con Docker Compose
 
