@@ -168,8 +168,8 @@ final readonly class AdministracionController
             $nombre = $peticion->request->getString('nombre');
             $descripcionCorta = $peticion->request->getString('descripcion_corta');
             $detalle = $peticion->request->getString('detalle');
-            if ($nombre === '' || $descripcionCorta === '' || $detalle === '') {
-                return $this->error('Completá nombre, descripción corta y detalle.', 422);
+            if ($nombre === '' || $descripcionCorta === '') {
+                return $this->error('Completá nombre y descripción corta.', 422);
             }
             $id = $this->servicios->crear($nombre, $descripcionCorta, $detalle, $archivo, $usuario['id']);
         } catch (InvalidArgumentException $error) {
@@ -194,8 +194,8 @@ final readonly class AdministracionController
             $descripcionCorta = $peticion->request->getString('descripcion_corta');
             $detalle = $peticion->request->getString('detalle');
             $eliminarImagen = $peticion->request->getString('eliminar_imagen') === '1';
-            if ($nombre === '' || $descripcionCorta === '' || $detalle === '') {
-                return $this->error('Completá nombre, descripción corta y detalle.', 422);
+            if ($nombre === '' || $descripcionCorta === '') {
+                return $this->error('Completá nombre y descripción corta.', 422);
             }
             $this->servicios->actualizar((int)$id, $nombre, $descripcionCorta, $detalle, $archivo, $eliminarImagen, $usuario['id']);
         } catch (InvalidArgumentException $error) {

@@ -487,8 +487,8 @@ onBeforeUnmount(() => {
             <input id="nuevo-nombre" v-model="nuevoNombre" type="text" maxlength="100" placeholder="Ej: Descontracturante" :disabled="ocupado" required>
             <label for="nuevo-desc">Descripción corta</label>
             <input id="nuevo-desc" v-model="nuevoDescCorta" type="text" maxlength="255" placeholder="Ej: Presión intensa y técnicas de masaje tailandés." :disabled="ocupado" required>
-            <label for="nuevo-detalle">Detalle extenso</label>
-            <textarea id="nuevo-detalle" v-model="nuevoDetalle" rows="4" placeholder="Descripción completa del masaje, beneficios, técnica…" :disabled="ocupado" required></textarea>
+            <label for="nuevo-detalle">Detalle extenso <small>(opcional)</small></label>
+            <textarea id="nuevo-detalle" v-model="nuevoDetalle" rows="4" placeholder="Descripción completa del masaje, beneficios, técnica…" :disabled="ocupado"></textarea>
             <label for="nuevo-imagen">Imagen</label>
             <div v-if="servicioImagenTemporal" class="vista-previa-servicio">
               <img :src="servicioImagenTemporal" alt="Vista previa">
@@ -508,8 +508,8 @@ onBeforeUnmount(() => {
             <input id="edit-nombre" v-model="editNombre" type="text" maxlength="100" :disabled="ocupado" required>
             <label for="edit-desc">Descripción corta</label>
             <input id="edit-desc" v-model="editDescCorta" type="text" maxlength="255" :disabled="ocupado" required>
-            <label for="edit-detalle">Detalle extenso</label>
-            <textarea id="edit-detalle" v-model="editDetalle" rows="4" :disabled="ocupado" required></textarea>
+            <label for="edit-detalle">Detalle extenso <small>(opcional)</small></label>
+            <textarea id="edit-detalle" v-model="editDetalle" rows="4" :disabled="ocupado"></textarea>
             <label for="edit-imagen">Imagen</label>
             <div v-if="servicioEditando.imagen_version" class="imagen-actual">
               <img :src="`/api/servicios/${servicioEditando.id}/imagen/${servicioEditando.imagen_version}`" alt="Imagen actual">

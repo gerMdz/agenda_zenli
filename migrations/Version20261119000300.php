@@ -21,7 +21,7 @@ final class Version20261119000300 extends AbstractMigration
                 id SERIAL PRIMARY KEY,
                 nombre VARCHAR(100) NOT NULL,
                 descripcion_corta VARCHAR(255) NOT NULL,
-                detalle TEXT NOT NULL,
+                detalle TEXT,
                 imagen BYTEA,
                 imagen_tipo VARCHAR(50),
                 imagen_version VARCHAR(64),

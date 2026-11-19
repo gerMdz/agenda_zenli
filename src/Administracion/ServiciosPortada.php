@@ -70,9 +70,6 @@ final readonly class ServiciosPortada
         if (mb_strlen($descripcionCorta) < 5 || mb_strlen($descripcionCorta) > 255) {
             throw new InvalidArgumentException('La descripción corta debe tener entre 5 y 255 caracteres.');
         }
-        if (mb_strlen($detalle) < 10) {
-            throw new InvalidArgumentException('El detalle debe tener al menos 10 caracteres.');
-        }
 
         // Obtener el máximo orden para colocar el nuevo al final
         $maxOrden = $this->conexion->fetchOne('SELECT COALESCE(MAX(orden), 0) FROM servicios_portada');
@@ -130,9 +127,6 @@ final readonly class ServiciosPortada
         }
         if (mb_strlen($descripcionCorta) < 5 || mb_strlen($descripcionCorta) > 255) {
             throw new InvalidArgumentException('La descripción corta debe tener entre 5 y 255 caracteres.');
-        }
-        if (mb_strlen($detalle) < 10) {
-            throw new InvalidArgumentException('El detalle debe tener al menos 10 caracteres.');
         }
 
         $setClauses = ['nombre = ?', 'descripcion_corta = ?', 'detalle = ?', 'actualizado_por = ?', 'actualizado_en = statement_timestamp()'];

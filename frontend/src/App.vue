@@ -103,7 +103,7 @@ onMounted(async () => {
             <div class="tratamiento-texto">
               <h3>{{ servicio.nombre }}</h3>
               <p>{{ servicio.descripcion_corta }}</p>
-              <button type="button" class="btn-detalle" @click="abrirDetalle(servicio)">Ver detalle</button>
+              <button v-if="servicio.detalle" type="button" class="btn-detalle" @click="abrirDetalle(servicio)">Ver detalle</button>
             </div>
           </article>
         </div>
@@ -117,7 +117,7 @@ onMounted(async () => {
             <img v-if="servicioSeleccionado.imagen_version" :src="`/api/servicios/${servicioSeleccionado.id}/imagen/${servicioSeleccionado.imagen_version}`" :alt="servicioSeleccionado.nombre" class="modal-imagen">
             <h2 id="modal-titulo" class="modal-titulo">{{ servicioSeleccionado.nombre }}</h2>
             <p class="modal-desc">{{ servicioSeleccionado.descripcion_corta }}</p>
-            <div class="modal-detalle">{{ servicioSeleccionado.detalle }}</div>
+            <div v-if="servicioSeleccionado.detalle" class="modal-detalle">{{ servicioSeleccionado.detalle }}</div>
             <div class="modal-accion">
               <a class="boton-dorado" :href="enlaceContacto">Reservar turno <span aria-hidden="true">↗</span></a>
             </div>
