@@ -210,8 +210,8 @@ nav a:hover { text-decoration: underline; color: var(--oro); }
 .titulo-seccion { display: grid; justify-items: center; color: var(--oro-oscuro); margin-bottom: 1.55rem; }
 .titulo-seccion h2 { display: flex; align-items: center; gap: clamp(.65rem, 2vw, 1.3rem); margin: .25rem 0 0; color: var(--verde-oscuro); text-align: center; font: 600 clamp(1.9rem, 4vw, 3rem)/1.1 Georgia, serif; }
 .titulo-seccion h2::before, .titulo-seccion h2::after { content: ''; width: clamp(1rem, 7vw, 5rem); height: 1px; background: #b9934f; }
-.tratamientos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
-.tratamientos article { overflow: hidden; border: 1px solid var(--borde); border-radius: 1rem; background: #fffaf0; text-align: center; box-shadow: 0 4px 12px #38281209; display: flex; flex-direction: column; }
+.tratamientos { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
+.tratamientos article { box-sizing: border-box; width: calc((100% - 3rem) / 4); overflow: hidden; border: 1px solid var(--borde); border-radius: 1rem; background: #fffaf0; text-align: center; box-shadow: 0 4px 12px #38281209; display: flex; flex-direction: column; }
 .foto-servicio { position: relative; overflow: hidden; aspect-ratio: 1.6; background: #163426; }
 .foto-servicio img { width: 100%; height: 100%; object-fit: cover; }
 .foto-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #163426, #092b20); }
@@ -258,7 +258,8 @@ a:focus-visible { outline: 2px solid #a87a2a; outline-offset: 4px; }
   nav { gap: .42rem .72rem; }
   nav a { font-size: .8rem; }
   .hero img { object-position: 73% center; }
-  .tratamientos { grid-template-columns: repeat(2, 1fr); gap: .65rem; }
+  .tratamientos { gap: .65rem; }
+  .tratamientos article { width: calc((100% - .65rem) / 2); }
   .modal-contenido { padding: 1.25rem; }
   .modal-titulo { font-size: 1.4rem; }
   .pilares > div { flex-direction: column; gap: .35rem; text-align: center; padding-inline: .25rem; }
