@@ -26,3 +26,4 @@
 
 - La portada pública presenta los tratamientos, el centro y las consultas por WhatsApp. El teléfono inicial es el que ya estaba publicado en el sitio.
 - Las cuentas administradoras ingresan por sesión en `/admin`. Pueden configurar el teléfono y la imagen de la portada y gestionar otras cuentas administradoras. La configuración y el último autor del cambio se guardan en PostgreSQL.
+- Los perfiles de Instagram y Facebook son opcionales y se editan en `/admin`. La portada muestra los enlaces configurados junto a los datos de contacto.

@@ -4,6 +4,7 @@ import portadaOriginal from './image/portada.webp'
 
 const telefono = ref('+5492616356192')
 const imagen = ref(portadaOriginal)
+const redes = ref([])
 const enlaceContacto = computed(() => `https://wa.me/${telefono.value.slice(1)}`)
 const telefonoVisible = computed(() =>
   telefono.value === '+5492616356192' ? '261 635 6192' : telefono.value,
@@ -23,6 +24,10 @@ onMounted(async () => {
     const portada = await respuesta.json()
     telefono.value = portada.telefono
     if (portada.imagen) imagen.value = portada.imagen
+    redes.value = [
+      { nombre: 'Instagram', enlace: portada.instagram },
+      { nombre: 'Facebook', enlace: portada.facebook },
+    ].filter(red => red.enlace)
   } catch {
     // Los datos incluidos en la portada permiten mostrarla aunque la API no esté disponible.
   }
@@ -107,6 +112,9 @@ onMounted(async () => {
         <div>
           <h2>Consultas</h2>
           <a class="telefono" :href="enlaceContacto">{{ telefonoVisible }} ↗</a>
+          <ul v-if="redes.length" class="redes" aria-label="Redes sociales">
+            <li v-for="red in redes" :key="red.nombre"><a :href="red.enlace">{{ red.nombre }} ↗</a></li>
+          </ul>
         </div>
       </section>
     </main>
@@ -187,6 +195,7 @@ nav a:hover { text-decoration: underline; color: var(--oro); }
 .datos address { font-style: normal; }
 .datos p { margin: 0; }
 .telefono { font-weight: 650; }
+.redes { display: flex; flex-wrap: wrap; gap: .35rem 1rem; padding: 0; margin: .5rem 0 0; list-style: none; }
 .pie { padding-block: 1.1rem; background: var(--verde-oscuro); color: #f4dfb2; font-size: .82rem; }
 a:focus-visible { outline: 2px solid #a87a2a; outline-offset: 4px; }
 

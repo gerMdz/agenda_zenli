@@ -18,11 +18,13 @@ final readonly class ConfiguracionPortada
 
     public function consultar(): array
     {
-        $fila = $this->conexion->fetchAssociative('SELECT telefono, imagen_version FROM configuracion_portada WHERE id = 1');
+        $fila = $this->conexion->fetchAssociative('SELECT telefono, imagen_version, instagram, facebook FROM configuracion_portada WHERE id = 1');
 
         return [
             'telefono' => $fila['telefono'] ?? self::TELEFONO_INICIAL,
             'imagen' => isset($fila['imagen_version']) ? '/api/portada/imagen/'.$fila['imagen_version'] : null,
+            'instagram' => $fila['instagram'] ?? null,
+            'facebook' => $fila['facebook'] ?? null,
         ];
     }
 
@@ -34,12 +36,21 @@ final readonly class ConfiguracionPortada
         );
     }
 
-    public function guardar(string $telefono, ?UploadedFile $archivo, bool $restaurar, string $autor): void
-    {
+    public function guardar(
+        string $telefono,
+        ?UploadedFile $archivo,
+        bool $restaurar,
+        string $autor,
+        ?string $instagram = null,
+        ?string $facebook = null,
+    ): void {
         $telefono = preg_replace('/[\s()-]/', '', trim($telefono));
         if (!preg_match('/\A\+[1-9][0-9]{7,14}\z/', $telefono)) {
             throw new InvalidArgumentException('Ingresá el teléfono internacional con + y código de país.');
         }
+
+        $enlaceInstagram = self::validarEnlace($instagram, 'Instagram', ['instagram.com', 'www.instagram.com']);
+        $enlaceFacebook = self::validarEnlace($facebook, 'Facebook', ['facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com']);
 
         $contenido = null;
         $tipo = null;
@@ -60,8 +71,8 @@ final readonly class ConfiguracionPortada
         }
 
         $sql = <<<'SQL'
-            INSERT INTO configuracion_portada (id, telefono, imagen, imagen_tipo, imagen_version, actualizado_por)
-            VALUES (1, ?, decode(?, 'base64'), ?, ?, ?)
+            INSERT INTO configuracion_portada (id, telefono, imagen, imagen_tipo, imagen_version, actualizado_por, instagram, facebook)
+            VALUES (1, ?, decode(?, 'base64'), ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
                 telefono = excluded.telefono,
                 actualizado_por = excluded.actualizado_por,
@@ -70,7 +81,33 @@ final readonly class ConfiguracionPortada
         if ($archivo !== null || $restaurar) {
             $sql .= ', imagen = excluded.imagen, imagen_tipo = excluded.imagen_tipo, imagen_version = excluded.imagen_version';
         }
+        if ($instagram !== null) {
+            $sql .= ', instagram = excluded.instagram';
+        }
+        if ($facebook !== null) {
+            $sql .= ', facebook = excluded.facebook';
+        }
 
-        $this->conexion->executeStatement($sql, [$telefono, $contenido, $tipo, $version, $autor]);
+        $this->conexion->executeStatement($sql, [$telefono, $contenido, $tipo, $version, $autor, $enlaceInstagram, $enlaceFacebook]);
+    }
+
+    /** @param list<string> $dominios */
+    private static function validarEnlace(?string $enlace, string $red, array $dominios): ?string
+    {
+        $enlace = trim($enlace ?? '');
+        if ($enlace === '') {
+            return null;
+        }
+
+        $partes = parse_url($enlace);
+        if (strlen($enlace) > 2048 || !filter_var($enlace, FILTER_VALIDATE_URL) || str_contains($enlace, '\\')
+            || strtolower($partes['scheme'] ?? '') !== 'https'
+            || !in_array(strtolower($partes['host'] ?? ''), $dominios, true)
+            || isset($partes['user']) || isset($partes['pass']) || isset($partes['port'])
+            || trim($partes['path'] ?? '', '/') === '') {
+            throw new InvalidArgumentException("Ingresá un enlace HTTPS válido de $red.");
+        }
+
+        return $enlace;
     }
 }

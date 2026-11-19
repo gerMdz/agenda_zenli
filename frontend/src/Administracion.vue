@@ -11,6 +11,8 @@ const error = ref('')
 const email = ref('')
 const clave = ref('')
 const telefono = ref('')
+const instagram = ref('')
+const facebook = ref('')
 const imagenGuardada = ref(null)
 const imagenTemporal = ref(null)
 const entradaArchivo = ref(null)
@@ -71,10 +73,16 @@ async function cargarSesion() {
 
 async function cargarPanel() {
   const [portada, listado] = await Promise.all([api('/api/portada'), api('/api/admin/usuarios')])
+  aplicarPortada(portada)
+  usuarios.value = listado.usuarios
+}
+
+function aplicarPortada(portada) {
   telefono.value = portada.telefono
+  instagram.value = portada.instagram ?? ''
+  facebook.value = portada.facebook ?? ''
   imagenGuardada.value = portada.imagen
   restaurar.value = false
-  usuarios.value = listado.usuarios
 }
 
 async function ejecutar(accion) {
@@ -152,9 +160,7 @@ function guardarPortada(evento) {
 
   return ejecutar(async () => {
     const portada = await api('/api/admin/portada', { method: 'POST', datos })
-    telefono.value = portada.telefono
-    imagenGuardada.value = portada.imagen
-    restaurar.value = false
+    aplicarPortada(portada)
     entradaArchivo.value.value = ''
     limpiarImagenTemporal()
     mensaje.value = 'Portada actualizada.'
@@ -229,6 +235,11 @@ function guardarUsuario() {
           <form @submit.prevent="guardarPortada">
             <label for="telefono">Teléfono de WhatsApp</label>
             <input id="telefono" v-model="telefono" name="telefono" type="tel" autocomplete="tel" placeholder="+54…" :disabled="ocupado" required>
+            <label for="instagram">Instagram (opcional)</label>
+            <input id="instagram" v-model.trim="instagram" name="instagram" type="url" placeholder="https://www.instagram.com/…" maxlength="2048" aria-describedby="ayuda-redes" :disabled="ocupado">
+            <label for="facebook">Facebook (opcional)</label>
+            <input id="facebook" v-model.trim="facebook" name="facebook" type="url" placeholder="https://www.facebook.com/…" maxlength="2048" aria-describedby="ayuda-redes" :disabled="ocupado">
+            <small id="ayuda-redes">Pegá el enlace completo del perfil. Dejá el campo vacío para ocultarlo.</small>
             <label for="imagen">Imagen principal</label>
             <img class="vista-previa" :src="vistaPrevia" alt="Vista previa de la portada">
             <input id="imagen" ref="entradaArchivo" name="imagen" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="ayuda-imagen" :disabled="ocupado" @change="elegirImagen">

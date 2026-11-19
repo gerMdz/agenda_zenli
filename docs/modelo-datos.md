@@ -10,7 +10,7 @@ Las migraciones de la agenda v2 crean estas 18 tablas:
 - Comercial: `promociones`, `reserva_promociones`.
 - Control: `reservas_eventos`, `politicas_reservas`.
 
-La migración de administración agrega `configuracion_portada` para el teléfono, la imagen y el último autor del cambio, e `intentos_acceso_admin` para el límite de intentos de inicio de sesión.
+La migración de administración agrega `configuracion_portada` para el teléfono, la imagen y el último autor del cambio, e `intentos_acceso_admin` para el límite de intentos de inicio de sesión. La migración `Version20261119000200` agrega los enlaces opcionales de Instagram y Facebook a `configuracion_portada`.
 
 Una `reserva` es la cabecera comercial; `reserva_participantes` identifica participantes y `reserva_sesiones` representa cada tratamiento, profesional e intervalo. `servicios` define ofertas reservables y `servicio_sesiones` su composición. Una reserva puede tener varias sesiones consecutivas. El recurso físico se ocupa por sesión.
 

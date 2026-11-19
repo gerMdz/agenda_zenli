@@ -37,6 +37,8 @@ COPY config/ config/
 COPY migrations/ migrations/
 COPY public/ public/
 COPY src/ src/
-RUN composer dump-autoload --no-dev --optimize --no-interaction \
+RUN chmod -R go+rX bin config migrations public src \
+    && chmod 0644 .env \
+    && composer dump-autoload --no-dev --optimize --no-interaction \
     && mkdir -p var \
     && chown www-data:www-data var

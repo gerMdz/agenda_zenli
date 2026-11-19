@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+raiz="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd -- "$raiz"
+
+if [[ ! -r .env.production ]]; then
+    printf 'Falta un archivo .env.production legible en %s.\n' "$raiz" >&2
+    exit 1
+fi
+
+exec 9>"$(git rev-parse --git-path zenli-despliegue.lock)"
+if ! flock -n 9; then
+    printf 'Ya hay un despliegue en curso para este repositorio.\n' >&2
+    exit 1
+fi
+
+dc() {
+    docker compose --env-file .env.production -f compose.prod.yaml "$@"
+}
+
+respaldo_temporal=''
+paso='validar la configuración'
+terminar() {
+    local estado=$?
+    if [[ -n "$respaldo_temporal" ]]; then
+        rm -f -- "$respaldo_temporal"
+    fi
+    if (( estado != 0 )); then
+        printf 'El despliegue se detuvo al %s. Revisá el error anterior.\n' "$paso" >&2
+    fi
+}
+trap terminar EXIT
+
+dc config --quiet
+
+paso='actualizar el código'
+printf 'Actualizando el código de la rama actual…\n'
+git pull --ff-only
+
+paso='esperar a PostgreSQL'
+dc up --no-build --no-recreate --wait --wait-timeout 90 database
+
+paso='guardar y verificar el respaldo'
+directorio_respaldo="${ZENLI_BACKUP_DIR:-$HOME/zenli-backups}"
+(umask 077; mkdir -p -- "$directorio_respaldo")
+respaldo_temporal="$(mktemp "$directorio_respaldo/zenli-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")"
+dc exec -T database pg_dump -U zenli -d zenli -Fc > "$respaldo_temporal"
+test -s "$respaldo_temporal"
+dc exec -T database pg_restore --list < "$respaldo_temporal" >/dev/null
+respaldo="$respaldo_temporal.dump"
+mv -- "$respaldo_temporal" "$respaldo"
+respaldo_temporal=''
+printf 'Respaldo guardado en %s\n' "$respaldo"
+
+paso='construir las imágenes'
+dc build app nginx
+
+paso='aplicar las migraciones'
+dc run --rm --no-deps -T --user www-data app \
+    php bin/console doctrine:migrations:migrate --no-interaction --all-or-nothing
+
+paso='publicar la aplicación y la portada'
+dc up -d --no-build --no-deps app nginx
+
+paso='verificar la aplicación y la portada'
+direccion="$(dc port nginx 80)"
+for ruta in /health /api/portada / /admin; do
+    curl --fail --silent --show-error --retry 5 --retry-delay 1 --retry-all-errors \
+        --max-time 5 --output /dev/null "http://$direccion$ruta"
+done
+
+printf 'Despliegue verificado para %s.\n' "$(git rev-parse --short HEAD)"

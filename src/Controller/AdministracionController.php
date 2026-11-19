@@ -80,6 +80,8 @@ final readonly class AdministracionController
                 $archivo,
                 $peticion->request->getString('restaurar') === '1',
                 $usuario['id'],
+                $peticion->request->has('instagram') ? $peticion->request->getString('instagram') : null,
+                $peticion->request->has('facebook') ? $peticion->request->getString('facebook') : null,
             );
         } catch (InvalidArgumentException $error) {
             return $this->error($error->getMessage(), 422);

@@ -51,7 +51,7 @@ docker compose exec --user www-data app php bin/console doctrine:migrations:migr
 docker compose exec --user www-data app php bin/console zenli:admin:crear admin@ejemplo.com
 ```
 
-Entrá a `/admin`. Podés actualizar el teléfono de WhatsApp en formato internacional, subir una imagen JPG, PNG o WebP de hasta 4 MB o volver a la imagen original. En el mismo panel podés crear cuentas administradoras, cambiar sus contraseñas y activar o desactivar su acceso. Los cambios de portada se publican al guardar.
+Entrá a `/admin`. Podés actualizar el teléfono de WhatsApp en formato internacional, subir una imagen JPG, PNG o WebP de hasta 4 MB o volver a la imagen original. También podés cargar los enlaces HTTPS de Instagram y Facebook. Cada campo vacío oculta ese enlace en la portada. En el mismo panel podés crear cuentas administradoras, cambiar sus contraseñas y activar o desactivar su acceso. Los cambios de portada se publican al guardar.
 
 En producción el panel utiliza cookies seguras y se debe abrir por HTTPS. Si el proxy HTTPS aplica un límite al cuerpo de la solicitud, configurá al menos 5 MB para `/api/admin/portada`.
 
@@ -63,21 +63,8 @@ Usá `compose.prod.yaml` como archivo independiente. La configuración de produc
 2. Configurá `DATABASE_URL` como `postgresql://zenli:CONTRASEÑA@database:5432/zenli?charset=utf8`, usando el valor hexadecimal de `POSTGRES_PASSWORD` en lugar de `CONTRASEÑA`.
 3. Configurá el proxy HTTPS del VPS para enviar el tráfico del dominio a `http://127.0.0.1:8080`. Si ese puerto está ocupado, cambiá `ZENLI_HTTP_PORT` en `.env.production` y ajustá el destino del proxy.
 
-```sh
-docker compose --env-file .env.production -f compose.prod.yaml up --build -d
-curl --fail http://127.0.0.1:8080/
-curl --fail http://127.0.0.1:8080/health
-docker compose --env-file .env.production -f compose.prod.yaml exec --user www-data app php bin/console dbal:run-sql 'SELECT 1'
-```
+En el VPS, ejecutá `./bin/desplegar` para publicar la rama actual. El script actualiza el código con avance rápido de Git, comprueba que PostgreSQL esté listo, respalda la base, construye las imágenes, aplica las migraciones pendientes y verifica las rutas de salud, portada y administración. Si falla una migración, se detiene antes de reemplazar los contenedores web. Requiere Bash, `flock`, Git, curl y Docker Compose.
 
-Para guardar un respaldo fuera del volumen de PostgreSQL, ejecutá:
-
-```sh
-umask 077
-docker compose --env-file .env.production -f compose.prod.yaml exec -T database \
-  pg_dump -U zenli -Fc zenli > "zenli-$(date +%F-%H%M%S).dump"
-```
-
-Antes de cargar datos reales, comprobá el respaldo restaurándolo con `pg_restore --exit-on-error` en una base de prueba vacía. El contenedor no ejecuta migraciones al arrancar. Una vez revisadas y aprobadas, se ejecutarán como un paso explícito del despliegue.
+El despliegue guarda los respaldos en `~/zenli-backups`, o en el directorio indicado por `ZENLI_BACKUP_DIR`. Cada ejecución verifica el índice del archivo con `pg_restore --list`. Podés probar su restauración en una base de prueba vacía.
 
 Los archivos `composer.lock` y `frontend/package-lock.json` deben incorporarse al repositorio para fijar versiones. Hasta entonces, el build resuelve las dependencias con `composer install` y `npm install`. Con sus lockfiles presentes, Composer usa las versiones registradas y el frontend usa `npm ci`.
