@@ -262,7 +262,7 @@ function elegirImagenServicio(evento) {
   nuevoArchivo.value = archivo
 }
 
-function crearServicio() {
+async function crearServicio() {
   crearError.value = ''
   if (ocupado.value) return
   ocupado.value = true
@@ -272,8 +272,8 @@ function crearServicio() {
     datos.set('descripcion_corta', nuevoDescCorta.value)
     datos.set('detalle', nuevoDetalle.value)
     if (nuevoArchivo.value) datos.set('imagen', nuevoArchivo.value)
-    const resultado = api('/api/admin/servicios', { method: 'POST', datos })
-    servicios.value = (await resultado).servicios
+    const resultado = await api('/api/admin/servicios', { method: 'POST', datos })
+    servicios.value = resultado.servicios
     cancelarCreacion()
     mensaje.value = 'Servicio creado.'
   } catch (fallo) {
@@ -323,7 +323,7 @@ function elegirImagenEdicion(evento) {
   editEliminarImagen.value = false
 }
 
-function guardarEdicion() {
+async function guardarEdicion() {
   editarError.value = ''
   if (ocupado.value) return
   ocupado.value = true
@@ -334,8 +334,8 @@ function guardarEdicion() {
     datos.set('detalle', editDetalle.value)
     if (editArchivo.value) datos.set('imagen', editArchivo.value)
     if (editEliminarImagen.value) datos.set('eliminar_imagen', '1')
-    const resultado = api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'PATCH', datos })
-    servicios.value = (await resultado).servicios
+    const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'PATCH', datos })
+    servicios.value = resultado.servicios
     cancelarEdicion()
     mensaje.value = 'Servicio actualizado.'
   } catch (fallo) {
