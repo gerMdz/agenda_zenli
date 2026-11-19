@@ -8,26 +8,28 @@ const slots = [
 const treatment = ref('')
 const selectedSlot = ref('')
 const reservations = ref([])
-const lastReservation = ref(null)
+const feedback = ref('')
 const availableSlots = computed(() =>
   slots.filter(slot => !reservations.value.some(reservation => reservation.slot.id === slot.id)),
+)
+const canReset = computed(() =>
+  Boolean(treatment.value || selectedSlot.value || reservations.value.length),
 )
 
 function reserve() {
   const slot = availableSlots.value.find(item => item.id === selectedSlot.value)
   if (!treatment.value || !slot) return
 
-  const reservation = { treatment: treatment.value, slot }
-  reservations.value.push(reservation)
-  lastReservation.value = reservation
+  reservations.value.push({ treatment: treatment.value, slot })
+  feedback.value = `Reserva simulada de ${treatment.value} a las ${slot.label}.`
   selectedSlot.value = ''
 }
 
 function reset() {
   reservations.value = []
-  lastReservation.value = null
   treatment.value = ''
   selectedSlot.value = ''
+  feedback.value = 'Demo reiniciada. Todos los horarios están disponibles.'
 }
 </script>
 
@@ -47,16 +49,18 @@ function reset() {
 
       <label for="demo-slot">Horario de ejemplo</label>
       <select id="demo-slot" v-model="selectedSlot" :disabled="!availableSlots.length" required>
-        <option disabled value="">Elegí un horario</option>
+        <option disabled value="">
+          {{ availableSlots.length ? 'Elegí un horario' : 'No quedan horarios disponibles' }}
+        </option>
         <option v-for="slot in availableSlots" :key="slot.id" :value="slot.id">{{ slot.label }}</option>
       </select>
 
       <button type="submit" :disabled="!treatment || !selectedSlot">Simular reserva</button>
-      <button type="button" :disabled="!reservations.length" @click="reset">Reiniciar demo</button>
+      <button type="button" :disabled="!canReset" @click="reset">Reiniciar demo</button>
     </form>
 
-    <p v-if="lastReservation" role="status">
-      Reserva simulada de {{ lastReservation.treatment }} a las {{ lastReservation.slot.label }}.
+    <p role="status">
+      {{ feedback }}
       <span v-if="!availableSlots.length">Ya no quedan horarios de ejemplo.</span>
     </p>
   </main>
