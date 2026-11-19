@@ -30,7 +30,7 @@ Las migraciones Doctrine v2 siguen siendo un borrador. El arranque deja la base 
 
 ## Frontend con Vue y PrimeVue
 
-Compose construye el frontend con Vite y copia el resultado a la imagen de Nginx. Abrí `http://127.0.0.1:8080/` y usá **Comprobar conexión** para verificar la respuesta de Symfony.
+Compose construye el frontend con Vite y copia el resultado a la imagen de Nginx. Abrí `http://127.0.0.1:8080/` para ver la portada. Usá `/health` para verificar la respuesta de Symfony.
 
 Para editar el frontend con recarga automática, levantá Compose y ejecutá estos comandos con Node 22.12 o superior dentro de la rama 22, o con Node 24:
 
