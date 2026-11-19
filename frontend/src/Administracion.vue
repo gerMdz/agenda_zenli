@@ -369,6 +369,7 @@ onBeforeUnmount(() => {
   limpiarImagenTemporal()
   limpiarImagenTemporalServicio()
 })
+</script>
 
 <template>
   <div class="administracion">
