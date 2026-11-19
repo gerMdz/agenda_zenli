@@ -61,7 +61,7 @@ async function api(ruta, { method = 'GET', datos } = {}) {
     const errores = {
       401: 'Ingresá a tu cuenta.',
       403: 'La sesión del formulario venció. Recargá la página.',
-      413: 'La imagen supera el tamaño permitido.',
+      413: 'La imagen supera los 4 MB. Elegí una más pequeña o comprimila.',
       429: 'Demasiados intentos. Probá nuevamente en unos minutos.',
     }
     throw new Error(contenido?.error || errores[respuesta.status] || 'No se pudo completar la operación.')
@@ -411,7 +411,7 @@ onBeforeUnmount(() => {
             <label for="imagen">Imagen principal</label>
             <img class="vista-previa" :src="vistaPrevia" alt="Vista previa de la portada">
             <input id="imagen" ref="entradaArchivo" name="imagen" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="ayuda-imagen" :disabled="ocupado" @change="elegirImagen">
-            <small id="ayuda-imagen">JPG, PNG o WebP, hasta 4 MB. La portada recorta la foto según el tamaño de pantalla.</small>
+            <small id="ayuda-imagen">JPG, PNG o WebP, hasta 4 MB de peso. La portada recorta la foto según el tamaño de pantalla.</small>
             <div class="acciones">
               <button :disabled="ocupado">Guardar portada</button>
               <button v-if="imagenGuardada || imagenTemporal" type="button" class="secundario" :disabled="ocupado || restaurar" @click="restaurarImagen">Usar imagen original</button>
@@ -494,7 +494,7 @@ onBeforeUnmount(() => {
               <img :src="servicioImagenTemporal" alt="Vista previa">
             </div>
             <input id="nuevo-imagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" @change="elegirImagenServicio">
-            <small>JPG, PNG o WebP, hasta 4 MB. Se mostrará en la tarjeta de la portada.</small>
+            <small>JPG, PNG o WebP, hasta 4 MB de peso. Se mostrará en la tarjeta de la portada.</small>
             <div class="acciones">
               <button :disabled="ocupado">Crear servicio</button>
               <button type="button" class="secundario" :disabled="ocupado" @click="cancelarCreacion">Cancelar</button>
