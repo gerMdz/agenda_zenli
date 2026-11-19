@@ -45,7 +45,7 @@ final readonly class PortadaController
     {
         return new JsonResponse(
             ['servicios' => $this->servicios->listarVisibles()],
-            headers: ['Cache-Control' => 'public, max-age=3600'],
+            headers: ['Cache-Control' => 'no-store'],
         );
     }
 
