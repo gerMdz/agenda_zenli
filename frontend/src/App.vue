@@ -219,7 +219,7 @@ nav a:hover { text-decoration: underline; color: var(--oro); }
 .tratamiento-texto { padding: 1rem .75rem 1.15rem; display: flex; flex-direction: column; gap: .5rem; flex: 1; }
 .tratamiento-texto h3 { margin: 0; font: bold 1.18rem Georgia, serif; }
 .tratamiento-texto p { margin: 0; font-size: .9rem; color: #344238; }
-.btn-detalle { border: 1px solid var(--oro-oscuro); background: transparent; color: var(--oro-oscuro); padding: .4rem .8rem; border-radius: .4rem; font-size: .82rem; font-weight: 600; cursor: pointer; transition: background .2s, color .2s; }
+.btn-detalle { margin-top: auto; border: 1px solid var(--oro-oscuro); background: transparent; color: var(--oro-oscuro); padding: .4rem .8rem; border-radius: .4rem; font-size: .82rem; font-weight: 600; cursor: pointer; transition: background .2s, color .2s; }
 .btn-detalle:hover { background: var(--oro-oscuro); color: #fffaf0; }
 
 /* Modal */
