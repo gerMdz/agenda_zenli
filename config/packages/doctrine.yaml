@@ -1,0 +1,6 @@
+doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+        server_version: '17'
+    orm:
+        auto_mapping: false

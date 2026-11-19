@@ -1,0 +1,44 @@
+name: zenli-production
+
+services:
+    nginx:
+        build:
+            context: .
+            target: nginx
+        restart: unless-stopped
+        ports:
+            - '127.0.0.1:${ZENLI_HTTP_PORT:-8080}:80'
+        depends_on:
+            - app
+
+    app:
+        build:
+            context: .
+            target: app
+        restart: unless-stopped
+        environment:
+            APP_ENV: prod
+            APP_DEBUG: '0'
+            APP_SECRET: ${APP_SECRET:?Definí APP_SECRET en .env.production}
+            DATABASE_URL: ${DATABASE_URL:?Definí DATABASE_URL en .env.production}
+        depends_on:
+            database:
+                condition: service_healthy
+
+    database:
+        image: postgres:17-bookworm
+        restart: unless-stopped
+        environment:
+            POSTGRES_DB: zenli
+            POSTGRES_USER: zenli
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env.production}
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+            interval: 5s
+            timeout: 3s
+            retries: 10
+
+volumes:
+    postgres_data:

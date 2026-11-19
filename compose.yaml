@@ -1,0 +1,44 @@
+name: zenli
+
+services:
+    nginx:
+        build:
+            context: .
+            target: nginx
+        ports:
+            - '127.0.0.1:${ZENLI_HTTP_PORT:-8080}:80'
+        volumes:
+            - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+            - ./public:/var/www/html/public:ro
+        depends_on:
+            - app
+
+    app:
+        build:
+            context: .
+            target: app
+        volumes:
+            - ./bin:/var/www/html/bin
+            - ./config:/var/www/html/config
+            - ./migrations:/var/www/html/migrations
+            - ./public:/var/www/html/public
+            - ./src:/var/www/html/src
+            - ./.env:/var/www/html/.env:ro
+        depends_on:
+            database:
+                condition: service_healthy
+
+    database:
+        image: postgres:17-bookworm
+        env_file:
+            - ./docker/database/postgres.env
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+            interval: 5s
+            timeout: 3s
+            retries: 10
+
+volumes:
+    postgres_data:
