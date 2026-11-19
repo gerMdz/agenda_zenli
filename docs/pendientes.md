@@ -14,3 +14,9 @@
 12. Confirmar dirección, identidad visual y contenidos públicos vigentes.
 
 No transformar preguntas pendientes en reglas asumidas por defecto sin aprobación del centro.
+
+## Integración de agenda
+
+- Resolver el paso entre inicios que usará la consulta pública y cómo se configurará.
+- Integrar el cálculo con la lectura de horarios, bloqueos y ocupaciones desde PostgreSQL. Resolver la vigencia de reservas pendientes al construir esa consulta.
+- Validar el esquema y definir una transacción que vuelva a comprobar disponibilidad al confirmar. Las exclusiones GiST del borrador protegen ocupaciones entre sí. Como los bloqueos y horarios viven en otras tablas, sus escrituras deben coordinarse con las reservas mediante el mismo protocolo de bloqueo y verificarse con pruebas de concurrencia.

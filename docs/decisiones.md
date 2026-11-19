@@ -13,3 +13,9 @@
 - Masaje en pareja: **dos tratamientos consecutivos**, no simultáneos. No se ha confirmado si los realiza una o dos profesionales; no habilitar en reservas públicas.
 - Tecnología preferida: Symfony, Doctrine, PostgreSQL, Vue 3, PrimeVue. Sin microservicios ni Kubernetes en primera versión.
 - Estética aproximada de marca: verde profundo, dorado y marfil, basada en imágenes aportadas; colores no oficiales.
+
+## Implementación de la disponibilidad
+
+- El cálculo inicial consulta un día de Mendoza para una sesión individual en el espacio compartido. Recibe las franjas de profesionales activos y habilitados, y los bloqueos y ocupaciones activas del espacio y de cada profesional.
+- La duración, el paso entre inicios y los minutos de preparación y limpieza se pasan explícitamente. Las franjas contiguas o superpuestas de una misma persona se unen y el primer inicio posible se calcula desde la apertura más la preparación.
+- La preparación y la limpieza ocupan tanto a la profesional como al espacio. Se usan intervalos con inicio incluido y fin excluido, igual que en las exclusiones del borrador PostgreSQL.
