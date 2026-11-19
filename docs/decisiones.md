@@ -24,6 +24,7 @@
 
 ## Portada y administración
 
-- La portada pública presenta los tratamientos, el centro y las consultas por WhatsApp. El teléfono inicial es el que ya estaba publicado en el sitio.
-- Las cuentas administradoras ingresan por sesión en `/admin`. Pueden configurar el teléfono y la imagen de la portada y gestionar otras cuentas administradoras. La configuración y el último autor del cambio se guardan en PostgreSQL.
+- La portada pública presenta los servicios de masajes, el centro y las consultas por WhatsApp. El teléfono inicial es el que ya estaba publicado en el sitio.
+- Las cuentas administradoras ingresan por sesión en `/admin`. Pueden configurar el teléfono y la imagen de la portada, gestionar los servicios de la portada y administrar otras cuentas. La configuración y el último autor del cambio se guardan en PostgreSQL.
 - Los perfiles de Instagram y Facebook son opcionales y se editan en `/admin`. La portada muestra los enlaces configurados junto a los datos de contacto.
+- Los servicios de la portada se gestionan desde `/admin` con CRUD completo: crear, editar, eliminar, reordenar y mostrar/ocultar. Cada servicio tiene nombre, descripción corta, detalle extenso e imagen individual. La portada los carga desde `/api/servicios` y muestra un modal con detalle al hacer clic en "Ver detalle".

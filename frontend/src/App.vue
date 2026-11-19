@@ -5,29 +5,45 @@ import portadaOriginal from './image/portada.webp'
 const telefono = ref('+5492616356192')
 const imagen = ref(portadaOriginal)
 const redes = ref([])
+const servicios = ref([])
+const servicioSeleccionado = ref(null)
+const modalAbierto = ref(false)
 const enlaceContacto = computed(() => `https://wa.me/${telefono.value.slice(1)}`)
 const telefonoVisible = computed(() =>
   telefono.value === '+5492616356192' ? '261 635 6192' : telefono.value,
 )
 
-const tratamientos = [
-  { nombre: 'Descontracturante', descripcion: 'Presión intensa y técnicas de masaje tailandés.', foto: 'descontracturante' },
-  { nombre: 'Relajante', descripcion: 'Presión suave y técnicas Lomi Lomi.', foto: 'relajante' },
-  { nombre: 'Tailandés', descripcion: 'Trabajo corporal y estiramientos.', foto: 'tailandes' },
-  { nombre: 'Lomi Lomi', descripcion: 'Masaje hawaiano de movimientos envolventes.', foto: 'lomi-lomi' },
-]
+function abrirDetalle(servicio) {
+  servicioSeleccionado.value = servicio
+  modalAbierto.value = true
+  document.body.style.overflow = 'hidden'
+}
+
+function cerrarModal() {
+  modalAbierto.value = false
+  servicioSeleccionado.value = null
+  document.body.style.overflow = ''
+}
 
 onMounted(async () => {
   try {
-    const respuesta = await fetch('/api/portada')
-    if (!respuesta.ok) return
-    const portada = await respuesta.json()
-    telefono.value = portada.telefono
-    if (portada.imagen) imagen.value = portada.imagen
-    redes.value = [
-      { nombre: 'Instagram', enlace: portada.instagram },
-      { nombre: 'Facebook', enlace: portada.facebook },
-    ].filter(red => red.enlace)
+    const [respPortada, respServicios] = await Promise.all([
+      fetch('/api/portada'),
+      fetch('/api/servicios'),
+    ])
+    if (respPortada.ok) {
+      const portada = await respPortada.json()
+      telefono.value = portada.telefono
+      if (portada.imagen) imagen.value = portada.imagen
+      redes.value = [
+        { nombre: 'Instagram', enlace: portada.instagram },
+        { nombre: 'Facebook', enlace: portada.facebook },
+      ].filter(red => red.enlace)
+    }
+    if (respServicios.ok) {
+      const datos = await respServicios.json()
+      servicios.value = datos.servicios
+    }
   } catch {
     // Los datos incluidos en la portada permiten mostrarla aunque la API no esté disponible.
   }
@@ -79,15 +95,35 @@ onMounted(async () => {
           <h2 id="titulo-masajes">Nuestros masajes</h2>
         </div>
         <div class="tratamientos">
-          <article v-for="tratamiento in tratamientos" :key="tratamiento.nombre">
-            <div class="foto" :class="tratamiento.foto" aria-hidden="true"></div>
+          <article v-for="servicio in servicios" :key="servicio.id">
+            <div class="foto-servicio">
+              <img v-if="servicio.imagen_version" :src="`/api/servicios/${servicio.id}/imagen/${servicio.imagen_version}`" :alt="servicio.nombre" loading="lazy">
+              <div v-else class="foto-placeholder" aria-hidden="true"><span class="simbolo-masaje">✿</span></div>
+            </div>
             <div class="tratamiento-texto">
-              <h3>{{ tratamiento.nombre }}</h3>
-              <p>{{ tratamiento.descripcion }}</p>
+              <h3>{{ servicio.nombre }}</h3>
+              <p>{{ servicio.descripcion_corta }}</p>
+              <button type="button" class="btn-detalle" @click="abrirDetalle(servicio)">Ver detalle</button>
             </div>
           </article>
         </div>
       </section>
+
+      <!-- Modal de detalle -->
+      <Teleport to="body">
+        <div v-if="modalAbierto && servicioSeleccionado" class="modal-overlay" @click.self="cerrarModal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+          <div class="modal-contenido">
+            <button type="button" class="modal-cerrar" aria-label="Cerrar" @click="cerrarModal">✕</button>
+            <img v-if="servicioSeleccionado.imagen_version" :src="`/api/servicios/${servicioSeleccionado.id}/imagen/${servicioSeleccionado.imagen_version}`" :alt="servicioSeleccionado.nombre" class="modal-imagen">
+            <h2 id="modal-titulo" class="modal-titulo">{{ servicioSeleccionado.nombre }}</h2>
+            <p class="modal-desc">{{ servicioSeleccionado.descripcion_corta }}</p>
+            <div class="modal-detalle">{{ servicioSeleccionado.detalle }}</div>
+            <div class="modal-accion">
+              <a class="boton-dorado" :href="enlaceContacto">Reservar turno <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <section id="nosotras" class="ancho" aria-labelledby="titulo-nosotras">
         <div class="nosotras">
@@ -175,15 +211,27 @@ nav a:hover { text-decoration: underline; color: var(--oro); }
 .titulo-seccion h2 { display: flex; align-items: center; gap: clamp(.65rem, 2vw, 1.3rem); margin: .25rem 0 0; color: var(--verde-oscuro); text-align: center; font: 600 clamp(1.9rem, 4vw, 3rem)/1.1 Georgia, serif; }
 .titulo-seccion h2::before, .titulo-seccion h2::after { content: ''; width: clamp(1rem, 7vw, 5rem); height: 1px; background: #b9934f; }
 .tratamientos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
-.tratamientos article { overflow: hidden; border: 1px solid var(--borde); border-radius: 1rem; background: #fffaf0; text-align: center; box-shadow: 0 4px 12px #38281209; }
-.foto { position: relative; overflow: hidden; aspect-ratio: 1.6; background: #163426; }
-.foto::before { content: ''; position: absolute; inset-inline: 0; top: 50%; aspect-ratio: 1; transform: translateY(-50%); background-image: url('./image/masajes.webp'); background-size: 200% 200%; }
-.relajante::before { background-position: top right; }
-.tailandes::before { background-position: bottom left; }
-.lomi-lomi::before { background-position: bottom right; }
-.tratamiento-texto { padding: 1rem .75rem 1.15rem; }
-.tratamiento-texto h3 { margin: 0 0 .35rem; font: bold 1.18rem Georgia, serif; }
+.tratamientos article { overflow: hidden; border: 1px solid var(--borde); border-radius: 1rem; background: #fffaf0; text-align: center; box-shadow: 0 4px 12px #38281209; display: flex; flex-direction: column; }
+.foto-servicio { position: relative; overflow: hidden; aspect-ratio: 1.6; background: #163426; }
+.foto-servicio img { width: 100%; height: 100%; object-fit: cover; }
+.foto-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #163426, #092b20); }
+.simbolo-masaje { font-size: 3rem; color: #e9bf6855; }
+.tratamiento-texto { padding: 1rem .75rem 1.15rem; display: flex; flex-direction: column; gap: .5rem; flex: 1; }
+.tratamiento-texto h3 { margin: 0; font: bold 1.18rem Georgia, serif; }
 .tratamiento-texto p { margin: 0; font-size: .9rem; color: #344238; }
+.btn-detalle { border: 1px solid var(--oro-oscuro); background: transparent; color: var(--oro-oscuro); padding: .4rem .8rem; border-radius: .4rem; font-size: .82rem; font-weight: 600; cursor: pointer; transition: background .2s, color .2s; }
+.btn-detalle:hover { background: var(--oro-oscuro); color: #fffaf0; }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(6, 27, 20, .75); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
+.modal-contenido { position: relative; background: #fffaf0; border-radius: 1rem; max-width: 42rem; width: 100%; max-height: 90vh; overflow-y: auto; padding: 2rem; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.modal-cerrar { position: absolute; top: .75rem; right: .75rem; width: 2rem; height: 2rem; border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: #344238; border-radius: 50%; display: grid; place-items: center; }
+.modal-cerrar:hover { background: #f0e6cc; }
+.modal-imagen { width: 100%; max-height: 20rem; object-fit: cover; border-radius: .5rem; margin-bottom: 1rem; }
+.modal-titulo { margin: 0 0 .5rem; font: 600 1.8rem Georgia, serif; color: var(--verde-oscuro); }
+.modal-desc { margin: 0 0 1rem; font-size: 1rem; color: #344238; font-style: italic; }
+.modal-detalle { margin: 0 0 1.5rem; font-size: .95rem; line-height: 1.65; color: #344238; white-space: pre-wrap; }
+.modal-accion { text-align: center; }
 .nosotras { display: flex; align-items: center; gap: 1.2rem; padding: 1.45rem clamp(1rem, 4vw, 2.8rem); border-radius: 1rem; background: var(--verde); color: #fff6e5; }
 .nosotras > .loto { flex: 0 0 2.2rem; color: var(--oro); }
 .nosotras h2 { font: 600 1.6rem Georgia, serif; margin: 0 0 .2rem; color: #f6d995; }
@@ -211,6 +259,8 @@ a:focus-visible { outline: 2px solid #a87a2a; outline-offset: 4px; }
   nav a { font-size: .8rem; }
   .hero img { object-position: 73% center; }
   .tratamientos { grid-template-columns: repeat(2, 1fr); gap: .65rem; }
+  .modal-contenido { padding: 1.25rem; }
+  .modal-titulo { font-size: 1.4rem; }
   .pilares > div { flex-direction: column; gap: .35rem; text-align: center; padding-inline: .25rem; }
   .pilares p { font-size: .78rem; }
   .simbolo { width: 2.4rem; height: 2.4rem; flex-basis: auto; }

@@ -27,6 +27,21 @@ const vistaPrevia = computed(() =>
   imagenTemporal.value || (!restaurar.value && imagenGuardada.value) || portadaOriginal,
 )
 
+// Servicios de portada
+const servicios = ref([])
+const servicioCreando = ref(false)
+const nuevoNombre = ref('')
+const nuevoDescCorta = ref('')
+const nuevoDetalle = ref('')
+const nuevoArchivo = ref(null)
+const servicioEditando = ref(null)
+const editNombre = ref('')
+const editDescCorta = ref('')
+const editDetalle = ref('')
+const editArchivo = ref(null)
+const editEliminarImagen = ref(false)
+const servicioImagenTemporal = ref(null)
+
 async function api(ruta, { method = 'GET', datos } = {}) {
   const headers = { Accept: 'application/json' }
   if (method !== 'GET') headers['X-Zenli-CSRF'] = csrf.value
@@ -72,9 +87,14 @@ async function cargarSesion() {
 }
 
 async function cargarPanel() {
-  const [portada, listado] = await Promise.all([api('/api/portada'), api('/api/admin/usuarios')])
+  const [portada, listado, svcs] = await Promise.all([
+    api('/api/portada'),
+    api('/api/admin/usuarios'),
+    api('/api/admin/servicios'),
+  ])
   aplicarPortada(portada)
   usuarios.value = listado.usuarios
+  servicios.value = svcs.servicios
 }
 
 function aplicarPortada(portada) {
@@ -201,7 +221,154 @@ function guardarUsuario() {
     mensaje.value = renovarSesion ? 'Contraseña actualizada. Ingresá nuevamente.' : 'Cuenta actualizada.'
   })
 }
-</script>
+
+// --- Servicios de portada ---
+
+function iniciarCreacion() {
+  servicioCreando.value = true
+  nuevoNombre.value = ''
+  nuevoDescCorta.value = ''
+  nuevoDetalle.value = ''
+  nuevoArchivo.value = null
+  servicioImagenTemporal.value = null
+}
+
+function cancelarCreacion() {
+  servicioCreando.value = false
+  nuevoNombre.value = ''
+  nuevoDescCorta.value = ''
+  nuevoDetalle.value = ''
+  nuevoArchivo.value = null
+  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
+  servicioImagenTemporal.value = null
+}
+
+function elegirImagenServicio(evento) {
+  const archivo = evento.target.files[0]
+  if (!archivo) return
+  if (archivo.size > 4 * 1024 * 1024) {
+    error.value = 'La imagen supera los 4 MB.'
+    evento.target.value = ''
+    return
+  }
+  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
+  servicioImagenTemporal.value = URL.createObjectURL(archivo)
+  nuevoArchivo.value = archivo
+}
+
+function crearServicio() {
+  return ejecutar(async () => {
+    const datos = new FormData()
+    datos.set('nombre', nuevoNombre.value)
+    datos.set('descripcion_corta', nuevoDescCorta.value)
+    datos.set('detalle', nuevoDetalle.value)
+    if (nuevoArchivo.value) datos.set('imagen', nuevoArchivo.value)
+    const resultado = await api('/api/admin/servicios', { method: 'POST', datos })
+    servicios.value = resultado.servicios
+    cancelarCreacion()
+    mensaje.value = 'Servicio creado.'
+  })
+}
+
+function iniciarEdicion(servicio) {
+  servicioEditando.value = servicio
+  editNombre.value = servicio.nombre
+  editDescCorta.value = servicio.descripcion_corta
+  editDetalle.value = servicio.detalle
+  editArchivo.value = null
+  editEliminarImagen.value = false
+  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
+  servicioImagenTemporal.value = null
+}
+
+function cancelarEdicion() {
+  servicioEditando.value = null
+  editNombre.value = ''
+  editDescCorta.value = ''
+  editDetalle.value = ''
+  editArchivo.value = null
+  editEliminarImagen.value = false
+  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
+  servicioImagenTemporal.value = null
+}
+
+function elegirImagenEdicion(evento) {
+  const archivo = evento.target.files[0]
+  if (!archivo) return
+  if (archivo.size > 4 * 1024 * 1024) {
+    error.value = 'La imagen supera los 4 MB.'
+    evento.target.value = ''
+    return
+  }
+  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
+  servicioImagenTemporal.value = URL.createObjectURL(archivo)
+  editArchivo.value = archivo
+  editEliminarImagen.value = false
+}
+
+function guardarEdicion() {
+  return ejecutar(async () => {
+    const datos = new FormData()
+    datos.set('nombre', editNombre.value)
+    datos.set('descripcion_corta', editDescCorta.value)
+    datos.set('detalle', editDetalle.value)
+    if (editArchivo.value) datos.set('imagen', editArchivo.value)
+    if (editEliminarImagen.value) datos.set('eliminar_imagen', '1')
+    const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'PATCH', datos })
+    servicios.value = resultado.servicios
+    cancelarEdicion()
+    mensaje.value = 'Servicio actualizado.'
+  })
+}
+
+async function eliminarServicio(id) {
+  if (!confirm('¿Eliminar este servicio? Esta acción no se puede deshacer.')) return
+  return ejecutar(async () => {
+    const resultado = await api(`/api/admin/servicios/${id}`, { method: 'DELETE' })
+    servicios.value = resultado.servicios
+    mensaje.value = 'Servicio eliminado.'
+  })
+}
+
+async function cambiarVisibilidad(id, visible) {
+  return ejecutar(async () => {
+    const resultado = await api(`/api/admin/servicios/${id}/visible`, {
+      method: 'PATCH',
+      datos: { visible },
+    })
+    servicios.value = resultado.servicios
+    mensaje.value = visible ? 'Servicio visible.' : 'Servicio oculto.'
+  })
+}
+
+async function moverServicio(id, direccion) {
+  const lista = servicios.value
+  const idx = lista.findIndex(s => s.id === id)
+  const nuevoIdx = idx + direccion
+  if (nuevoIdx < 0 || nuevoIdx >= lista.length) return
+
+  const ordenActual = lista[idx].orden
+  const ordenDestino = lista[nuevoIdx].orden
+
+  // Intercambiar órdenes
+  await ejecutar(async () => {
+    const resultados = await Promise.all([
+      api(`/api/admin/servicios/${lista[idx].id}/orden`, { method: 'PATCH', datos: { orden: ordenDestino } }),
+      api(`/api/admin/servicios/${lista[nuevoIdx].id}/orden`, { method: 'PATCH', datos: { orden: ordenActual } }),
+    ])
+    servicios.value = resultados[0].servicios
+  })
+}
+
+function limpiarImagenTemporalServicio() {
+  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
+  servicioImagenTemporal.value = null
+}
+
+onBeforeUnmount(() => {
+  limpiarImagenTemporal()
+  limpiarImagenTemporalServicio()
+})
 
 <template>
   <div class="administracion">
@@ -280,6 +447,86 @@ function guardarUsuario() {
             <button :disabled="ocupado">Crear cuenta</button>
           </form>
         </section>
+
+        <!-- Servicios de la portada -->
+        <section class="panel" aria-labelledby="titulo-servicios" style="grid-column: 1 / -1;">
+          <div class="panel-header">
+            <h2 id="titulo-servicios">Servicios de la portada</h2>
+            <button v-if="!servicioCreando" type="button" class="secundario" :disabled="ocupado" @click="iniciarCreacion">+ Nuevo servicio</button>
+          </div>
+
+          <ul class="lista-servicios">
+            <li v-for="(servicio, index) in servicios" :key="servicio.id" :class="{ oculto: !servicio.visible }">
+              <div class="servicio-info">
+                <span class="servicio-orden">{{ index + 1 }}</span>
+                <div class="servicio-detalle">
+                  <strong>{{ servicio.nombre }}</strong>
+                  <small>{{ servicio.descripcion_corta }}</small>
+                  <span v-if="servicio.imagen_version" class="badge">con imagen</span>
+                  <span v-else class="badge sin-imagen">sin imagen</span>
+                </div>
+              </div>
+              <div class="servicio-acciones">
+                <button type="button" class="secundario icono" :disabled="ocupado || index === 0" title="Mover arriba" @click="moverServicio(servicio.id, -1)">↑</button>
+                <button type="button" class="secundario icono" :disabled="ocupado || index === servicios.length - 1" title="Mover abajo" @click="moverServicio(servicio.id, 1)">↓</button>
+                <button type="button" class="secundario" :disabled="ocupado" @click="cambiarVisibilidad(servicio.id, !servicio.visible)">
+                  {{ servicio.visible ? 'Ocultar' : 'Mostrar' }}
+                </button>
+                <button type="button" class="secundario" :disabled="ocupado" @click="iniciarEdicion(servicio)">Editar</button>
+                <button type="button" class="peligro" :disabled="ocupado" @click="eliminarServicio(servicio.id)">Eliminar</button>
+              </div>
+            </li>
+          </ul>
+          <p v-if="servicios.length === 0" class="vacío">No hay servicios. Creá el primero.</p>
+
+          <!-- Formulario crear -->
+          <form v-if="servicioCreando" class="formulario-servicio" @submit.prevent="crearServicio">
+            <h3>Nuevo servicio</h3>
+            <label for="nuevo-nombre">Nombre</label>
+            <input id="nuevo-nombre" v-model="nuevoNombre" type="text" maxlength="100" placeholder="Ej: Descontracturante" :disabled="ocupado" required>
+            <label for="nuevo-desc">Descripción corta</label>
+            <input id="nuevo-desc" v-model="nuevoDescCorta" type="text" maxlength="255" placeholder="Ej: Presión intensa y técnicas de masaje tailandés." :disabled="ocupado" required>
+            <label for="nuevo-detalle">Detalle extenso</label>
+            <textarea id="nuevo-detalle" v-model="nuevoDetalle" rows="4" placeholder="Descripción completa del masaje, beneficios, técnica…" :disabled="ocupado" required></textarea>
+            <label for="nuevo-imagen">Imagen</label>
+            <div v-if="servicioImagenTemporal" class="vista-previa-servicio">
+              <img :src="servicioImagenTemporal" alt="Vista previa">
+            </div>
+            <input id="nuevo-imagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" @change="elegirImagenServicio">
+            <small>JPG, PNG o WebP, hasta 4 MB. Se mostrará en la tarjeta de la portada.</small>
+            <div class="acciones">
+              <button :disabled="ocupado">Crear servicio</button>
+              <button type="button" class="secundario" :disabled="ocupado" @click="cancelarCreacion">Cancelar</button>
+            </div>
+          </form>
+
+          <!-- Formulario editar -->
+          <form v-if="servicioEditando" class="formulario-servicio" :key="servicioEditando.id" @submit.prevent="guardarEdicion">
+            <h3>Editar: {{ servicioEditando.nombre }}</h3>
+            <label for="edit-nombre">Nombre</label>
+            <input id="edit-nombre" v-model="editNombre" type="text" maxlength="100" :disabled="ocupado" required>
+            <label for="edit-desc">Descripción corta</label>
+            <input id="edit-desc" v-model="editDescCorta" type="text" maxlength="255" :disabled="ocupado" required>
+            <label for="edit-detalle">Detalle extenso</label>
+            <textarea id="edit-detalle" v-model="editDetalle" rows="4" :disabled="ocupado" required></textarea>
+            <label for="edit-imagen">Imagen</label>
+            <div v-if="servicioEditando.imagen_version" class="imagen-actual">
+              <img :src="`/api/servicios/${servicioEditando.id}/imagen/${servicioEditando.imagen_version}`" alt="Imagen actual">
+            </div>
+            <div v-if="servicioImagenTemporal" class="vista-previa-servicio">
+              <img :src="servicioImagenTemporal" alt="Vista previa nueva">
+            </div>
+            <input id="edit-imagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" @change="elegirImagenEdicion">
+            <label v-if="servicioEditando.imagen_version" class="casilla">
+              <input v-model="editEliminarImagen" type="checkbox" :disabled="ocupado"> Eliminar imagen actual
+            </label>
+            <small>Subí una nueva imagen para reemplazar la actual o marcá para eliminarla.</small>
+            <div class="acciones">
+              <button :disabled="ocupado">Guardar cambios</button>
+              <button type="button" class="secundario" :disabled="ocupado" @click="cancelarEdicion">Cancelar</button>
+            </div>
+          </form>
+        </section>
       </div>
     </main>
   </div>
@@ -323,7 +570,29 @@ small { font-size: .79rem; color: #526255; }
 .error { background: #f9e3df; color: #75271f; }
 .mensaje { background: #e4efdf; color: #194832; }
 
+.panel-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.lista-servicios { margin: .75rem 0 0; padding: 0; list-style: none; }
+.lista-servicios li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem 0; border-bottom: 1px solid #e4dac3; font-size: .88rem; }
+.lista-servicios li.oculto { opacity: .5; }
+.servicio-info { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.servicio-orden { width: 1.6rem; height: 1.6rem; display: flex; align-items: center; justify-content: center; background: #214d3a; color: #fffdfa; border-radius: 50%; font-size: .75rem; font-weight: 700; flex-shrink: 0; }
+.servicio-detalle { min-width: 0; }
+.servicio-detalle strong { display: block; }
+.servicio-detalle small { display: block; color: #526255; }
+.servicio-acciones { display: flex; align-items: center; gap: .35rem; flex-shrink: 0; }
+.servicio-acciones button.icono { padding: .3rem .45rem; font-size: .9rem; }
+.servicio-acciones button.peligro { background: #75271f; border-color: #75271f; }
+.badge { display: inline-block; font-size: .7rem; padding: .1rem .4rem; border-radius: .3rem; background: #e4efdf; color: #194832; margin-left: .3rem; }
+.badge.sin-imagen { background: #f9e3df; color: #75271f; }
+.formulario-servicio { margin-top: 1.25rem; }
+.formulario-servicio textarea { min-width: 0; width: 100%; padding: .62rem .7rem; border: 1px solid #aaab98; border-radius: .4rem; background: #fffdf7; color: #15372a; font: inherit; resize: vertical; }
+.vista-previa-servicio, .imagen-actual { margin: .5rem 0; }
+.vista-previa-servicio img, .imagen-actual img { max-width: 20rem; height: auto; border-radius: .5rem; border: 1px solid #e4dac3; }
+.vacío { color: #526255; font-style: italic; margin: 1rem 0 0; }
+
 @media (max-width: 46rem) {
   .paneles { grid-template-columns: 1fr; }
+  .lista-servicios li { flex-direction: column; align-items: flex-start; }
+  .servicio-acciones { width: 100%; justify-content: flex-start; }
 }
 </style>

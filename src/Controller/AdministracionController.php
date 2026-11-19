@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Administracion\ConfiguracionPortada;
 use App\Administracion\SesionAdministrativa;
+use App\Administracion\ServiciosPortada;
 use App\Administracion\UsuariosAdministrativos;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
@@ -21,6 +22,7 @@ final readonly class AdministracionController
     public function __construct(
         private SesionAdministrativa $sesion,
         private ConfiguracionPortada $portada,
+        private ServiciosPortada $servicios,
         private UsuariosAdministrativos $usuarios,
     ) {
     }
@@ -143,6 +145,111 @@ final readonly class AdministracionController
         }
 
         return $this->respuesta(['usuarios' => $this->usuarios->listar()]);
+    }
+
+    #[Route('/servicios', methods: ['GET'])]
+    public function listarServicios(Request $peticion): JsonResponse
+    {
+        $this->sesion->exigir($peticion);
+        return $this->respuesta(['servicios' => $this->servicios->listar()]);
+    }
+
+    #[Route('/servicios', methods: ['POST'])]
+    public function crearServicio(Request $peticion): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        $archivo = $peticion->files->get('imagen');
+        if ($archivo !== null && !$archivo instanceof UploadedFile) {
+            return $this->error('Elegí un solo archivo.', 422);
+        }
+
+        try {
+            $nombre = $peticion->request->getString('nombre');
+            $descripcionCorta = $peticion->request->getString('descripcion_corta');
+            $detalle = $peticion->request->getString('detalle');
+            if ($nombre === '' || $descripcionCorta === '' || $detalle === '') {
+                return $this->error('Completá nombre, descripción corta y detalle.', 422);
+            }
+            $id = $this->servicios->crear($nombre, $descripcionCorta, $detalle, $archivo, $usuario['id']);
+        } catch (InvalidArgumentException $error) {
+            return $this->error($error->getMessage(), 422);
+        }
+
+        return $this->respuesta(['servicios' => $this->servicios->listar(), 'creado' => $id], 201);
+    }
+
+    #[Route('/servicios/{id}', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
+    public function actualizarServicio(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        $archivo = $peticion->files->get('imagen');
+        if ($archivo !== null && !$archivo instanceof UploadedFile) {
+            return $this->error('Elegí un solo archivo.', 422);
+        }
+
+        try {
+            $nombre = $peticion->request->getString('nombre');
+            $descripcionCorta = $peticion->request->getString('descripcion_corta');
+            $detalle = $peticion->request->getString('detalle');
+            $eliminarImagen = $peticion->request->getString('eliminar_imagen') === '1';
+            if ($nombre === '' || $descripcionCorta === '' || $detalle === '') {
+                return $this->error('Completá nombre, descripción corta y detalle.', 422);
+            }
+            $this->servicios->actualizar((int)$id, $nombre, $descripcionCorta, $detalle, $archivo, $eliminarImagen, $usuario['id']);
+        } catch (InvalidArgumentException $error) {
+            return $this->error($error->getMessage(), 422);
+        }
+
+        return $this->respuesta(['servicios' => $this->servicios->listar()]);
+    }
+
+    #[Route('/servicios/{id}', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['DELETE'])]
+    public function eliminarServicio(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+
+        try {
+            $this->servicios->eliminar((int)$id, $usuario['id']);
+        } catch (InvalidArgumentException $error) {
+            return $this->error($error->getMessage(), 422);
+        }
+
+        return $this->respuesta(['servicios' => $this->servicios->listar()]);
+    }
+
+    #[Route('/servicios/{id}/orden', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
+    public function cambiarOrdenServicio(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+
+        try {
+            $orden = $peticion->request->getInt('orden');
+            $this->servicios->cambiarOrden((int)$id, $orden, $usuario['id']);
+        } catch (InvalidArgumentException $error) {
+            return $this->error($error->getMessage(), 422);
+        }
+
+        return $this->respuesta(['servicios' => $this->servicios->listar()]);
+    }
+
+    #[Route('/servicios/{id}/visible', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
+    public function cambiarVisibilidadServicio(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+
+        try {
+            $visible = $peticion->request->getBoolean('visible');
+            $this->servicios->cambiarVisibilidad((int)$id, $visible, $usuario['id']);
+        } catch (InvalidArgumentException $error) {
+            return $this->error($error->getMessage(), 422);
+        }
+
+        return $this->respuesta(['servicios' => $this->servicios->listar()]);
     }
 
     private function error(string $mensaje, int $estado): JsonResponse

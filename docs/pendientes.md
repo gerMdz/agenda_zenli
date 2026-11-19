@@ -15,6 +15,10 @@
 
 No transformar preguntas pendientes en reglas asumidas por defecto sin aprobación del centro.
 
+## Servicios de la portada
+
+- Las imágenes de los 4 servicios iniciales deben subirse desde `/admin` para reemplazar el placeholder. El archivo `masajes.webp` (sprite de imágenes) deja de ser necesario una vez que cada servicio tiene su imagen.
+
 ## Integración de agenda
 
 - Resolver el paso entre inicios que usará la consulta pública y cómo se configurará.
