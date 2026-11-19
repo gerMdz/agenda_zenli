@@ -41,6 +41,8 @@ const editDetalle = ref('')
 const editArchivo = ref(null)
 const editEliminarImagen = ref(false)
 const servicioImagenTemporal = ref(null)
+const crearError = ref('')
+const editarError = ref('')
 
 async function api(ruta, { method = 'GET', datos } = {}) {
   const headers = { Accept: 'application/json' }
@@ -231,6 +233,8 @@ function iniciarCreacion() {
   nuevoDetalle.value = ''
   nuevoArchivo.value = null
   servicioImagenTemporal.value = null
+  crearError.value = ''
+  error.value = ''
 }
 
 function cancelarCreacion() {
@@ -241,33 +245,42 @@ function cancelarCreacion() {
   nuevoArchivo.value = null
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
   servicioImagenTemporal.value = null
+  crearError.value = ''
 }
 
 function elegirImagenServicio(evento) {
   const archivo = evento.target.files[0]
   if (!archivo) return
   if (archivo.size > 4 * 1024 * 1024) {
-    error.value = 'La imagen supera los 4 MB.'
+    crearError.value = 'La imagen supera los 4 MB.'
     evento.target.value = ''
     return
   }
+  crearError.value = ''
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
   servicioImagenTemporal.value = URL.createObjectURL(archivo)
   nuevoArchivo.value = archivo
 }
 
 function crearServicio() {
-  return ejecutar(async () => {
+  crearError.value = ''
+  if (ocupado.value) return
+  ocupado.value = true
+  try {
     const datos = new FormData()
     datos.set('nombre', nuevoNombre.value)
     datos.set('descripcion_corta', nuevoDescCorta.value)
     datos.set('detalle', nuevoDetalle.value)
     if (nuevoArchivo.value) datos.set('imagen', nuevoArchivo.value)
-    const resultado = await api('/api/admin/servicios', { method: 'POST', datos })
-    servicios.value = resultado.servicios
+    const resultado = api('/api/admin/servicios', { method: 'POST', datos })
+    servicios.value = (await resultado).servicios
     cancelarCreacion()
     mensaje.value = 'Servicio creado.'
-  })
+  } catch (fallo) {
+    crearError.value = fallo.message
+  } finally {
+    ocupado.value = false
+  }
 }
 
 function iniciarEdicion(servicio) {
@@ -279,6 +292,8 @@ function iniciarEdicion(servicio) {
   editEliminarImagen.value = false
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
   servicioImagenTemporal.value = null
+  editarError.value = ''
+  error.value = ''
 }
 
 function cancelarEdicion() {
@@ -290,16 +305,18 @@ function cancelarEdicion() {
   editEliminarImagen.value = false
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
   servicioImagenTemporal.value = null
+  editarError.value = ''
 }
 
 function elegirImagenEdicion(evento) {
   const archivo = evento.target.files[0]
   if (!archivo) return
   if (archivo.size > 4 * 1024 * 1024) {
-    error.value = 'La imagen supera los 4 MB.'
+    editarError.value = 'La imagen supera los 4 MB.'
     evento.target.value = ''
     return
   }
+  editarError.value = ''
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
   servicioImagenTemporal.value = URL.createObjectURL(archivo)
   editArchivo.value = archivo
@@ -307,18 +324,25 @@ function elegirImagenEdicion(evento) {
 }
 
 function guardarEdicion() {
-  return ejecutar(async () => {
+  editarError.value = ''
+  if (ocupado.value) return
+  ocupado.value = true
+  try {
     const datos = new FormData()
     datos.set('nombre', editNombre.value)
     datos.set('descripcion_corta', editDescCorta.value)
     datos.set('detalle', editDetalle.value)
     if (editArchivo.value) datos.set('imagen', editArchivo.value)
     if (editEliminarImagen.value) datos.set('eliminar_imagen', '1')
-    const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'PATCH', datos })
-    servicios.value = resultado.servicios
+    const resultado = api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'PATCH', datos })
+    servicios.value = (await resultado).servicios
     cancelarEdicion()
     mensaje.value = 'Servicio actualizado.'
-  })
+  } catch (fallo) {
+    editarError.value = fallo.message
+  } finally {
+    ocupado.value = false
+  }
 }
 
 async function eliminarServicio(id) {
@@ -482,6 +506,7 @@ onBeforeUnmount(() => {
 
           <!-- Formulario crear -->
           <form v-if="servicioCreando" class="formulario-servicio" @submit.prevent="crearServicio">
+            <p v-if="crearError" class="error inline" role="alert">{{ crearError }}</p>
             <h3>Nuevo servicio</h3>
             <label for="nuevo-nombre">Nombre</label>
             <input id="nuevo-nombre" v-model="nuevoNombre" type="text" maxlength="100" placeholder="Ej: Descontracturante" :disabled="ocupado" required>
@@ -503,6 +528,7 @@ onBeforeUnmount(() => {
 
           <!-- Formulario editar -->
           <form v-if="servicioEditando" class="formulario-servicio" :key="servicioEditando.id" @submit.prevent="guardarEdicion">
+            <p v-if="editarError" class="error inline" role="alert">{{ editarError }}</p>
             <h3>Editar: {{ servicioEditando.nombre }}</h3>
             <label for="edit-nombre">Nombre</label>
             <input id="edit-nombre" v-model="editNombre" type="text" maxlength="100" :disabled="ocupado" required>
@@ -569,6 +595,7 @@ small { font-size: .79rem; color: #526255; }
 .formulario-cuenta { margin-top: 1.25rem; }
 .error, .mensaje { border-radius: .4rem; padding: .65rem .8rem; }
 .error { background: #f9e3df; color: #75271f; }
+.error.inline { margin: 0 0 .5rem; }
 .mensaje { background: #e4efdf; color: #194832; }
 
 .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
