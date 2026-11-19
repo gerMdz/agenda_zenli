@@ -143,7 +143,7 @@ onMounted(async () => {
       <section id="ubicacion" class="ancho datos" aria-label="Ubicación, horarios y consultas">
         <div v-if="direccion">
           <h2>Ubicación</h2>
-          <address><a :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccion)}`">{{ direccion }} ↗</a></address>
+          <address><a :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccion)}`" target="_blank" rel="noopener noreferrer">{{ direccion }} ↗</a></address>
         </div>
         <div v-if="horarios">
           <h2>Horarios del centro</h2>
@@ -151,9 +151,9 @@ onMounted(async () => {
         </div>
         <div>
           <h2>Consultas</h2>
-          <a class="telefono" :href="enlaceContacto">{{ telefonoVisible }} ↗</a>
+          <a class="telefono" :href="enlaceContacto" target="_blank" rel="noopener noreferrer">{{ telefonoVisible }} ↗</a>
           <ul v-if="redes.length" class="redes" aria-label="Redes sociales">
-            <li v-for="red in redes" :key="red.nombre"><a :href="red.enlace">{{ red.nombre }} ↗</a></li>
+            <li v-for="red in redes" :key="red.nombre"><a :href="red.enlace" target="_blank" rel="noopener noreferrer">{{ red.nombre }} ↗</a></li>
           </ul>
         </div>
       </section>
