@@ -12,7 +12,9 @@ Las migraciones de la agenda v2 crean estas 18 tablas:
 
 La migración de administración agrega `configuracion_portada` para el teléfono, la imagen y el último autor del cambio, e `intentos_acceso_admin` para el límite de intentos de inicio de sesión. La migración `Version20261119000200` agrega los enlaces opcionales de Instagram y Facebook a `configuracion_portada`.
 
-La migración `Version20261119000300` agrega `servicios_portada` para gestionar los masajes que se muestran en la portada pública. Cada servicio tiene nombre, descripción corta (pie de tarjeta), detalle extenso (modal), imagen individual (archivo binario con versión SHA-256), orden de visualización, flag de visibilidad y auditoría (autor y fecha). Los 4 servicios iniciales se crean con los datos de los tratamientos que estaban hardcodeados en el frontend.
+La migración `Version20261119000300` agrega `servicios_portada` para gestionar los masajes que se muestran en la portada pública. Cada servicio tiene nombre, descripción corta (pie de tarjeta), detalle extenso (modal), imagen individual (archivo binario con versión SHA-256), orden de visualización, flag de visibilidad y auditoría (autor y fecha). La migración no inserta servicios iniciales.
+
+La migración `Version20261119000400` agrega dirección y horarios informativos a `configuracion_portada`, conservando inicialmente los textos publicados; no configura disponibilidad de agenda.
 
 Una `reserva` es la cabecera comercial; `reserva_participantes` identifica participantes y `reserva_sesiones` representa cada tratamiento, profesional e intervalo. `servicios` define ofertas reservables y `servicio_sesiones` su composición. Una reserva puede tener varias sesiones consecutivas. El recurso físico se ocupa por sesión.
 

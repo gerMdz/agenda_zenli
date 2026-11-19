@@ -12,6 +12,7 @@
 10. Método de verificación del teléfono y comunicaciones por correo/WhatsApp.
 11. Política de pagos/señas, si existiera (no definida).
 12. Confirmar dirección, identidad visual y contenidos públicos vigentes.
+13. Confirmar los horarios generales publicados del centro; son independientes de las franjas de cada profesional.
 
 No transformar preguntas pendientes en reglas asumidas por defecto sin aprobación del centro.
 

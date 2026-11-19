@@ -170,17 +170,35 @@ final readonly class ServiciosPortada
         $this->conexion->executeStatement('DELETE FROM servicios_portada WHERE id = ?', [$id]);
     }
 
-    public function cambiarOrden(int $id, int $nuevoOrden, string $autor): void
+    public function mover(int $id, int $direccion, string $autor): array
     {
-        $existente = $this->obtener($id);
-        if ($existente === false) {
-            throw new InvalidArgumentException('El servicio no existe.');
+        if (!in_array($direccion, [-1, 1], true)) {
+            throw new InvalidArgumentException('La dirección del movimiento no es válida.');
         }
 
-        $this->conexion->executeStatement(
-            'UPDATE servicios_portada SET orden = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
-            [$nuevoOrden, $autor, $id]
-        );
+        return $this->conexion->transactional(function (Connection $conexion) use ($id, $direccion, $autor): array {
+            $conexion->executeStatement('LOCK TABLE servicios_portada IN SHARE ROW EXCLUSIVE MODE');
+            $lista = $this->listar();
+            $indice = array_search($id, array_map(static fn (array $servicio): int => (int) $servicio['id'], $lista), true);
+            if ($indice === false) {
+                throw new InvalidArgumentException('El servicio no existe.');
+            }
+            $destino = $indice + $direccion;
+            if ($destino < 0 || $destino >= count($lista)) {
+                throw new InvalidArgumentException('El servicio no se puede mover en esa dirección.');
+            }
+            [$lista[$indice], $lista[$destino]] = [$lista[$destino], $lista[$indice]];
+            foreach ($lista as $orden => $servicio) {
+                if ((int) $servicio['orden'] !== $orden || $orden === $indice || $orden === $destino) {
+                    $conexion->executeStatement(
+                        'UPDATE servicios_portada SET orden = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
+                        [$orden, $autor, $servicio['id']],
+                    );
+                }
+            }
+
+            return $this->listar();
+        });
     }
 
     public function cambiarVisibilidad(int $id, bool $visible, string $autor): void

@@ -84,6 +84,8 @@ final readonly class AdministracionController
                 $usuario['id'],
                 $peticion->request->has('instagram') ? $peticion->request->getString('instagram') : null,
                 $peticion->request->has('facebook') ? $peticion->request->getString('facebook') : null,
+                $peticion->request->has('direccion') ? $peticion->request->getString('direccion') : null,
+                $peticion->request->has('horarios') ? $peticion->request->getString('horarios') : null,
             );
         } catch (InvalidArgumentException $error) {
             return $this->error($error->getMessage(), 422);
@@ -227,13 +229,19 @@ final readonly class AdministracionController
         $this->sesion->verificarToken($peticion);
 
         try {
-            $orden = $peticion->request->getInt('orden');
-            $this->servicios->cambiarOrden((int)$id, $orden, $usuario['id']);
+            $datos = $peticion->toArray();
+            $direccion = $datos['direccion'] ?? null;
+            if (!is_int($direccion)) {
+                throw new InvalidArgumentException('La dirección del movimiento no es válida.');
+            }
+            $servicios = $this->servicios->mover((int)$id, $direccion, $usuario['id']);
+        } catch (JsonException) {
+            return $this->error('La dirección del movimiento no es válida.', 400);
         } catch (InvalidArgumentException $error) {
             return $this->error($error->getMessage(), 422);
         }
 
-        return $this->respuesta(['servicios' => $this->servicios->listar()]);
+        return $this->respuesta(['servicios' => $servicios]);
     }
 
     #[Route('/servicios/{id}/visible', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]

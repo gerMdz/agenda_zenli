@@ -28,3 +28,4 @@
 - Las cuentas administradoras ingresan por sesión en `/admin`. Pueden configurar el teléfono y la imagen de la portada, gestionar los servicios de la portada y administrar otras cuentas. La configuración y el último autor del cambio se guardan en PostgreSQL.
 - Los perfiles de Instagram y Facebook son opcionales y se editan en `/admin`. La portada muestra los enlaces configurados junto a los datos de contacto.
 - Los servicios de la portada se gestionan desde `/admin` con CRUD completo: crear, editar, eliminar, reordenar y mostrar/ocultar. Cada servicio tiene nombre, descripción corta, detalle extenso e imagen individual. La portada los carga desde `/api/servicios` y muestra un modal con detalle al hacer clic en "Ver detalle".
+- La dirección y los horarios generales publicados se editan desde administración como texto informativo; no determinan disponibilidad ni horarios de profesionales. Los valores anteriores se conservan inicialmente, pendientes de confirmación.

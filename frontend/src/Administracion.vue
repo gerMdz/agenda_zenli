@@ -11,6 +11,8 @@ const error = ref('')
 const email = ref('')
 const clave = ref('')
 const telefono = ref('')
+const direccion = ref('')
+const horarios = ref('')
 const instagram = ref('')
 const facebook = ref('')
 const imagenGuardada = ref(null)
@@ -101,6 +103,8 @@ async function cargarPanel() {
 
 function aplicarPortada(portada) {
   telefono.value = portada.telefono
+  direccion.value = portada.direccion ?? ''
+  horarios.value = portada.horarios ?? ''
   instagram.value = portada.instagram ?? ''
   facebook.value = portada.facebook ?? ''
   imagenGuardada.value = portada.imagen
@@ -366,21 +370,9 @@ async function cambiarVisibilidad(id, visible) {
 }
 
 async function moverServicio(id, direccion) {
-  const lista = servicios.value
-  const idx = lista.findIndex(s => s.id === id)
-  const nuevoIdx = idx + direccion
-  if (nuevoIdx < 0 || nuevoIdx >= lista.length) return
-
-  const ordenActual = lista[idx].orden
-  const ordenDestino = lista[nuevoIdx].orden
-
-  // Intercambiar órdenes
   await ejecutar(async () => {
-    const resultados = await Promise.all([
-      api(`/api/admin/servicios/${lista[idx].id}/orden`, { method: 'PATCH', datos: { orden: ordenDestino } }),
-      api(`/api/admin/servicios/${lista[nuevoIdx].id}/orden`, { method: 'PATCH', datos: { orden: ordenActual } }),
-    ])
-    servicios.value = resultados[0].servicios
+    const resultado = await api(`/api/admin/servicios/${id}/orden`, { method: 'PATCH', datos: { direccion } })
+    servicios.value = resultado.servicios
   })
 }
 
@@ -427,6 +419,11 @@ onBeforeUnmount(() => {
           <form @submit.prevent="guardarPortada">
             <label for="telefono">Teléfono de WhatsApp</label>
             <input id="telefono" v-model="telefono" name="telefono" type="tel" autocomplete="tel" placeholder="+54…" :disabled="ocupado" required>
+            <label for="direccion">Dirección (opcional)</label>
+            <input id="direccion" v-model="direccion" name="direccion" type="text" maxlength="255" :disabled="ocupado">
+            <label for="horarios">Horarios generales del centro (opcional)</label>
+            <textarea id="horarios" v-model="horarios" name="horarios" rows="3" maxlength="2000" aria-describedby="ayuda-horarios" :disabled="ocupado"></textarea>
+            <small id="ayuda-horarios">Son informativos y no configuran la disponibilidad de las profesionales. Dejá vacío para ocultar el dato.</small>
             <label for="instagram">Instagram (opcional)</label>
             <input id="instagram" v-model.trim="instagram" name="instagram" type="url" placeholder="https://www.instagram.com/…" maxlength="2048" aria-describedby="ayuda-redes" :disabled="ocupado">
             <label for="facebook">Facebook (opcional)</label>

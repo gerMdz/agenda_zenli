@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import portadaOriginal from './image/portada.webp'
 
 const telefono = ref('+5492616356192')
+const direccion = ref('Espejo 167, Ciudad de Mendoza')
+const horarios = ref('Lun, mié y vie · 10:00 a 20:00\nMar, jue y sáb · 11:00 a 19:00')
 const imagen = ref(portadaOriginal)
 const redes = ref([])
 const servicios = ref([])
@@ -34,6 +36,8 @@ onMounted(async () => {
     if (respPortada.ok) {
       const portada = await respPortada.json()
       telefono.value = portada.telefono
+      direccion.value = portada.direccion
+      horarios.value = portada.horarios
       if (portada.imagen) imagen.value = portada.imagen
       redes.value = [
         { nombre: 'Instagram', enlace: portada.instagram },
@@ -137,13 +141,13 @@ onMounted(async () => {
       </section>
 
       <section id="ubicacion" class="ancho datos" aria-label="Ubicación, horarios y consultas">
-        <div>
+        <div v-if="direccion">
           <h2>Ubicación</h2>
-          <address><a href="https://www.google.com/maps/search/?api=1&query=Espejo%20167%2C%20Ciudad%20de%20Mendoza">Espejo 167, Ciudad de Mendoza ↗</a></address>
+          <address><a :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccion)}`">{{ direccion }} ↗</a></address>
         </div>
-        <div>
+        <div v-if="horarios">
           <h2>Horarios del centro</h2>
-          <p>Lun, mié y vie · 10:00 a 20:00<br>Mar, jue y sáb · 11:00 a 19:00</p>
+          <p class="horarios">{{ horarios }}</p>
         </div>
         <div>
           <h2>Consultas</h2>
@@ -242,6 +246,7 @@ nav a:hover { text-decoration: underline; color: var(--oro); }
 .datos a { color: inherit; text-underline-offset: .2em; }
 .datos address { font-style: normal; }
 .datos p { margin: 0; }
+.horarios { white-space: pre-line; }
 .telefono { font-weight: 650; }
 .redes { display: flex; flex-wrap: wrap; gap: .35rem 1rem; padding: 0; margin: .5rem 0 0; list-style: none; }
 .pie { padding-block: 1.1rem; background: var(--verde-oscuro); color: #f4dfb2; font-size: .82rem; }
