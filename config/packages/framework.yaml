@@ -1,3 +1,11 @@
 framework:
     secret: '%env(APP_SECRET)%'
-    session: true
+    session:
+        cookie_httponly: true
+        cookie_samesite: lax
+        cookie_secure: auto
+
+when@prod:
+    framework:
+        session:
+            cookie_secure: true

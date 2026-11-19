@@ -2,15 +2,25 @@ import { createApp } from 'vue'
 import PrimeVue from 'primevue/config'
 import Aura from '@primeuix/themes/aura'
 import App from './App.vue'
-import Demo from './Demo.vue'
+import './base.css'
 
-const isDemo = ['/demo', '/demo/'].includes(window.location.pathname)
+async function iniciar() {
+  const ruta = window.location.pathname.replace(/\/$/, '')
+  let vista = App
+  if (ruta === '/admin') {
+    vista = (await import('./Administracion.vue')).default
+  } else if (ruta === '/demo') {
+    vista = (await import('./Demo.vue')).default
+  }
 
-createApp(isDemo ? Demo : App)
-  .use(PrimeVue, {
-    theme: {
-      preset: Aura,
-      options: { darkModeSelector: false },
-    },
-  })
-  .mount('#app')
+  createApp(vista)
+    .use(PrimeVue, {
+      theme: {
+        preset: Aura,
+        options: { darkModeSelector: false },
+      },
+    })
+    .mount('#app')
+}
+
+iniciar()

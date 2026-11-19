@@ -1,6 +1,6 @@
 # Modelo de datos — borrador v2
 
-Las migraciones incluidas crean estas 18 tablas:
+Las migraciones de la agenda v2 crean estas 18 tablas:
 
 - Identidad: `usuarios`, `profesionales`.
 - Clientes: `clientes`, `clientes_restricciones`.
@@ -9,6 +9,8 @@ Las migraciones incluidas crean estas 18 tablas:
 - Reservas: `reservas`, `reserva_participantes`, `reserva_sesiones`, `ocupaciones_profesionales`, `ocupaciones_recursos`.
 - Comercial: `promociones`, `reserva_promociones`.
 - Control: `reservas_eventos`, `politicas_reservas`.
+
+La migración de administración agrega `configuracion_portada` para el teléfono, la imagen y el último autor del cambio, e `intentos_acceso_admin` para el límite de intentos de inicio de sesión.
 
 Una `reserva` es la cabecera comercial; `reserva_participantes` identifica participantes y `reserva_sesiones` representa cada tratamiento, profesional e intervalo. `servicios` define ofertas reservables y `servicio_sesiones` su composición. Una reserva puede tener varias sesiones consecutivas. El recurso físico se ocupa por sesión.
 

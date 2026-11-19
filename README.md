@@ -42,6 +42,19 @@ npm run dev
 
 Vite atiende en `http://localhost:5173/` y reenvía `/health` y `/api` al backend de Compose. Si cambiaste el puerto del backend, pasá `ZENLI_BACKEND_URL` al iniciar Vite. Para actualizar el frontend servido por Compose, reconstruí Nginx con `docker compose up --build -d nginx`.
 
+## Administración de la portada
+
+En un entorno de desarrollo, revisá y aplicá las migraciones, y creá la primera cuenta administradora desde la terminal. El comando pide la contraseña de forma interactiva.
+
+```sh
+docker compose exec --user www-data app php bin/console doctrine:migrations:migrate
+docker compose exec --user www-data app php bin/console zenli:admin:crear admin@ejemplo.com
+```
+
+Entrá a `/admin`. Podés actualizar el teléfono de WhatsApp en formato internacional, subir una imagen JPG, PNG o WebP de hasta 4 MB o volver a la imagen original. En el mismo panel podés crear cuentas administradoras, cambiar sus contraseñas y activar o desactivar su acceso. Los cambios de portada se publican al guardar.
+
+En producción el panel utiliza cookies seguras y se debe abrir por HTTPS. Si el proxy HTTPS aplica un límite al cuerpo de la solicitud, configurá al menos 5 MB para `/api/admin/portada`.
+
 ## Despliegue en el VPS
 
 Usá `compose.prod.yaml` como archivo independiente. La configuración de producción usa imágenes con el código incluido y un volumen PostgreSQL propio. Requiere Docker Compose y acceso a los registros de imágenes, Packagist y npm durante la compilación.

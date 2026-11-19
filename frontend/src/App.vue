@@ -1,98 +1,213 @@
 <script setup>
-import brandImage from './image/index.png'
+import { computed, onMounted, ref } from 'vue'
+import portadaOriginal from './image/portada.webp'
+
+const telefono = ref('+5492616356192')
+const imagen = ref(portadaOriginal)
+const enlaceContacto = computed(() => `https://wa.me/${telefono.value.slice(1)}`)
+const telefonoVisible = computed(() =>
+  telefono.value === '+5492616356192' ? '261 635 6192' : telefono.value,
+)
+
+const tratamientos = [
+  { nombre: 'Descontracturante', descripcion: 'Presión intensa y técnicas de masaje tailandés.', foto: 'descontracturante' },
+  { nombre: 'Relajante', descripcion: 'Presión suave y técnicas Lomi Lomi.', foto: 'relajante' },
+  { nombre: 'Tailandés', descripcion: 'Trabajo corporal y estiramientos.', foto: 'tailandes' },
+  { nombre: 'Lomi Lomi', descripcion: 'Masaje hawaiano de movimientos envolventes.', foto: 'lomi-lomi' },
+]
+
+onMounted(async () => {
+  try {
+    const respuesta = await fetch('/api/portada')
+    if (!respuesta.ok) return
+    const portada = await respuesta.json()
+    telefono.value = portada.telefono
+    if (portada.imagen) imagen.value = portada.imagen
+  } catch {
+    // Los datos incluidos en la portada permiten mostrarla aunque la API no esté disponible.
+  }
+})
 </script>
 
 <template>
-  <main class="cover" aria-labelledby="cover-title">
-    <header class="brand">
-      <h1 id="cover-title">
-        <img :src="brandImage" alt="Zenli">
-      </h1>
-      <p>Centro de masajes</p>
+  <div class="sitio" id="inicio">
+    <header class="cabecera">
+      <div class="ancho cabecera-interior">
+        <a class="marca" href="#inicio" aria-label="Zenli, inicio">
+          <span class="loto" aria-hidden="true"><i></i></span>
+          <span class="nombre-marca">Zenli</span>
+          <span class="actividad">Centro de masajes</span>
+        </a>
+        <nav aria-label="Navegación principal">
+          <a href="#inicio">Inicio</a>
+          <a href="#masajes">Masajes</a>
+          <a href="#metodo">Método Zenli</a>
+          <a href="#nosotras">Nosotras</a>
+          <a href="#ubicacion">Ubicación</a>
+        </nav>
+        <a class="boton-dorado contacto-cabecera" :href="enlaceContacto" aria-label="Consultas por WhatsApp"><span class="etiqueta-contacto">Consultas por </span>WhatsApp</a>
+      </div>
     </header>
 
-    <section class="details" aria-label="Información del centro">
-      <address>
-        <a href="https://www.google.com/maps/search/?api=1&query=Espejo%20167%2C%20Ciudad%20de%20Mendoza">
-          Espejo 167, Ciudad de Mendoza
-        </a>
-      </address>
-      <p>Lun, mié y vie · 10:00 a 20:00<br>Mar, jue y sáb · 11:00 a 19:00</p>
-      <a class="contact" href="https://wa.me/5492616356192">Reservas al 261 635 6192</a>
-    </section>
-  </main>
+    <main>
+      <section class="hero" aria-labelledby="titulo">
+        <img :src="imagen" alt="" fetchpriority="high" @error="imagen = portadaOriginal">
+        <div class="hero-texto">
+          <p class="ceja">Método Zenli</p>
+          <h1 id="titulo">Bienestar, equilibrio<br> y energía</h1>
+          <p>Masajes que combinan técnicas tradicionales y orientales para tu bienestar integral.</p>
+          <a class="boton-dorado" href="#masajes">Conocé nuestros masajes <span aria-hidden="true">↓</span></a>
+        </div>
+      </section>
+
+      <section class="metodo" id="metodo" aria-label="Método Zenli">
+        <div class="ancho pilares">
+          <div><span class="simbolo" aria-hidden="true">❋</span><div><h2>Cuerpo</h2><p>Alivio y bienestar</p></div></div>
+          <div><span class="simbolo" aria-hidden="true">✿</span><div><h2>Mente</h2><p>Pausa y claridad</p></div></div>
+          <div><span class="simbolo" aria-hidden="true">✧</span><div><h2>Energía</h2><p>Equilibrio y vitalidad</p></div></div>
+        </div>
+      </section>
+
+      <section id="masajes" class="ancho masajes" aria-labelledby="titulo-masajes">
+        <div class="titulo-seccion">
+          <span class="loto" aria-hidden="true"><i></i></span>
+          <h2 id="titulo-masajes">Nuestros masajes</h2>
+        </div>
+        <div class="tratamientos">
+          <article v-for="tratamiento in tratamientos" :key="tratamiento.nombre">
+            <div class="foto" :class="tratamiento.foto" aria-hidden="true"></div>
+            <div class="tratamiento-texto">
+              <h3>{{ tratamiento.nombre }}</h3>
+              <p>{{ tratamiento.descripcion }}</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="nosotras" class="ancho" aria-labelledby="titulo-nosotras">
+        <div class="nosotras">
+          <span class="loto" aria-hidden="true"><i></i></span>
+          <div>
+            <h2 id="titulo-nosotras">Nataly y Micaela</h2>
+            <p>Somos las profesionales de Zenli, nuestro centro de masajes en Mendoza.</p>
+          </div>
+          <a class="boton-dorado" :href="enlaceContacto">Escribinos <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+
+      <section id="ubicacion" class="ancho datos" aria-label="Ubicación, horarios y consultas">
+        <div>
+          <h2>Ubicación</h2>
+          <address><a href="https://www.google.com/maps/search/?api=1&query=Espejo%20167%2C%20Ciudad%20de%20Mendoza">Espejo 167, Ciudad de Mendoza ↗</a></address>
+        </div>
+        <div>
+          <h2>Horarios del centro</h2>
+          <p>Lun, mié y vie · 10:00 a 20:00<br>Mar, jue y sáb · 11:00 a 19:00</p>
+        </div>
+        <div>
+          <h2>Consultas</h2>
+          <a class="telefono" :href="enlaceContacto">{{ telefonoVisible }} ↗</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="pie"><div class="ancho">Zenli · Centro de masajes</div></footer>
+  </div>
 </template>
 
-<style>
-:root {
-  color: #f9f3e7;
-  background: #17382e;
+<style scoped>
+.sitio {
+  --verde: #092b20;
+  --verde-oscuro: #061b14;
+  --oro: #e9bf68;
+  --oro-oscuro: #79571c;
+  --borde: #e5dbc5;
+  color: var(--verde-oscuro);
+  background: #faf5e9;
   font-family: system-ui, sans-serif;
+  line-height: 1.55;
 }
 
-body {
-  margin: 0;
+.ancho { width: min(100% - 3rem, 75rem); margin-inline: auto; }
+.cabecera { background: var(--verde-oscuro); color: #fff6e5; border-bottom: 1px solid #e9bf6838; }
+.cabecera-interior { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding-block: .8rem; }
+.marca { display: grid; justify-items: center; color: var(--oro); text-decoration: none; }
+.nombre-marca { font: 400 2.75rem/.9 Georgia, serif; }
+.actividad { font-size: .61rem; letter-spacing: .125em; text-transform: uppercase; white-space: nowrap; margin-top: .32rem; color: #fff6e5; }
+.loto { width: 2.2rem; height: 1.2rem; display: inline-block; position: relative; color: inherit; }
+.loto::before, .loto::after, .loto i { content: ''; position: absolute; bottom: .1rem; left: 50%; width: .78rem; height: .78rem; border: 1.25px solid currentColor; border-radius: 85% 0 85% 0; }
+.loto i { transform: translateX(-50%) rotate(-45deg); bottom: .26rem; }
+.loto::before { transform: translateX(-105%) rotate(-78deg); }
+.loto::after { transform: translateX(4%) rotate(-12deg); }
+nav { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: .65rem 1.65rem; }
+nav a { color: inherit; font-size: .9rem; text-decoration: none; text-underline-offset: .32rem; }
+nav a:hover { text-decoration: underline; color: var(--oro); }
+.boton-dorado { display: inline-flex; gap: .65rem; align-items: center; justify-content: center; width: fit-content; padding: .73rem 1.24rem; border-radius: 2rem; color: var(--verde-oscuro); background: #eac26f; font-size: .91rem; font-weight: 700; text-decoration: none; box-shadow: inset 0 1px #fff3c9; }
+.boton-dorado:hover { background: #f3d28b; }
+.contacto-cabecera { display: inline-block; white-space: nowrap; }
+.hero { position: relative; isolation: isolate; display: grid; place-items: center; min-height: clamp(29rem, 39vw, 36rem); text-align: center; color: #fff8e7; background: var(--verde-oscuro); }
+.hero img, .hero::after { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hero img { object-fit: cover; z-index: -2; }
+.hero::after { content: ''; z-index: -1; background: radial-gradient(ellipse at center, #061811aa, #04150c22 85%), linear-gradient(#06181130, #06181150); }
+.hero-texto { padding: 3rem 1.25rem; max-width: 51rem; }
+.ceja { display: flex; align-items: center; justify-content: center; gap: .85rem; color: #f3d18c; letter-spacing: .22em; text-transform: uppercase; font-size: .76rem; font-weight: 650; }
+.ceja::before, .ceja::after { content: ''; width: clamp(1.5rem, 5vw, 4rem); height: 1px; background: var(--oro); }
+.hero h1 { margin: .6rem 0 1rem; font: italic 500 clamp(2.9rem, 6vw, 5.4rem)/1.03 Georgia, serif; text-shadow: 0 2px 20px #0009; }
+.hero-texto > p:nth-of-type(2) { max-width: 25rem; margin: 0 auto 1.5rem; font-size: clamp(1rem, 2vw, 1.2rem); }
+.metodo { border-block: 1px solid var(--borde); background: #f8efdc; }
+.pilares { display: grid; grid-template-columns: repeat(3, 1fr); padding-block: 1.3rem; }
+.pilares > div { display: flex; justify-content: center; align-items: center; gap: .85rem; padding-inline: .7rem; }
+.pilares > div + div { border-left: 1px solid var(--borde); }
+.simbolo { display: grid; place-items: center; flex: 0 0 2.8rem; height: 2.8rem; border: 1px solid #e3ca91; border-radius: 50%; background: #fef8e9; color: var(--oro-oscuro); font-size: 1.6rem; }
+.pilares h2, .pilares p { margin: 0; }
+.pilares h2 { font: bold 1.28rem Georgia, serif; }
+.pilares p { font-size: .89rem; }
+.masajes { padding-block: 3rem; }
+.titulo-seccion { display: grid; justify-items: center; color: var(--oro-oscuro); margin-bottom: 1.55rem; }
+.titulo-seccion h2 { display: flex; align-items: center; gap: clamp(.65rem, 2vw, 1.3rem); margin: .25rem 0 0; color: var(--verde-oscuro); text-align: center; font: 600 clamp(1.9rem, 4vw, 3rem)/1.1 Georgia, serif; }
+.titulo-seccion h2::before, .titulo-seccion h2::after { content: ''; width: clamp(1rem, 7vw, 5rem); height: 1px; background: #b9934f; }
+.tratamientos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.tratamientos article { overflow: hidden; border: 1px solid var(--borde); border-radius: 1rem; background: #fffaf0; text-align: center; box-shadow: 0 4px 12px #38281209; }
+.foto { position: relative; overflow: hidden; aspect-ratio: 1.6; background: #163426; }
+.foto::before { content: ''; position: absolute; inset-inline: 0; top: 50%; aspect-ratio: 1; transform: translateY(-50%); background-image: url('./image/masajes.webp'); background-size: 200% 200%; }
+.relajante::before { background-position: top right; }
+.tailandes::before { background-position: bottom left; }
+.lomi-lomi::before { background-position: bottom right; }
+.tratamiento-texto { padding: 1rem .75rem 1.15rem; }
+.tratamiento-texto h3 { margin: 0 0 .35rem; font: bold 1.18rem Georgia, serif; }
+.tratamiento-texto p { margin: 0; font-size: .9rem; color: #344238; }
+.nosotras { display: flex; align-items: center; gap: 1.2rem; padding: 1.45rem clamp(1rem, 4vw, 2.8rem); border-radius: 1rem; background: var(--verde); color: #fff6e5; }
+.nosotras > .loto { flex: 0 0 2.2rem; color: var(--oro); }
+.nosotras h2 { font: 600 1.6rem Georgia, serif; margin: 0 0 .2rem; color: #f6d995; }
+.nosotras p { margin: 0; }
+.nosotras a { margin-left: auto; flex-shrink: 0; }
+.datos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; padding-block: 2.4rem; }
+.datos h2 { margin: 0 0 .25rem; font: 700 1.18rem Georgia, serif; }
+.datos a { color: inherit; text-underline-offset: .2em; }
+.datos address { font-style: normal; }
+.datos p { margin: 0; }
+.telefono { font-weight: 650; }
+.pie { padding-block: 1.1rem; background: var(--verde-oscuro); color: #f4dfb2; font-size: .82rem; }
+a:focus-visible { outline: 2px solid #a87a2a; outline-offset: 4px; }
+
+@media (max-width: 55rem) {
+  .cabecera-interior { flex-wrap: wrap; gap: .8rem 1rem; }
+  nav { order: 1; width: 100%; padding: .4rem 0 .2rem; border-top: 1px solid #e9bf6838; }
 }
 
-.cover {
-  box-sizing: border-box;
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 2rem;
-  min-height: 100svh;
-  padding: 3rem 1.25rem;
-  text-align: center;
-}
-
-.brand h1 {
-  margin: 0;
-  font: 400 clamp(4.75rem, 16vw, 8rem) / 1 Georgia, serif;
-}
-
-.brand img {
-  display: block;
-  width: min(100%, 22rem);
-  max-height: 46vh;
-  object-fit: contain;
-  margin-inline: auto;
-  border-radius: 1rem;
-}
-
-.brand p {
-  color: #e9c887;
-  font-size: 0.85rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-}
-
-.details {
-  border-top: 1px solid #e9c88780;
-  padding: 1.5rem 0.5rem 0;
-  line-height: 1.65;
-}
-
-address {
-  font-style: normal;
-}
-
-address a {
-  color: inherit;
-  text-underline-offset: 0.2em;
-}
-
-.contact {
-  display: inline-block;
-  border-radius: 2rem;
-  padding: 0.65rem 1.2rem;
-  background: #e9c887;
-  color: #17382e;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-a:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 4px;
+@media (max-width: 43rem) {
+  .ancho { width: calc(100% - 2rem); }
+  .etiqueta-contacto { display: none; }
+  nav { gap: .42rem .72rem; }
+  nav a { font-size: .8rem; }
+  .hero img { object-position: 73% center; }
+  .tratamientos { grid-template-columns: repeat(2, 1fr); gap: .65rem; }
+  .pilares > div { flex-direction: column; gap: .35rem; text-align: center; padding-inline: .25rem; }
+  .pilares p { font-size: .78rem; }
+  .simbolo { width: 2.4rem; height: 2.4rem; flex-basis: auto; }
+  .nosotras { align-items: flex-start; flex-wrap: wrap; }
+  .nosotras > .loto { display: none; }
+  .nosotras a { margin-left: 0; }
+  .datos { grid-template-columns: 1fr; }
 }
 </style>

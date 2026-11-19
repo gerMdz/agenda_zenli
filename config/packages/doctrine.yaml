@@ -4,3 +4,4 @@ doctrine:
         server_version: '17'
     orm:
         auto_mapping: false
+        enable_native_lazy_objects: true

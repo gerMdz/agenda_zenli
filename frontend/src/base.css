@@ -1,0 +1,13 @@
+:root {
+  color: #112f24;
+  background: #faf5e9;
+  font-family: system-ui, sans-serif;
+}
+
+body { margin: 0; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}

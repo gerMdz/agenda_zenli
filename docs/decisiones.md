@@ -21,3 +21,8 @@
 - La preparación y la limpieza ocupan tanto a la profesional como al espacio. Se usan intervalos con inicio incluido y fin excluido, igual que en las exclusiones del borrador PostgreSQL.
 - El servicio interno `AgendaPostgresql` lee las franjas, los bloqueos y las ocupaciones de `ESPACIO_1`. Solo consulta servicios públicos, activos y de una sesión individual. Se conservan las ocupaciones existentes como fuente de disponibilidad hasta que se liberen.
 - Para registrar una reserva de confirmación automática, el servicio bloquea la fila del espacio con `FOR UPDATE` en una transacción `READ COMMITTED`, vuelve a calcular el turno y guarda la reserva, sus ocupaciones y el evento de confirmación en la misma transacción. Las escrituras futuras de horarios y bloqueos deberán adquirir primero ese mismo bloqueo.
+
+## Portada y administración
+
+- La portada pública presenta los tratamientos, el centro y las consultas por WhatsApp. El teléfono inicial es el que ya estaba publicado en el sitio.
+- Las cuentas administradoras ingresan por sesión en `/admin`. Pueden configurar el teléfono y la imagen de la portada y gestionar otras cuentas administradoras. La configuración y el último autor del cambio se guardan en PostgreSQL.

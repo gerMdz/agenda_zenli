@@ -8,3 +8,9 @@ services:
 
     App\Agenda\Disponibilidad: ~
     App\Agenda\AgendaPostgresql: ~
+
+    App\Administracion\:
+        resource: ../src/Administracion/
+
+    App\Command\:
+        resource: ../src/Command/
