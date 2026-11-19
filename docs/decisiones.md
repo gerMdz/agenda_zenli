@@ -1,6 +1,6 @@
 # Decisiones confirmadas
 
-- Marca: **Zenli**. Una sola sede. Dirección mencionada en material aportado: Espejo 167, Ciudad de Mendoza (verificar vigencia antes de publicar).
+- Marca: **Zenli**. Una sola sede. Dirección confirmada: Espejo 167, Ciudad de Mendoza.
 - Profesionales: **Nataly y Micaela**. Atienden en días diferentes. Ambas realizan los mismos tratamientos, con horarios distintos.
 - Un lugar de atención compartido; capacidad inicial modelada como un recurso físico, pendiente confirmar equipamiento real.
 - La agenda es el núcleo del producto; sitio público mobile-first, reserva sin crear cuenta, administración separada.
@@ -28,4 +28,4 @@
 - Las cuentas administradoras ingresan por sesión en `/admin`. Pueden configurar el teléfono y la imagen de la portada, gestionar los servicios de la portada y administrar otras cuentas. La configuración y el último autor del cambio se guardan en PostgreSQL.
 - Los perfiles de Instagram y Facebook son opcionales y se editan en `/admin`. La portada muestra los enlaces configurados junto a los datos de contacto.
 - Los servicios de la portada se gestionan desde `/admin` con CRUD completo: crear, editar, eliminar, reordenar y mostrar/ocultar. Cada servicio tiene nombre, descripción corta, detalle extenso e imagen individual. La portada los carga desde `/api/servicios` y muestra un modal con detalle al hacer clic en "Ver detalle".
-- La dirección y los horarios generales publicados se editan desde administración como texto informativo; no determinan disponibilidad ni horarios de profesionales. Los valores anteriores se conservan inicialmente, pendientes de confirmación.
+- La dirección y los horarios generales publicados se editan desde administración como texto informativo; no determinan disponibilidad ni horarios de profesionales. Se confirmaron como vigentes los valores iniciales: lunes, miércoles y viernes de 10:00 a 20:00; martes, jueves y sábados de 11:00 a 19:00.
