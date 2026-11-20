@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Administracion\AgendaAdministrativa;
 use App\Agenda\AgendaPostgresql;
 use App\Agenda\Disponibilidad;
 use App\Agenda\TurnoNoDisponible;
@@ -16,8 +17,8 @@ use Psr\Log\NullLogger;
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
 
 spl_autoload_register(static function (string $clase): void {
-    if (str_starts_with($clase, 'App\\Agenda\\')) {
-        require __DIR__.'/../src/Agenda/'.substr($clase, strlen('App\\Agenda\\')).'.php';
+    if (str_starts_with($clase, 'App\\')) {
+        require __DIR__.'/../src/'.str_replace('\\', '/', substr($clase, 4)).'.php';
     }
 });
 
@@ -68,6 +69,11 @@ $conexion = conectar($socket, 'agenda-prueba');
 $agenda = new AgendaPostgresql($conexion, new Disponibilidad());
 foreach ([Version20261118000100::class, Version20261118000200::class] as $clase) {
     require __DIR__.'/../migrations/'.substr($clase, strrpos($clase, '\\') + 1).'.php';
+    aplicarMigracion($conexion, $clase);
+}
+
+function aplicarMigracion(Connection $conexion, string $clase): void
+{
     $migracion = new $clase($conexion, new NullLogger());
     $migracion->up(new Schema());
     $conexion->transactional(static function (Connection $conexion) use ($migracion): void {
@@ -167,3 +173,39 @@ try {
 }
 
 fwrite(STDOUT, "PostgreSQL: dos confirmaciones concurrentes, un solo ganador y sin escrituras parciales.\n");
+
+foreach (['20261119000300', '20261119000600'] as $version) {
+    require __DIR__.'/../migrations/Version'.$version.'.php';
+    aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
+}
+
+$conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripcion_corta, actualizado_por) VALUES (101, 'Sesión interna', 'Prueba', 'prueba')");
+$conexion->executeStatement("INSERT INTO usuarios (id, email, password_hash) VALUES (101, 'admin@example.test', 'prueba')");
+$conexion->executeStatement("INSERT INTO profesionales (id, nombre) VALUES (104, 'Prueba C')");
+$conexion->executeStatement("INSERT INTO recursos (id, codigo, nombre) VALUES (102, 'PRUEBA_2', 'Espacio dos'), (103, 'PRUEBA_3', 'Espacio tres')");
+$interna = new AgendaAdministrativa($conexion);
+$turno = [
+    'servicio' => '101', 'espacio' => '102', 'profesionales' => ['101', '102'],
+    'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
+];
+$interna->guardarPreparacion(['modo' => 'general', 'minutos' => 10]);
+$id = $interna->cargar($turno, '101');
+verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ?', [$id]) === 2, 'Un turno de equipo debe ocupar a ambas profesionales.');
+verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_recursos WHERE turno_admin_id = ?', [$id]) === 1, 'El equipo usa un solo espacio.');
+verificar($interna->consultar('2099-06-03')['turnos'][0]['profesionales'] === 'Prueba A, Prueba B', 'La agenda debe listar al equipo completo.');
+
+foreach ([
+    ['espacio' => '103', 'profesionales' => ['102']],
+    ['profesionales' => ['104']],
+    ['espacio' => '103', 'inicio' => '2099-06-03T13:10'],
+] as $cambios) {
+    try {
+        $interna->cargar(array_replace($turno, $cambios), '101');
+        throw new RuntimeException('La agenda aceptó un turno con conflicto de espacio, profesional o franja.');
+    } catch (TurnoNoDisponible) {
+    }
+}
+$interna->guardarPreparacion(['modo' => 'por_servicio', 'servicios' => ['101' => 0]]);
+$interna->cargar(array_replace($turno, ['espacio' => '103', 'profesionales' => ['104']]), '101');
+verificar(count($interna->consultar('2099-06-03')['turnos']) === 2, 'Otro espacio y otra profesional permiten cargar un turno simultáneo.');
+fwrite(STDOUT, "PostgreSQL: agenda interna, preparación, equipo, horarios y espacios verificados.\n");

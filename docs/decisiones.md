@@ -21,6 +21,8 @@
 - La preparación y la limpieza ocupan tanto a la profesional como al espacio. Se usan intervalos con inicio incluido y fin excluido, igual que en las exclusiones del borrador PostgreSQL.
 - El servicio interno `AgendaPostgresql` lee las franjas, los bloqueos y las ocupaciones de `ESPACIO_1`. Solo consulta servicios públicos, activos y de una sesión individual. Se conservan las ocupaciones existentes como fuente de disponibilidad hasta que se liberen.
 - Para registrar una reserva de confirmación automática, el servicio bloquea la fila del espacio con `FOR UPDATE` en una transacción `READ COMMITTED`, vuelve a calcular el turno y guarda la reserva, sus ocupaciones y el evento de confirmación en la misma transacción. Las escrituras futuras de horarios y bloqueos deberán adquirir primero ese mismo bloqueo.
+- La primera agenda operativa es privada y está en `/admin/agenda`. Usa los servicios ya cargados en administración y permite definir la preparación general o por servicio. El inicio y la duración se ingresan al cargar cada turno.
+- Un turno interno ocupa un espacio y a cada profesional asignada, durante el servicio y su preparación. Con un único espacio activo, la selección es automática. Los turnos internos comparten las exclusiones de ocupación de las reservas.
 
 ## Portada y administración
 

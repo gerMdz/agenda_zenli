@@ -9,6 +9,8 @@ async function iniciar() {
   let vista = App
   if (ruta === '/admin') {
     vista = (await import('./Administracion.vue')).default
+  } else if (ruta === '/admin/agenda') {
+    vista = (await import('./AgendaAdministrativa.vue')).default
   } else if (ruta === '/demo') {
     vista = (await import('./Demo.vue')).default
   }

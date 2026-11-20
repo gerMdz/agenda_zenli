@@ -406,6 +406,7 @@ onBeforeUnmount(() => {
   <div class="administracion">
     <header>
       <a class="marca" href="/">Zenli</a>
+      <a v-if="usuario" href="/admin/agenda" class="enlace-portada">Agenda</a>
       <a href="/" class="enlace-portada">Ver portada ↗</a>
       <button v-if="usuario" type="button" class="secundario" :disabled="ocupado" @click="salir">Cerrar sesión</button>
     </header>
