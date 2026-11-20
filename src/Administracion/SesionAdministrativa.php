@@ -44,8 +44,10 @@ final readonly class SesionAdministrativa
         }
 
         $usuario = $this->conexion->fetchAssociative(<<<'SQL'
-            SELECT id::text AS id, email, password_hash FROM usuarios
-            WHERE id = ? AND activo AND jsonb_exists(roles, 'ROLE_ADMIN')
+            SELECT u.id::text, u.email, u.password_hash, jsonb_exists(u.roles, 'ROLE_ADMIN')::int AS admin,
+                   p.id::text AS profesional_id
+            FROM usuarios u LEFT JOIN profesionales p ON p.usuario_id = u.id AND p.activa
+            WHERE u.id = ? AND u.activo AND (jsonb_exists(u.roles, 'ROLE_ADMIN') OR p.id IS NOT NULL)
             SQL, [$id]);
 
         if ($usuario === false || !hash_equals($sesion->get('admin_credencial', ''), self::huella($usuario))) {
@@ -54,10 +56,23 @@ final readonly class SesionAdministrativa
             return null;
         }
 
-        return ['id' => $usuario['id'], 'email' => $usuario['email']];
+        return [
+            'id' => $usuario['id'], 'email' => $usuario['email'], 'admin' => (bool) $usuario['admin'],
+            'profesional_id' => $usuario['profesional_id'],
+        ];
     }
 
     public function exigir(Request $peticion): array
+    {
+        $usuario = $this->exigirAgenda($peticion);
+        if (!$usuario['admin']) {
+            throw new HttpException(403, 'Esta sección requiere permisos de administración.');
+        }
+
+        return $usuario;
+    }
+
+    public function exigirAgenda(Request $peticion): array
     {
         return $this->usuario($peticion->getSession()) ?? throw new HttpException(401, 'Ingresá a tu cuenta.');
     }
@@ -69,8 +84,9 @@ final readonly class SesionAdministrativa
         $this->consumirIntento('origen:'.$peticion->getClientIp(), 30);
         $this->consumirIntento('cuenta:'.$email, 8);
         $usuario = $this->conexion->fetchAssociative(<<<'SQL'
-            SELECT id::text AS id, email, password_hash FROM usuarios
-            WHERE email = ? AND activo AND jsonb_exists(roles, 'ROLE_ADMIN')
+            SELECT u.id::text, u.password_hash FROM usuarios u
+            LEFT JOIN profesionales p ON p.usuario_id = u.id AND p.activa
+            WHERE u.email = ? AND u.activo AND (jsonb_exists(u.roles, 'ROLE_ADMIN') OR p.id IS NOT NULL)
             SQL, [$email]);
 
         if (!password_verify($clave, $usuario['password_hash'] ?? self::HASH_FICTICIO) || $usuario === false) {

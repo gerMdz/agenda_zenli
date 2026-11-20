@@ -10,6 +10,7 @@ use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use InvalidArgumentException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 final readonly class AgendaAdministrativa
 {
@@ -20,26 +21,38 @@ final readonly class AgendaAdministrativa
     {
     }
 
-    public function consultar(string $fecha): array
+    public function consultar(string $fecha, ?string $propia = null): array
     {
         $dia = self::fecha($fecha, 'Y-m-d');
         $intervalo = [$dia->modify('+1 day')->format(DATE_ATOM), $dia->format(DATE_ATOM)];
         $turnos = $this->conexion->fetchAllAssociative(<<<'SQL'
             SELECT t.id::text, t.servicio_nombre AS servicio, t.cliente_nombre AS cliente, t.inicio, t.fin,
-                   r.nombre AS espacio, string_agg(p.nombre, ', ' ORDER BY p.nombre) AS profesionales
+                   t.revision, t.servicio_id::text, r.id::text AS espacio_id, r.nombre AS espacio,
+                   array_to_json(array_agg(p.id::text ORDER BY p.id))::text AS equipo,
+                   (extract(epoch FROM t.fin - t.inicio) / 60)::int AS duracion,
+                   string_agg(p.nombre, ', ' ORDER BY p.nombre) AS profesionales
             FROM turnos_administrativos t
             JOIN ocupaciones_recursos ore ON ore.turno_admin_id = t.id
             JOIN recursos r ON r.id = ore.recurso_id
             JOIN ocupaciones_profesionales op ON op.turno_admin_id = t.id
             JOIN profesionales p ON p.id = op.profesional_id
-            WHERE ore.inicio < ? AND ore.fin > ?
-            GROUP BY t.id, r.nombre
+            WHERE ore.inicio < ? AND ore.fin > ? AND t.cancelado_en IS NULL
+              AND (CAST(? AS bigint) IS NULL OR EXISTS (
+                  SELECT 1 FROM ocupaciones_profesionales propia
+                  WHERE propia.turno_admin_id = t.id AND propia.profesional_id = ?
+              ))
+            GROUP BY t.id, r.id
             ORDER BY t.inicio, t.id
-            SQL, $intervalo);
+            SQL, [...$intervalo, $propia, $propia]);
+        foreach ($turnos as &$turno) {
+            $turno['equipo'] = json_decode($turno['equipo'], true, flags: JSON_THROW_ON_ERROR);
+            $turno['editable'] = $propia === null || $turno['equipo'] === [$propia];
+        }
+        unset($turno);
 
         return [
             'servicios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre FROM servicios_portada ORDER BY orden, nombre'),
-            'profesionales' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre FROM profesionales WHERE activa ORDER BY nombre'),
+            'profesionales' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre, (usuario_id IS NOT NULL)::int AS tiene_cuenta FROM profesionales WHERE activa AND (CAST(? AS bigint) IS NULL OR id = ?) ORDER BY nombre', [$propia, $propia]),
             'espacios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre FROM recursos WHERE activo ORDER BY nombre'),
             'preparacion' => $this->preparacion(),
             'turnos' => $turnos,
@@ -69,7 +82,7 @@ final readonly class AgendaAdministrativa
             SQL, [self::POLITICA, json_encode($politica, JSON_THROW_ON_ERROR)]);
     }
 
-    public function cargar(array $datos, string $autor): string
+    public function cargar(array $datos, string $autor, ?string $propia = null, ?string $editar = null): string
     {
         $servicio = self::id($datos['servicio'] ?? null);
         $espacio = self::id($datos['espacio'] ?? null);
@@ -79,6 +92,10 @@ final readonly class AgendaAdministrativa
         }
         $equipo = array_unique(array_map(self::id(...), $equipo));
         sort($equipo, SORT_STRING);
+        if ($propia !== null && $equipo !== [$propia]) {
+            throw new HttpException(403, 'Solo podés asignarte turnos a vos misma.');
+        }
+        $revision = $datos['revision'] ?? null;
         $cliente = $datos['cliente'] ?? null;
         if (!is_string($cliente) || trim($cliente) === '' || preg_match('/\A[^\x00]{1,150}\z/u', trim($cliente)) !== 1) {
             throw new InvalidArgumentException('Ingresá un nombre de cliente válido.');
@@ -87,7 +104,8 @@ final readonly class AgendaAdministrativa
         $duracion = self::minutos($datos['duracion'] ?? null, 1);
 
         try {
-            return $this->conexion->transactional(function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor): string {
+            return $this->conexion->transactional(function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision): string {
+                $anterior = $editar === null ? null : $this->bloquearEditable($editar, $propia, $revision);
                 if ($this->conexion->fetchOne('SELECT id FROM recursos WHERE id = ? AND activo FOR UPDATE', [$espacio]) === false) {
                     throw new InvalidArgumentException('Elegí un espacio activo.');
                 }
@@ -104,19 +122,31 @@ final readonly class AgendaAdministrativa
                 $desde = $inicio->modify("-$minutos minutes");
                 $fin = $inicio->modify("+$duracion minutes");
                 $ocupacion = [$desde->format(DATE_ATOM), $fin->format(DATE_ATOM)];
-                $this->verificarLibre('recursos', 'recurso_id', $espacio, $ocupacion);
+                $this->verificarLibre('recursos', 'recurso_id', $espacio, $ocupacion, $editar);
                 foreach ($equipo as $profesional) {
                     if ($this->conexion->fetchOne('SELECT id FROM profesionales WHERE id = ? AND activa', [$profesional]) === false) {
                         throw new InvalidArgumentException('Seleccioná profesionales activas.');
                     }
                     $this->verificarHoras($profesional, $desde, $fin);
-                    $this->verificarLibre('profesionales', 'profesional_id', $profesional, $ocupacion);
+                    $this->verificarLibre('profesionales', 'profesional_id', $profesional, $ocupacion, $editar);
                 }
 
-                $id = $this->conexion->fetchOne(<<<'SQL'
-                    INSERT INTO turnos_administrativos (servicio_id, servicio_nombre, cliente_nombre, inicio, fin, creado_por)
-                    VALUES (?, ?, ?, ?, ?, ?) RETURNING id::text
-                    SQL, [$servicio, $nombre, trim($cliente), $inicio->format(DATE_ATOM), $ocupacion[1], $autor]);
+                $campos = [$servicio, $nombre, trim($cliente), $inicio->format(DATE_ATOM), $ocupacion[1]];
+                if ($editar === null) {
+                    $id = $this->conexion->fetchOne(<<<'SQL'
+                        INSERT INTO turnos_administrativos (servicio_id, servicio_nombre, cliente_nombre, inicio, fin, creado_por)
+                        VALUES (?, ?, ?, ?, ?, ?) RETURNING id::text
+                        SQL, [...$campos, $autor]);
+                } else {
+                    $id = $editar;
+                    $this->registrarEvento($id, $autor, 'EDITADO', $anterior);
+                    $this->liberar($id);
+                    $this->conexion->executeStatement(<<<'SQL'
+                        UPDATE turnos_administrativos
+                        SET servicio_id = ?, servicio_nombre = ?, cliente_nombre = ?, inicio = ?, fin = ?, revision = revision + 1
+                        WHERE id = ?
+                        SQL, [...$campos, $id]);
+                }
                 $datos = ['turno_admin_id' => $id, 'inicio' => $ocupacion[0], 'fin' => $ocupacion[1]];
                 $this->conexion->insert('ocupaciones_recursos', $datos + ['recurso_id' => $espacio]);
                 foreach ($equipo as $profesional) {
@@ -133,14 +163,60 @@ final readonly class AgendaAdministrativa
         }
     }
 
-    private function verificarLibre(string $tabla, string $columna, string $id, array $intervalo): void
+    public function cancelar(string $id, string $autor, ?string $propia, mixed $revision): void
+    {
+        $this->conexion->transactional(function () use ($id, $autor, $propia, $revision): void {
+            $anterior = $this->bloquearEditable($id, $propia, $revision);
+            $this->registrarEvento($id, $autor, 'CANCELADO', $anterior);
+            $this->liberar($id);
+            $this->conexion->executeStatement('UPDATE turnos_administrativos SET cancelado_en = now(), revision = revision + 1 WHERE id = ?', [$id]);
+        });
+    }
+
+    private function bloquearEditable(string $id, ?string $propia, mixed $revision): array
+    {
+        self::id($id);
+        $turno = $this->conexion->fetchAssociative('SELECT * FROM turnos_administrativos WHERE id = ? AND cancelado_en IS NULL FOR UPDATE', [$id]);
+        if ($turno === false) {
+            throw new HttpException(404, 'El turno ya no está disponible.');
+        }
+        $turno['profesionales'] = $this->conexion->fetchFirstColumn('SELECT profesional_id::text FROM ocupaciones_profesionales WHERE turno_admin_id = ? ORDER BY profesional_id', [$id]);
+        if ($propia !== null && !in_array($propia, $turno['profesionales'], true)) {
+            throw new HttpException(404, 'El turno ya no está disponible.');
+        }
+        if ($propia !== null && $turno['profesionales'] !== [$propia]) {
+            throw new HttpException(403, 'Este turno solo puede modificarlo administración.');
+        }
+        if ($revision !== (int) $turno['revision']) {
+            throw new TurnoNoDisponible('El turno cambió. Volvé a cargar la agenda antes de modificarlo.');
+        }
+        $turno['espacios'] = $this->conexion->fetchAllAssociative('SELECT recurso_id, inicio, fin FROM ocupaciones_recursos WHERE turno_admin_id = ?', [$id]);
+
+        return $turno;
+    }
+
+    private function registrarEvento(string $id, string $autor, string $tipo, array $anterior): void
+    {
+        $this->conexion->insert('eventos_turnos_administrativos', [
+            'turno_id' => $id, 'autor_id' => $autor, 'tipo' => $tipo,
+            'estado_anterior' => json_encode($anterior, JSON_THROW_ON_ERROR),
+        ]);
+    }
+
+    private function liberar(string $id): void
+    {
+        $this->conexion->delete('ocupaciones_recursos', ['turno_admin_id' => $id]);
+        $this->conexion->delete('ocupaciones_profesionales', ['turno_admin_id' => $id]);
+    }
+
+    private function verificarLibre(string $tabla, string $columna, string $id, array $intervalo, ?string $editar): void
     {
         $ocupado = $this->conexion->fetchOne(<<<SQL
-            SELECT 1 FROM ocupaciones_$tabla WHERE $columna = ? AND fin > ? AND inicio < ?
+            SELECT 1 FROM ocupaciones_$tabla WHERE $columna = ? AND fin > ? AND inicio < ? AND turno_admin_id IS DISTINCT FROM CAST(? AS bigint)
             UNION ALL
             SELECT 1 FROM bloqueos WHERE $columna = ? AND fin > ? AND inicio < ?
             LIMIT 1
-            SQL, [$id, ...$intervalo, $id, ...$intervalo]);
+            SQL, [$id, ...$intervalo, $editar ?? '0', $id, ...$intervalo]);
         if ($ocupado !== false) {
             throw new TurnoNoDisponible('El espacio o una de las profesionales ya tiene una ocupación en ese horario.');
         }

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Administracion\AgendaAdministrativa;
+use App\Administracion\ComunicacionAgenda;
+use App\Administracion\SesionAdministrativa;
 use App\Agenda\AgendaPostgresql;
 use App\Agenda\Disponibilidad;
 use App\Agenda\TurnoNoDisponible;
@@ -13,6 +15,10 @@ use Doctrine\DBAL\Schema\Schema;
 use DoctrineMigrations\Version20261118000100;
 use DoctrineMigrations\Version20261118000200;
 use Psr\Log\NullLogger;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
 
@@ -174,7 +180,7 @@ try {
 
 fwrite(STDOUT, "PostgreSQL: dos confirmaciones concurrentes, un solo ganador y sin escrituras parciales.\n");
 
-foreach (['20261119000300', '20261119000600'] as $version) {
+foreach (['20261119000100', '20261119000300', '20261119000600', '20261119000700'] as $version) {
     require __DIR__.'/../migrations/Version'.$version.'.php';
     aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
 }
@@ -209,3 +215,49 @@ $interna->guardarPreparacion(['modo' => 'por_servicio', 'servicios' => ['101' =>
 $interna->cargar(array_replace($turno, ['espacio' => '103', 'profesionales' => ['104']]), '101');
 verificar(count($interna->consultar('2099-06-03')['turnos']) === 2, 'Otro espacio y otra profesional permiten cargar un turno simultáneo.');
 fwrite(STDOUT, "PostgreSQL: agenda interna, preparación, equipo, horarios y espacios verificados.\n");
+
+$individual = $interna->consultar('2099-06-03', '104')['turnos'];
+verificar(count($individual) === 1 && $individual[0]['editable'], 'Una profesional solo ve sus turnos y puede editar el individual.');
+$compartido = $interna->consultar('2099-06-03', '101')['turnos'];
+verificar(count($compartido) === 1 && !$compartido[0]['editable'], 'Un turno en equipo es de solo lectura para la profesional.');
+try {
+    $interna->cancelar($id, '101', '102', 1);
+    throw new RuntimeException('Se permitió cancelar un turno compartido.');
+} catch (HttpException $error) {
+    verificar($error->getStatusCode() === 403, 'La edición de un equipo requiere administración.');
+}
+try {
+    $interna->cargar(array_replace($turno, ['espacio' => '103', 'revision' => 1]), '101', null, $id);
+    throw new RuntimeException('Se permitió mover un turno a un espacio ocupado.');
+} catch (TurnoNoDisponible) {
+    verificar($interna->consultar('2099-06-03', '101')['turnos'][0]['espacio_id'] === '102', 'El intento fallido debe conservar el turno original.');
+}
+$interna->cargar(array_replace($turno, ['inicio' => '2099-06-03T12:15', 'revision' => 1]), '101', null, $id);
+verificar((int) $interna->consultar('2099-06-03', '101')['turnos'][0]['revision'] === 2, 'La edición valida el equipo sin chocar con su propia ocupación.');
+$interna->cancelar($id, '101', null, 2);
+verificar($interna->consultar('2099-06-03', '101')['turnos'] === [], 'Cancelar debe retirar el turno activo.');
+verificar((int) $conexion->fetchOne('SELECT count(*) FROM eventos_turnos_administrativos WHERE turno_id = ?', [$id]) === 2, 'Se conserva el historial de cambios.');
+verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ?', [$id]) === 0, 'La cancelación libera a todo el equipo.');
+$interna->cargar($turno, '101');
+
+$comunicacion = new ComunicacionAgenda($conexion);
+$comunicacion->vincularCuenta('101', 'profesional@example.test', 'Clave local de prueba 1');
+$comunicacion->vincularCuenta('102', 'otra@example.test', 'Clave local de prueba 2');
+$remitente = (string) $conexion->fetchOne('SELECT usuario_id FROM profesionales WHERE id = 101');
+$destinataria = (string) $conexion->fetchOne('SELECT usuario_id FROM profesionales WHERE id = 102');
+$comunicacion->enviar($remitente, $destinataria, 'Mensaje de prueba');
+verificar($comunicacion->consultar($destinataria)['mensajes'][0]['texto'] === 'Mensaje de prueba', 'La destinataria puede ver el mensaje.');
+verificar($comunicacion->consultar('101')['mensajes'] === [], 'Una cuenta ajena al mensaje no puede leerlo.');
+fwrite(STDOUT, "PostgreSQL: edición, cancelación, alcance profesional y mensajes privados verificados.\n");
+
+$sesiones = new SesionAdministrativa($conexion);
+$peticion = Request::create('/api/admin/sesion', 'POST');
+$peticion->setSession(new Session(new MockArraySessionStorage()));
+verificar($sesiones->ingresar($peticion, 'profesional@example.test', 'Clave local de prueba 1'), 'La cuenta vinculada puede iniciar sesión.');
+verificar($sesiones->exigirAgenda($peticion)['profesional_id'] === '101', 'La sesión usa la profesional vinculada.');
+try {
+    $sesiones->exigir($peticion);
+    throw new RuntimeException('La cuenta profesional obtuvo acceso administrativo.');
+} catch (HttpException $error) {
+    verificar($error->getStatusCode() === 403, 'Los permisos de administración siguen separados.');
+}

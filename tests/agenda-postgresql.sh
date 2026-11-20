@@ -11,7 +11,7 @@ limpiar() {
 }
 trap limpiar EXIT
 
-"$postgres_bin/initdb" -D "$directorio/datos" -U zenli_pruebas -A trust --no-locale > "$directorio/initdb.log"
+"$postgres_bin/initdb" -D "$directorio/datos" -U zenli_pruebas -A trust --no-locale --encoding=UTF8 > "$directorio/initdb.log"
 if ! "$postgres_bin/pg_ctl" -D "$directorio/datos" -l "$directorio/postgresql.log" \
     -o "-c listen_addresses='' -c unix_socket_directories=$directorio -p 5432" -w start >/dev/null; then
     cat "$directorio/postgresql.log" >&2

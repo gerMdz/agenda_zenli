@@ -25,6 +25,6 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 - Implementar el flujo de reservas pendientes, incluida la expiración y liberación transaccional de sus ocupaciones. Mientras exista una ocupación, el cálculo la considera ocupada.
 - Aplicar el bloqueo del espacio en las futuras escrituras de horarios y bloqueos, y verificar la concurrencia de esas operaciones con las confirmaciones. Las exclusiones GiST protegen las ocupaciones entre sí, pero no cubren las otras tablas.
 - Implementar la capa de aplicación que autoriza las confirmaciones y aplica las políticas comerciales antes de exponer una ruta. Validar el esquema completo en la versión de PostgreSQL prevista para el despliegue.
-- Incorporar la gestión de cuentas de profesionales y su vínculo con cada agenda cuando se habilite el acceso profesional.
+- Incorporar al panel la recuperación de contraseñas y la desactivación de cuentas profesionales.
 - Incorporar al panel el alta de espacios y la edición de franjas profesionales. Mientras una profesional tenga franjas registradas, los turnos internos deben ajustarse a ellas. Se permite la carga manual si todavía no tiene franjas.
-- Agregar edición y cancelación de turnos internos. Definir qué servicios requieren un equipo y cómo se organiza cada una de sus sesiones.
+- Definir qué servicios requieren un equipo y cómo se organiza cada una de sus sesiones.

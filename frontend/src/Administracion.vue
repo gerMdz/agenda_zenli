@@ -92,6 +92,10 @@ async function cargarSesion() {
 }
 
 async function cargarPanel() {
+  if (usuario.value && !usuario.value.admin) {
+    window.location.replace('/admin/agenda')
+    return
+  }
   const [portada, listado, svcs] = await Promise.all([
     api('/api/portada'),
     api('/api/admin/usuarios'),
@@ -429,7 +433,7 @@ onBeforeUnmount(() => {
         </form>
       </section>
 
-      <div v-if="usuario" class="paneles">
+      <div v-if="usuario?.admin" class="paneles">
         <section class="panel" aria-labelledby="titulo-portada">
           <h2 id="titulo-portada">Portada</h2>
           <p id="estado-portada">{{ soloImagen ? 'Estado público: solo imagen' : 'Estado público: portada completa' }}</p>
