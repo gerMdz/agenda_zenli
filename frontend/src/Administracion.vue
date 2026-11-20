@@ -578,6 +578,7 @@ onBeforeUnmount(() => {
   <div class="administracion">
     <header>
       <a class="marca" href="/">Zenli</a>
+      <a v-if="usuario?.admin" href="/admin/agenda" class="acceso-agenda">Agenda</a>
       <a href="/" class="enlace-portada">Ver portada ↗</a>
       <button v-if="usuario" type="button" class="secundario" :disabled="ocupado" @click="salir">Cerrar sesión</button>
     </header>
@@ -894,6 +895,8 @@ onBeforeUnmount(() => {
 header { background: #08271c; color: #fff7e6; display: flex; align-items: center; gap: 1rem; padding: .9rem max(1rem, calc((100% - 70rem) / 2)); }
 header a { color: inherit; text-underline-offset: .2em; }
 .marca { color: #eac26f; font: 2rem Georgia, serif; text-decoration: none; margin-right: auto; }
+header .acceso-agenda { padding: .45rem .75rem; border-radius: .4rem; background: #eac26f; color: #08271c; font-size: .88rem; font-weight: 750; text-decoration: none; }
+header .acceso-agenda:hover { background: #f3d28b; }
 .enlace-portada { font-size: .88rem; }
 main { padding-block: clamp(1.25rem, 4vw, 2.6rem); }
 main:focus { outline: none; }
@@ -954,7 +957,8 @@ small { font-size: .79rem; color: #526255; }
 .vacío { color: #526255; font-style: italic; margin: 1rem 0 0; }
 
 @media (max-width: 46rem) {
-  header { gap: .55rem; }
+  header { flex-wrap: wrap; gap: .55rem; }
+  header .acceso-agenda { padding-inline: .55rem; }
   header button { padding-inline: .45rem; }
   .lista-servicios li { flex-direction: column; align-items: flex-start; }
   .servicio-acciones { width: 100%; justify-content: flex-start; }
