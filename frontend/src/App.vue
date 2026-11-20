@@ -65,7 +65,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <img v-if="portadaCargada && soloImagen" class="solo-imagen" :src="imagen" alt="" fetchpriority="high" @error="imagen = portadaOriginal">
+  <img v-if="portadaCargada && soloImagen" class="solo-imagen" src="/og/zenli.jpg" alt="Zenli · Centro de masajes en Mendoza" fetchpriority="high">
   <div v-else-if="portadaCargada" class="sitio" id="inicio">
     <header class="cabecera">
       <div class="ancho cabecera-interior">
@@ -180,7 +180,8 @@ onMounted(async () => {
   width: 100%;
   height: 100vh;
   height: 100dvh;
-  object-fit: cover;
+  object-fit: contain;
+  background: #061b14;
 }
 
 .sitio {

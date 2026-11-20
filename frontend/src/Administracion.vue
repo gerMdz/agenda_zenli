@@ -2,6 +2,45 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import portadaOriginal from './image/portada.webp'
 
+const gruposMenu = [
+  {
+    nombre: 'Sitio',
+    enlaces: [
+      { id: 'portada', nombre: 'Portada' },
+      { id: 'servicios', nombre: 'Servicios' },
+    ],
+  },
+  {
+    nombre: 'Agenda',
+    enlaces: [
+      { id: 'espacios', nombre: 'Espacios de atención' },
+      { id: 'profesionales', nombre: 'Profesionales' },
+      { id: 'horarios-profesionales', nombre: 'Horarios' },
+      { id: 'preparacion', nombre: 'Preparación' },
+      { id: 'configuracion-agenda', nombre: 'Guía de configuración' },
+    ],
+  },
+  { nombre: 'Acceso', enlaces: [{ id: 'cuentas', nombre: 'Cuentas administradoras' }] },
+]
+const secciones = gruposMenu.flatMap(grupo => grupo.enlaces)
+
+function seccionDeUrl() {
+  const id = window.location.hash.slice(1)
+  return secciones.find(seccion => seccion.id === id) ?? secciones[0]
+}
+
+const seccionActiva = ref(seccionDeUrl())
+const menuAbierto = ref(false)
+const contenidoPrincipal = ref(null)
+
+async function actualizarSeccion() {
+  seccionActiva.value = seccionDeUrl()
+  menuAbierto.value = false
+  await nextTick()
+  contenidoPrincipal.value?.focus({ preventScroll: true })
+  window.scrollTo({ top: 0, behavior: 'instant' })
+}
+
 const usuario = ref(null)
 const csrf = ref('')
 const cargando = ref(true)
@@ -126,14 +165,10 @@ async function cargarPanel() {
   usuarios.value = listado.usuarios
   servicios.value = svcs.servicios
   aplicarConfiguracionAgenda(ajustes)
-  if (['#configuracion-agenda', '#horarios-profesionales'].includes(window.location.hash)) {
-    const perfil = new URLSearchParams(window.location.search).get('profesional')
-    if (window.location.hash === '#horarios-profesionales' && ajustes.profesionales.some(persona => persona.id === perfil)) {
-      profesionalHorario.value = perfil
-      aplicarHorario(await api(`/api/admin/agenda/profesionales/${perfil}/horarios`))
-    }
-    await nextTick()
-    document.getElementById(window.location.hash.slice(1))?.scrollIntoView()
+  const perfil = new URLSearchParams(window.location.search).get('profesional')
+  if (seccionActiva.value.id === 'horarios-profesionales' && ajustes.profesionales.some(persona => persona.id === perfil)) {
+    profesionalHorario.value = perfil
+    aplicarHorario(await api(`/api/admin/agenda/profesionales/${perfil}/horarios`))
   }
 }
 
@@ -164,14 +199,13 @@ async function ejecutar(accion) {
 
 onMounted(async () => {
   document.title = 'Administración · Zenli'
+  window.addEventListener('hashchange', actualizarSeccion)
   await ejecutar(async () => {
     await cargarSesion()
     if (usuario.value) await cargarPanel()
   })
   cargando.value = false
 })
-
-onBeforeUnmount(limpiarImagenTemporal)
 
 function ingresar() {
   return ejecutar(async () => {
@@ -556,6 +590,7 @@ function limpiarImagenTemporalServicio() {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', actualizarSeccion)
   limpiarImagenTemporal()
   limpiarImagenTemporalServicio()
 })
@@ -565,13 +600,29 @@ onBeforeUnmount(() => {
   <div class="administracion">
     <header>
       <a class="marca" href="/">Zenli</a>
-      <a v-if="usuario" href="/admin/agenda" class="enlace-portada">Agenda</a>
       <a href="/" class="enlace-portada">Ver portada ↗</a>
       <button v-if="usuario" type="button" class="secundario" :disabled="ocupado" @click="salir">Cerrar sesión</button>
     </header>
 
-    <main>
-      <h1>Administración de Zenli</h1>
+    <div class="estructura" :class="{ autenticada: usuario?.admin }">
+      <aside v-if="usuario?.admin" class="menu">
+        <button type="button" class="boton-menu secundario" aria-controls="navegacion-admin" :aria-expanded="menuAbierto" @click="menuAbierto = !menuAbierto">
+          <span aria-hidden="true">☰</span> {{ menuAbierto ? 'Cerrar menú' : 'Menú de administración' }}
+        </button>
+        <nav id="navegacion-admin" :class="{ abierto: menuAbierto }" aria-label="Menú de administración">
+          <a href="/admin/agenda" class="enlace-agenda">Abrir agenda <span aria-hidden="true">↗</span></a>
+          <div v-for="grupo in gruposMenu" :key="grupo.nombre" class="grupo-menu">
+            <p>{{ grupo.nombre }}</p>
+            <a v-for="item in grupo.enlaces" :key="item.id" :href="'#' + item.id"
+              :aria-current="seccionActiva.id === item.id ? 'page' : undefined" @click="menuAbierto = false">
+              {{ item.nombre }}
+            </a>
+          </div>
+        </nav>
+      </aside>
+
+    <main ref="contenidoPrincipal" tabindex="-1">
+      <h1 id="titulo-seccion-admin">{{ usuario?.admin ? seccionActiva.nombre : 'Administración de Zenli' }}</h1>
       <p v-if="usuario" class="cuenta-actual">{{ usuario.email }}</p>
       <p v-if="cargando" role="status">Cargando…</p>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -589,13 +640,12 @@ onBeforeUnmount(() => {
       </section>
 
       <div v-if="usuario?.admin" class="paneles">
-        <section class="panel" aria-labelledby="titulo-portada">
-          <h2 id="titulo-portada">Portada</h2>
+        <section v-show="seccionActiva.id === 'portada'" class="panel" aria-labelledby="titulo-seccion-admin">
           <p id="estado-portada">{{ soloImagen ? 'Estado público: solo imagen' : 'Estado público: portada completa' }}</p>
           <button type="button" class="secundario" aria-describedby="estado-portada ayuda-modo" :disabled="ocupado" @click="cambiarModoPortada">
             {{ soloImagen ? 'Subir sitio' : 'Bajar sitio' }}
           </button>
-          <div><small id="ayuda-modo">Al bajar el sitio, queda visible la imagen principal actual.</small></div>
+          <div><small id="ayuda-modo">Al bajar el sitio, se muestra la tarjeta de Zenli.</small></div>
           <form @submit.prevent="guardarPortada">
             <label for="telefono">Teléfono de WhatsApp</label>
             <input id="telefono" v-model="telefono" name="telefono" type="tel" autocomplete="tel" placeholder="+54…" :disabled="ocupado" required>
@@ -620,8 +670,7 @@ onBeforeUnmount(() => {
           </form>
         </section>
 
-        <section class="panel" aria-labelledby="titulo-usuarios">
-          <h2 id="titulo-usuarios">Cuentas administradoras</h2>
+        <section v-show="seccionActiva.id === 'cuentas'" class="panel" aria-labelledby="titulo-seccion-admin">
           <ul class="lista">
             <li v-for="cuenta in usuarios" :key="cuenta.id">
               <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}<template v-if="cuenta.profesional"> · {{ cuenta.profesional }}</template></small></div>
@@ -661,14 +710,18 @@ onBeforeUnmount(() => {
           </form>
         </section>
 
-        <details v-if="ajustesAgenda" id="configuracion-agenda" class="panel panel-ancho" open>
-          <summary>Configuración de agenda</summary>
-          <p>Configurá primero los espacios y las profesionales. Después cargá los servicios y definí su preparación.</p>
-        </details>
+        <section v-show="seccionActiva.id === 'configuracion-agenda'" id="configuracion-agenda" class="panel">
+          <h2>Primeros pasos</h2>
+          <ol class="pasos">
+            <li><a href="#espacios">Configurá los espacios</a> donde se atiende.</li>
+            <li><a href="#profesionales">Vinculá las cuentas de las profesionales</a> y <a href="#horarios-profesionales">cargá sus horarios</a>.</li>
+            <li><a href="#servicios">Cargá los servicios</a> y <a href="#preparacion">definí su preparación</a>.</li>
+            <li><a href="/admin/agenda">Abrí la agenda</a> y cargá el primer turno.</li>
+          </ol>
+        </section>
 
         <template v-if="ajustesAgenda">
-          <section class="panel">
-            <h2>Espacios de atención</h2>
+          <section v-show="seccionActiva.id === 'espacios'" class="panel" aria-labelledby="titulo-seccion-admin">
             <ul class="lista">
               <li v-for="espacio in ajustesAgenda.espacios" :key="espacio.id">
                 <div><strong>{{ espacio.nombre }}</strong><small v-if="espacio.detalle">{{ espacio.detalle }}</small></div>
@@ -686,7 +739,7 @@ onBeforeUnmount(() => {
             </form>
           </section>
 
-          <section class="panel">
+          <section v-show="seccionActiva.id === 'profesionales'" class="panel">
             <h2>Cuentas de profesionales</h2>
             <ul class="lista">
               <li v-for="persona in ajustesAgenda.profesionales" :key="persona.id">
@@ -712,7 +765,7 @@ onBeforeUnmount(() => {
             </form>
           </section>
 
-          <section id="horarios-profesionales" class="panel" aria-labelledby="titulo-horarios-profesionales">
+          <section v-show="seccionActiva.id === 'horarios-profesionales'" id="horarios-profesionales" class="panel" aria-labelledby="titulo-horarios-profesionales">
             <h2 id="titulo-horarios-profesionales">Horarios de profesionales</h2>
             <label>Profesional
               <select v-model="profesionalHorario" :disabled="ocupado" @change="cargarHorario">
@@ -768,8 +821,7 @@ onBeforeUnmount(() => {
             </form>
           </section>
 
-          <section class="panel">
-            <h2>Preparación</h2>
+          <section v-show="seccionActiva.id === 'preparacion'" class="panel" aria-labelledby="titulo-seccion-admin">
             <form @submit.prevent="guardarPreparacionAgenda">
               <fieldset>
                 <legend>¿Todos los servicios tienen el mismo tiempo de preparación?</legend>
@@ -789,7 +841,7 @@ onBeforeUnmount(() => {
         </template>
 
         <!-- Servicios de la portada -->
-        <section class="panel" aria-labelledby="titulo-servicios" style="grid-column: 1 / -1;">
+        <section v-show="seccionActiva.id === 'servicios'" class="panel" aria-labelledby="titulo-servicios">
           <div class="panel-header">
             <h2 id="titulo-servicios">Servicios de la portada</h2>
             <button v-if="!servicioCreando" type="button" class="secundario" :disabled="ocupado" @click="iniciarCreacion">+ Nuevo servicio</button>
@@ -871,6 +923,7 @@ onBeforeUnmount(() => {
         </section>
       </div>
     </main>
+    </div>
   </div>
 </template>
 
@@ -880,16 +933,29 @@ header { background: #08271c; color: #fff7e6; display: flex; align-items: center
 header a { color: inherit; text-underline-offset: .2em; }
 .marca { color: #eac26f; font: 2rem Georgia, serif; text-decoration: none; margin-right: auto; }
 .enlace-portada { font-size: .88rem; }
-main { width: min(calc(100% - 2rem), 70rem); margin-inline: auto; padding-block: clamp(1.5rem, 5vw, 3.25rem); }
+.estructura { width: min(calc(100% - 2rem), 80rem); margin-inline: auto; }
+.estructura.autenticada { display: grid; grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr); gap: clamp(1rem, 3vw, 2.4rem); align-items: start; }
+main { min-width: 0; padding-block: clamp(1.25rem, 4vw, 2.6rem); }
+main:focus { outline: none; }
+.menu { position: sticky; top: 1rem; margin-block: clamp(1.25rem, 4vw, 2.6rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.menu nav { display: grid; gap: .85rem; padding: .85rem; border: 1px solid #e4dac3; border-radius: .9rem; background: #fffaf1; }
+.menu nav a { display: block; padding: .52rem .65rem; border-radius: .45rem; color: #214d3a; font-size: .9rem; text-decoration: none; line-height: 1.3; }
+.menu nav a:hover { background: #f5ecda; }
+.menu nav a[aria-current=page] { background: #dceadf; color: #143c2a; font-weight: 750; }
+.menu .enlace-agenda { display: flex; justify-content: space-between; background: #214d3a; color: #fffdfa; font-weight: 700; }
+.menu .enlace-agenda:hover { background: #2c624b; }
+.grupo-menu p { margin: 0 0 .2rem .65rem; color: #526255; font-size: .69rem; letter-spacing: .09em; text-transform: uppercase; font-weight: 700; }
+.boton-menu { display: none; }
+.pasos { padding-left: 1.2rem; }
+.pasos li { margin-block: .5rem; }
+.pasos a { color: #214d3a; text-underline-offset: .2em; }
 h1, h2 { font-family: Georgia, serif; }
 h1 { margin: 0 0 1.25rem; font-size: clamp(2rem, 5vw, 3rem); }
 h2, h3 { margin: 0 0 .4rem; }
 h3 { font-size: 1rem; overflow-wrap: anywhere; }
 .cuenta-actual { margin-top: -.85rem; color: #526255; overflow-wrap: anywhere; }
-.panel-ancho { grid-column: 1 / -1; }
-summary { cursor: pointer; font-weight: 700; }
 fieldset { min-width: 0; border: 1px solid #e4dac3; border-radius: .4rem; }
-.paneles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+.paneles { max-width: 58rem; }
 .panel { background: #fffaf1; padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid #e4dac3; border-radius: .9rem; }
 .inicio-sesion { max-width: 28rem; }
 form { display: grid; gap: .55rem; margin-top: 1rem; }
@@ -937,7 +1003,13 @@ small { font-size: .79rem; color: #526255; }
 .vacío { color: #526255; font-style: italic; margin: 1rem 0 0; }
 
 @media (max-width: 46rem) {
-  .paneles { grid-template-columns: 1fr; }
+  .estructura.autenticada { display: block; }
+  .menu { position: static; margin-block: .75rem 0; max-height: none; overflow: visible; }
+  .menu nav { display: none; margin-top: .45rem; }
+  .menu nav.abierto { display: grid; }
+  .boton-menu { display: inline-flex; gap: .5rem; align-items: center; width: 100%; justify-content: center; }
+  header { gap: .55rem; }
+  header button { padding-inline: .45rem; }
   .lista-servicios li { flex-direction: column; align-items: flex-start; }
   .servicio-acciones { width: 100%; justify-content: flex-start; }
 }
