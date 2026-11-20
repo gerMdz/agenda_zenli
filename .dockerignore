@@ -16,6 +16,8 @@
 !frontend/package-lock.json
 !frontend/index.html
 !frontend/vite.config.js
+!frontend/public/
+!frontend/public/**
 !frontend/src/
 !frontend/src/**
 !migrations/

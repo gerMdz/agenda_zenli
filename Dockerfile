@@ -13,6 +13,7 @@ FROM nginx:stable-alpine AS nginx
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY public/ /var/www/html/public/
 COPY --from=frontend /app/dist/ /srv/zenli/
+RUN chmod -R a+rX /srv/zenli/og
 
 FROM php:8.4-fpm-bookworm AS app
 
