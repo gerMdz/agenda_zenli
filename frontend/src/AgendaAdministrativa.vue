@@ -6,6 +6,98 @@ const fecha = ref(new Intl.DateTimeFormat('sv-SE', { timeZone: zona }).format(ne
 const calendario = new Intl.DateTimeFormat('sv-SE', { timeZone: zona })
 const reloj = new Intl.DateTimeFormat('es-AR', { timeZone: zona, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 const datos = ref(null)
+const vista = ref('semana')
+const soloMios = ref(false)
+const dialogo = ref(null)
+const modalAbierto = ref(false)
+const nombreDia = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
+const tituloMes = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+const etiquetaDia = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+const vistas = [{ id: 'dia', nombre: 'Día' }, { id: 'semana', nombre: 'Semana' }, { id: 'mes', nombre: 'Mes' }]
+
+function diaUtc(texto) {
+  return new Date(`${texto}T00:00:00Z`)
+}
+
+function sumarDias(dia, cantidad) {
+  return new Date(dia.getTime() + cantidad * 86_400_000)
+}
+
+function claveDia(dia) {
+  return dia.toISOString().slice(0, 10)
+}
+
+const periodo = computed(() => {
+  const dia = diaUtc(fecha.value)
+  if (vista.value === 'mes') {
+    const inicio = new Date(dia)
+    inicio.setUTCDate(1)
+    const siguiente = new Date(inicio)
+    siguiente.setUTCMonth(siguiente.getUTCMonth() + 1)
+    return { inicio, fin: sumarDias(siguiente, -1) }
+  }
+  if (vista.value === 'semana') {
+    const inicio = sumarDias(dia, -((dia.getUTCDay() + 6) % 7))
+    return { inicio, fin: sumarDias(inicio, 6) }
+  }
+  return { inicio: dia, fin: dia }
+})
+
+const encabezadoPeriodo = computed(() => {
+  const { inicio, fin } = periodo.value
+  if (vista.value === 'mes') return tituloMes.format(inicio)
+  if (vista.value === 'dia') return etiquetaDia.format(inicio)
+  return `${etiquetaDia.format(inicio)} – ${etiquetaDia.format(fin)}`
+})
+
+function esPropio(turno) {
+  return turno.equipo.includes(usuario.value?.profesional_id)
+}
+
+const turnosVisibles = computed(() =>
+  (datos.value?.turnos ?? []).filter(turno => !soloMios.value || esPropio(turno)),
+)
+
+function turnosEnDia(dia) {
+  return turnosVisibles.value.filter(turno =>
+    calendario.format(new Date(turno.inicio)) <= dia &&
+    calendario.format(new Date(new Date(turno.fin).getTime() - 1)) >= dia,
+  )
+}
+
+const dias = computed(() => {
+  const { inicio, fin } = periodo.value
+  const resultado = []
+  for (let dia = inicio; dia <= fin; dia = sumarDias(dia, 1)) {
+    const clave = claveDia(dia)
+    const turnos = turnosEnDia(clave)
+    resultado.push({ clave, numero: dia.getUTCDate(), nombre: nombreDia.format(dia), turnos, propios: turnos.filter(esPropio).length })
+  }
+  return resultado
+})
+const turnosDia = computed(() => turnosEnDia(fecha.value))
+const offsetMes = computed(() => (periodo.value.inicio.getUTCDay() + 6) % 7)
+
+function cambiarFecha(nuevaFecha) {
+  if (!nuevaFecha) return
+  fecha.value = nuevaFecha
+  return ejecutar(cargarDia)
+}
+
+function cambiarVista(nuevaVista) {
+  if (nuevaVista === vista.value) return
+  vista.value = nuevaVista
+  return ejecutar(cargarDia)
+}
+
+function navegar(direccion) {
+  if (vista.value === 'mes') {
+    const inicio = new Date(periodo.value.inicio)
+    inicio.setUTCMonth(inicio.getUTCMonth() + direccion)
+    return cambiarFecha(claveDia(inicio))
+  }
+  return cambiarFecha(claveDia(sumarDias(diaUtc(fecha.value), direccion * (vista.value === 'semana' ? 7 : 1))))
+}
 const csrf = ref('')
 const usuario = ref(null)
 const editando = ref(null)
@@ -13,7 +105,7 @@ const fechaTurno = ref('')
 const bandeja = ref({ contactos: [], mensajes: [] })
 const destinatario = ref('')
 const texto = ref('')
-const cuenta = ref({ profesional: '', email: '', clave: '' })
+const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false })
 const ocupado = ref(false)
 const error = ref('')
 const aviso = ref('')
@@ -63,7 +155,8 @@ async function ejecutar(accion) {
 }
 
 async function cargarDia() {
-  datos.value = await api(`/api/admin/agenda?fecha=${encodeURIComponent(fecha.value)}`)
+  const { inicio, fin } = periodo.value
+  datos.value = await api(`/api/admin/agenda?fecha=${claveDia(inicio)}&hasta=${claveDia(fin)}`)
   if (datos.value.espacios.length === 1) espacio.value = datos.value.espacios[0].id
   if (datos.value.servicios.length === 1) servicio.value = datos.value.servicios[0].id
   if (!usuario.value.admin && !editando.value) equipo.value = [usuario.value.profesional_id]
@@ -94,6 +187,17 @@ function cambiarEquipo() {
   equipo.value = equipo.value.slice(0, 1)
 }
 
+function abrirModal() {
+  dialogo.value.showModal()
+  modalAbierto.value = true
+}
+
+function abrirNuevoTurno() {
+  limpiarTurno()
+  fechaTurno.value = fecha.value
+  abrirModal()
+}
+
 function editarTurno(turno) {
   editando.value = turno
   const inicio = new Date(turno.inicio)
@@ -105,6 +209,7 @@ function editarTurno(turno) {
   espacio.value = turno.espacio_id
   equipo.value = [...turno.equipo]
   varias.value = equipo.value.length > 1
+  abrirModal()
 }
 
 function limpiarTurno() {
@@ -113,7 +218,7 @@ function limpiarTurno() {
   hora.value = ''
   duracion.value = ''
   varias.value = false
-  equipo.value = usuario.value.admin ? [] : [usuario.value.profesional_id]
+  equipo.value = usuario.value.profesional_id ? [usuario.value.profesional_id] : []
   espacio.value = datos.value.espacios.length === 1 ? datos.value.espacios[0].id : ''
 }
 
@@ -126,11 +231,12 @@ function guardarTurno() {
       servicio: servicio.value,
       espacio: espacio.value,
       profesionales: equipo.value,
-      inicio: `${anterior ? fechaTurno.value : fecha.value}T${hora.value}`,
+      inicio: `${fechaTurno.value}T${hora.value}`,
       duracion: duracion.value,
       revision: anterior ? Number(anterior.revision) : undefined,
     })
-    if (anterior) fecha.value = fechaTurno.value
+    fecha.value = fechaTurno.value
+    dialogo.value.close()
     limpiarTurno()
     await cargarDia()
     aviso.value = anterior ? 'Turno actualizado.' : 'Turno guardado.'
@@ -157,8 +263,12 @@ function enviarMensaje() {
 
 function crearCuenta() {
   return ejecutar(async () => {
-    await api('/api/admin/agenda/cuentas-profesionales', 'POST', cuenta.value)
-    cuenta.value = { profesional: '', email: '', clave: '' }
+    await api('/api/admin/agenda/cuentas-profesionales', 'POST', {
+      ...cuenta.value,
+      profesional: cuenta.value.profesional === 'nueva' ? null : cuenta.value.profesional,
+    })
+    cuenta.value = { profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false }
+    usuario.value = (await api('/api/admin/sesion')).usuario
     await cargarDia()
     bandeja.value = await api('/api/admin/agenda/mensajes')
     aviso.value = 'Cuenta profesional creada.'
@@ -194,31 +304,54 @@ onMounted(() => ejecutar(async () => {
     </header>
     <main>
       <h1>Agenda interna</h1>
-      <p v-if="error" role="alert">{{ error }}</p>
+      <p v-if="error && !modalAbierto" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
       <p v-if="!datos && ocupado" role="status">Cargando agenda…</p>
 
       <template v-if="datos">
-        <details v-if="usuario.admin" class="panel" :open="!datos.preparacion">
-          <summary>Guía para empezar</summary>
-          <ol>
-            <li><strong>Espacios.</strong> Confirmá dónde se atiende. Si hay uno activo, se elige automáticamente.</li>
-            <li><strong>Profesionales.</strong> Usá las profesionales activas y creales una cuenta abajo si van a cargar su propia agenda.</li>
-            <li><strong>Servicios.</strong> Cargalos en <a href="/admin">Administración</a> y definí acá su tiempo de preparación.</li>
-            <li><strong>Turnos.</strong> Cargá fecha, hora y duración. Administración asigna los turnos de equipo.</li>
-          </ol>
-          <p>{{ datos.espacios.length }} espacios · {{ datos.profesionales.length }} profesionales · {{ datos.servicios.length }} servicios</p>
-        </details>
         <section class="panel">
-          <div class="barra">
-            <h2>Turnos del día</h2>
-            <label>Fecha <input v-model="fecha" type="date" :disabled="ocupado" @change="fecha && ejecutar(cargarDia)"></label>
+          <div class="barra cabecera-calendario">
+            <div class="acciones" aria-label="Vista de calendario">
+              <button v-for="opcion in vistas" :key="opcion.id" type="button" :aria-pressed="vista === opcion.id"
+                :class="{ secundario: vista !== opcion.id }" :disabled="ocupado" @click="cambiarVista(opcion.id)">{{ opcion.nombre }}</button>
+            </div>
+            <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno">+ Nuevo turno</button>
           </div>
-          <p v-if="!datos.turnos.length">Todavía no hay turnos cargados para este día.</p>
+          <div class="barra controles-calendario">
+            <div class="acciones">
+              <button type="button" class="secundario" aria-label="Período anterior" :disabled="ocupado" @click="navegar(-1)">‹</button>
+              <button type="button" class="secundario" :disabled="ocupado" @click="cambiarFecha(calendario.format(new Date()))">Hoy</button>
+              <button type="button" class="secundario" aria-label="Período siguiente" :disabled="ocupado" @click="navegar(1)">›</button>
+            </div>
+            <h2 class="periodo">{{ encabezadoPeriodo }}</h2>
+            <label>Ir a fecha <input :value="fecha" type="date" :disabled="ocupado" @change="cambiarFecha($event.target.value)"></label>
+          </div>
+          <label v-if="usuario.admin && usuario.profesional_id" class="opcion">
+            <input v-model="soloMios" type="checkbox"> Mostrar solo mis turnos
+          </label>
+          <div v-if="vista !== 'dia'" class="calendario" :class="{ semanal: vista === 'semana' }">
+            <template v-if="vista === 'mes'">
+              <div v-for="nombre in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']" :key="nombre" class="dia-semana">{{ nombre }}</div>
+              <span v-for="n in offsetMes" :key="`vacio-${n}`" aria-hidden="true"></span>
+            </template>
+            <button v-for="dia in dias" :key="dia.clave" type="button" class="celda"
+              :class="{ propia: dia.propios }" :aria-pressed="fecha === dia.clave" :disabled="ocupado" @click="fecha = dia.clave">
+              <strong><span v-if="vista === 'semana'">{{ dia.nombre }} </span>{{ dia.numero }}</strong>
+              <small v-if="dia.turnos.length">{{ dia.turnos.length }} {{ dia.turnos.length === 1 ? 'turno' : 'turnos' }}</small>
+              <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
+              <span v-if="vista === 'semana'" class="resumen-dia">
+                <small v-for="turno in dia.turnos.slice(0, 3)" :key="turno.id">
+                  {{ reloj.format(new Date(turno.inicio)) }} · {{ turno.servicio }}
+                </small>
+              </span>
+            </button>
+          </div>
+          <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
+          <p v-if="!turnosDia.length">No hay turnos para este día.</p>
           <ul v-else class="turnos">
-            <li v-for="turno in datos.turnos" :key="turno.id">
+            <li v-for="turno in turnosDia" :key="turno.id" :class="{ propio: esPropio(turno) }">
               <strong>{{ reloj.format(new Date(turno.inicio)) }}–{{ reloj.format(new Date(turno.fin)) }}</strong>
-              <span>{{ turno.servicio }} · {{ turno.cliente }}</span>
+              <span>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
               <small>{{ turno.espacio }} · {{ turno.profesionales }}</small>
               <div v-if="turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
@@ -229,9 +362,12 @@ onMounted(() => ejecutar(async () => {
           </ul>
         </section>
 
-        <div class="columnas">
-          <section class="panel">
-            <h2>{{ editando ? 'Editar turno' : 'Nuevo turno' }}</h2>
+        <dialog ref="dialogo" aria-labelledby="titulo-turno" @close="modalAbierto = false" @cancel="ocupado && $event.preventDefault()">
+          <div class="barra">
+            <h2 id="titulo-turno">{{ editando ? 'Editar turno' : 'Nuevo turno' }}</h2>
+            <button type="button" class="secundario" :disabled="ocupado" @click="dialogo.close()">Cerrar</button>
+          </div>
+          <p v-if="error && modalAbierto" role="alert">{{ error }}</p>
             <p v-if="!datos.servicios.length">Creá un servicio en <a href="/admin">Administración</a> para cargar turnos.</p>
             <p v-else-if="!datos.profesionales.length || !datos.espacios.length">Hace falta al menos una profesional y un espacio activos.</p>
             <form v-else @submit.prevent="guardarTurno">
@@ -243,10 +379,10 @@ onMounted(() => ejecutar(async () => {
               </label>
               <p v-if="servicio && preparacion == null">Configurá la preparación de este servicio para poder agendarlo.</p>
               <p v-else-if="servicio">Preparación antes del turno: {{ preparacion }} min.</p>
-              <label v-if="editando">Fecha del turno <input v-model="fechaTurno" type="date" required></label>
+              <label>Fecha del turno <input v-model="fechaTurno" type="date" required></label>
               <label>Nombre del cliente <input v-model="cliente" maxlength="150" required></label>
               <div class="barra">
-                <label>Hora <input v-model="hora" type="time" required></label>
+                <label>Hora (24 horas) <input v-model="hora" type="text" placeholder="14:30" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" required></label>
                 <label>Duración (min) <input v-model.number="duracion" type="number" min="1" max="1440" required></label>
               </div>
               <label v-if="datos.espacios.length > 1">Espacio
@@ -269,12 +405,22 @@ onMounted(() => ejecutar(async () => {
                   <option v-for="persona in datos.profesionales" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
                 </select>
               </label>
-              <button :disabled="ocupado || !fecha || preparacion == null || (varias && equipo.length < 2)">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
-              <button v-if="editando" type="button" class="secundario" :disabled="ocupado" @click="limpiarTurno">Descartar edición</button>
+              <button :disabled="ocupado || !fechaTurno || preparacion == null || (varias && equipo.length < 2)">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
             </form>
-          </section>
+        </dialog>
 
-          <section v-if="usuario.admin" class="panel">
+        <details v-if="usuario.admin" class="panel" :open="!datos.preparacion">
+          <summary>Guía para empezar</summary>
+          <ol>
+            <li><strong>Espacios.</strong> Confirmá dónde se atiende. Si hay uno activo, se elige automáticamente.</li>
+            <li><strong>Profesionales.</strong> Usá las profesionales activas y creales una cuenta abajo si van a cargar su propia agenda.</li>
+            <li><strong>Servicios.</strong> Cargalos en <a href="/admin">Administración</a> y definí acá su tiempo de preparación.</li>
+            <li><strong>Turnos.</strong> Cargá fecha, hora y duración. Administración asigna los turnos de equipo.</li>
+          </ol>
+          <p>{{ datos.espacios.length }} espacios · {{ datos.profesionales.length }} profesionales · {{ datos.servicios.length }} servicios</p>
+        </details>
+        <div v-if="usuario.admin" class="columnas">
+          <section class="panel">
             <h2>Preparación</h2>
             <button v-if="!configurar" type="button" @click="abrirConfiguracion">Editar preparación</button>
             <form v-else @submit.prevent="guardarPreparacion">
@@ -322,17 +468,22 @@ onMounted(() => ejecutar(async () => {
 
           <section v-if="usuario.admin" class="panel">
             <h2>Cuentas de profesionales</h2>
-            <p v-if="!datos.profesionales.some(persona => !Number(persona.tiene_cuenta))">Las profesionales activas ya tienen cuenta.</p>
-            <form v-else @submit.prevent="crearCuenta">
+            <form @submit.prevent="crearCuenta">
               <label>Profesional
                 <select v-model="cuenta.profesional" required>
-                  <option disabled value="">Elegí una profesional</option>
+                  <option disabled value="">Elegí una opción</option>
+                  <option value="nueva">Crear nueva profesional</option>
                   <option v-for="persona in datos.profesionales.filter(item => !Number(item.tiene_cuenta))" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
                 </select>
               </label>
+              <label v-if="cuenta.profesional === 'nueva'">Nombre <input v-model.trim="cuenta.nombre" maxlength="120" required></label>
+              <label class="opcion"><input v-model="cuenta.cuenta_existente" type="checkbox"> Vincular una cuenta administradora existente</label>
               <label>Correo <input v-model="cuenta.email" type="email" maxlength="180" autocomplete="off" required></label>
-              <label>Contraseña inicial <input v-model="cuenta.clave" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></label>
-              <button :disabled="ocupado">Crear cuenta profesional</button>
+              <template v-if="!cuenta.cuenta_existente">
+                <label>Contraseña inicial <input v-model="cuenta.clave" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></label>
+                <label class="opcion"><input v-model="cuenta.admin" type="checkbox"> También es administradora</label>
+              </template>
+              <button :disabled="ocupado">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>
             </form>
           </section>
         </div>
@@ -370,6 +521,24 @@ button:disabled { opacity: .55; }
 summary { cursor: pointer; font-weight: 700; }
 [role=alert] { background: #f9e3df; padding: .65rem; }
 [role=status] { padding: .45rem; }
+.cabecera-calendario, .controles-calendario { margin-bottom: .8rem; }
+.periodo { margin: 0; text-transform: capitalize; }
+.calendario { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; margin-block: .8rem 1rem; }
+.celda { display: grid; align-content: start; gap: .25rem; width: 100%; min-height: 4rem; padding: .4rem; text-align: left; color: #15372a; border-color: #ddd4bd; background: #fffdf7; overflow-wrap: anywhere; }
+.celda[aria-pressed=true] { outline: 2px solid #214d3a; outline-offset: -2px; }
+.celda.propia, .turnos li.propio { background: #e5f2e6; }
+.turnos li.propio { border-left: 4px solid #286644; padding-left: .5rem; }
+.dia-semana { text-align: center; font-size: .8rem; font-weight: 700; }
+.resumen-dia { display: grid; gap: .2rem; }
+.mio { display: inline-block; width: fit-content; border-radius: .25rem; padding: .1rem .25rem; background: #d2ead7; color: #134627; font-weight: 700; }
+.detalle-dia { margin-top: 1rem; }
+dialog { max-height: 88dvh; width: min(calc(100% - 1.5rem), 38rem); padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
+dialog::backdrop { background: #071b13a8; }
+dialog form { margin-top: .7rem; }
+@media (max-width: 42rem) {
+  .celda { font-size: .72rem; padding: .25rem; }
+  .resumen-dia { display: none; }
+}
 @media (max-width: 42rem) {
   .columnas, .turnos li { grid-template-columns: 1fr; }
 }

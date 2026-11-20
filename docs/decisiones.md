@@ -25,6 +25,8 @@
 - Un turno interno ocupa un espacio y a cada profesional asignada, durante el servicio y su preparación. Con un único espacio activo, la selección es automática. Los turnos internos comparten las exclusiones de ocupación de las reservas.
 - La guía de agenda propone confirmar los espacios, vincular las cuentas de profesionales, cargar servicios y su preparación, y luego registrar turnos. Una profesional puede crear y gestionar sus turnos individuales y consultar los turnos compartidos en que participa. Administración puede gestionar cualquier turno interno.
 - Editar un turno vuelve a comprobar todas las ocupaciones dentro de la transacción. Cancelarlo libera la ocupación del espacio y de las profesionales. El historial conserva el estado anterior y quién hizo cada cambio. Los mensajes de agenda son privados entre la cuenta remitente y la destinataria.
+- La agenda abre en vista semanal, con alternativas diaria y mensual. El alta y la edición se hacen en un modal y las horas se ingresan y muestran en formato de 24 horas de Mendoza.
+- Una misma cuenta puede tener permisos administrativos y estar vinculada a una profesional. Los turnos propios se identifican por ese vínculo y se pueden destacar y filtrar dentro del calendario.
 
 ## Portada y administración
 

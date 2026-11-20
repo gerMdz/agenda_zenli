@@ -31,7 +31,11 @@ final readonly class AgendaAdministrativaController
     {
         $usuario = $this->sesion->exigirAgenda($peticion);
         try {
-            return $this->respuesta($this->agenda->consultar($peticion->query->getString('fecha'), self::agendaPropia($usuario)));
+            return $this->respuesta($this->agenda->consultar(
+                $peticion->query->getString('fecha'),
+                self::agendaPropia($usuario),
+                $peticion->query->has('hasta') ? $peticion->query->getString('hasta') : null,
+            ));
         } catch (InvalidArgumentException $error) {
             return $this->respuesta(['error' => $error->getMessage()], 422);
         }
@@ -115,7 +119,10 @@ final readonly class AgendaAdministrativaController
         $this->sesion->verificarToken($peticion);
         try {
             $datos = $peticion->toArray();
-            $this->comunicacion->vincularCuenta($datos['profesional'] ?? null, $datos['email'] ?? null, $datos['clave'] ?? null);
+            $this->comunicacion->vincularCuenta(
+                $datos['profesional'] ?? null, $datos['email'] ?? null, $datos['clave'] ?? null,
+                $datos['admin'] ?? false, $datos['nombre'] ?? null, $datos['cuenta_existente'] ?? false,
+            );
         } catch (JsonException) {
             return $this->respuesta(['error' => 'Revisá los datos de la cuenta.'], 422);
         } catch (InvalidArgumentException $error) {

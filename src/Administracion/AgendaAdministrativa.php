@@ -21,10 +21,14 @@ final readonly class AgendaAdministrativa
     {
     }
 
-    public function consultar(string $fecha, ?string $propia = null): array
+    public function consultar(string $fecha, ?string $propia = null, ?string $hasta = null): array
     {
         $dia = self::fecha($fecha, 'Y-m-d');
-        $intervalo = [$dia->modify('+1 day')->format(DATE_ATOM), $dia->format(DATE_ATOM)];
+        $ultimo = self::fecha($hasta ?? $fecha, 'Y-m-d');
+        if ($ultimo < $dia || $ultimo > $dia->modify('+30 days')) {
+            throw new InvalidArgumentException('El período debe tener entre 1 y 31 días.');
+        }
+        $intervalo = [$ultimo->modify('+1 day')->format(DATE_ATOM), $dia->format(DATE_ATOM)];
         $turnos = $this->conexion->fetchAllAssociative(<<<'SQL'
             SELECT t.id::text, t.servicio_nombre AS servicio, t.cliente_nombre AS cliente, t.inicio, t.fin,
                    t.revision, t.servicio_id::text, r.id::text AS espacio_id, r.nombre AS espacio,
@@ -36,7 +40,7 @@ final readonly class AgendaAdministrativa
             JOIN recursos r ON r.id = ore.recurso_id
             JOIN ocupaciones_profesionales op ON op.turno_admin_id = t.id
             JOIN profesionales p ON p.id = op.profesional_id
-            WHERE ore.inicio < ? AND ore.fin > ? AND t.cancelado_en IS NULL
+            WHERE t.inicio < ? AND t.fin > ? AND t.cancelado_en IS NULL
               AND (CAST(? AS bigint) IS NULL OR EXISTS (
                   SELECT 1 FROM ocupaciones_profesionales propia
                   WHERE propia.turno_admin_id = t.id AND propia.profesional_id = ?
@@ -45,6 +49,8 @@ final readonly class AgendaAdministrativa
             ORDER BY t.inicio, t.id
             SQL, [...$intervalo, $propia, $propia]);
         foreach ($turnos as &$turno) {
+            $turno['inicio'] = (new DateTimeImmutable($turno['inicio']))->format(DATE_ATOM);
+            $turno['fin'] = (new DateTimeImmutable($turno['fin']))->format(DATE_ATOM);
             $turno['equipo'] = json_decode($turno['equipo'], true, flags: JSON_THROW_ON_ERROR);
             $turno['editable'] = $propia === null || $turno['equipo'] === [$propia];
         }

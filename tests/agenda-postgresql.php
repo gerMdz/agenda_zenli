@@ -261,3 +261,23 @@ try {
 } catch (HttpException $error) {
     verificar($error->getStatusCode() === 403, 'Los permisos de administración siguen separados.');
 }
+
+verificar(count($interna->consultar('2099-06-01', null, '2099-06-30')['turnos']) === 2, 'El mes incluye turnos fuera del primer día.');
+verificar(count($interna->consultar('2099-06-01', '102', '2099-06-07')['turnos']) === 1, 'La semana conserva el alcance profesional.');
+verificar($interna->consultar('2099-06-04', null, '2099-06-30')['turnos'] === [], 'El período excluye los turnos fuera de rango.');
+try {
+    $interna->consultar('2099-06-01', null, '2099-07-02');
+    throw new RuntimeException('La consulta aceptó más de 31 días.');
+} catch (InvalidArgumentException) {
+}
+
+$comunicacion->vincularCuenta(null, 'dual@example.test', 'Clave local de prueba 3', true, 'Profesional administradora');
+verificar($sesiones->ingresar($peticion, 'dual@example.test', 'Clave local de prueba 3'), 'La cuenta de rol doble puede iniciar sesión.');
+$dual = $sesiones->exigir($peticion);
+verificar($dual['admin'] && is_string($dual['profesional_id']), 'La misma sesión conserva administración e identidad profesional.');
+
+$comunicacion->vincularCuenta('104', 'dual-existente@example.test', 'Clave local de prueba 4', true);
+$conexion->executeStatement("INSERT INTO usuarios (email, password_hash, roles) VALUES ('existente@example.test', 'prueba', '[\"ROLE_ADMIN\"]')");
+$comunicacion->vincularCuenta(null, 'existente@example.test', null, nombre: 'Profesional con cuenta existente', cuentaExistente: true);
+verificar($conexion->fetchOne("SELECT p.nombre FROM profesionales p JOIN usuarios u ON u.id = p.usuario_id WHERE u.email = 'existente@example.test'") === 'Profesional con cuenta existente', 'Se vincula la cuenta administradora existente.');
+fwrite(STDOUT, "PostgreSQL: vistas por período, creación de profesionales y cuenta de rol doble verificadas.\n");

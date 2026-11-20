@@ -51,22 +51,46 @@ final readonly class ComunicacionAgenda
         ]);
     }
 
-    public function vincularCuenta(mixed $profesional, mixed $email, mixed $clave): void
-    {
-        if (!is_string($profesional) || preg_match('/\A[1-9][0-9]{0,17}\z/', $profesional) !== 1
-            || !is_string($email) || !is_string($clave)) {
-            throw new InvalidArgumentException('Completá la profesional, el correo y la contraseña.');
+    public function vincularCuenta(
+        mixed $profesional, mixed $email, mixed $clave, mixed $admin = false,
+        mixed $nombre = null, mixed $cuentaExistente = false,
+    ): void {
+        if (!is_string($email) || !is_bool($admin) || !is_bool($cuentaExistente)
+            || ($profesional !== null && (!is_string($profesional) || preg_match('/\A[1-9][0-9]{0,17}\z/', $profesional) !== 1))
+            || ($profesional === null && (!is_string($nombre) || preg_match('/\A[^\x00]{1,120}\z/u', trim($nombre)) !== 1))) {
+            throw new InvalidArgumentException('Completá la profesional y el correo de la cuenta.');
         }
 
         $email = UsuariosAdministrativos::normalizarEmail($email);
-        $hash = UsuariosAdministrativos::hashClave($clave);
-        $this->conexion->transactional(static function (Connection $conexion) use ($profesional, $email, $hash): void {
-            $fila = $conexion->fetchAssociative('SELECT usuario_id FROM profesionales WHERE id = ? AND activa FOR UPDATE', [$profesional]);
-            if ($fila === false || $fila['usuario_id'] !== null) {
+        if (!$cuentaExistente && !is_string($clave)) {
+            throw new InvalidArgumentException('Ingresá una contraseña para la cuenta nueva.');
+        }
+        $hash = $cuentaExistente ? null : UsuariosAdministrativos::hashClave($clave);
+
+        $this->conexion->transactional(static function (Connection $conexion) use ($profesional, $email, $hash, $nombre, $admin): void {
+            if ($hash === null) {
+                $id = $conexion->fetchOne(<<<'SQL'
+                    SELECT id FROM usuarios WHERE email = ? AND activo AND jsonb_exists(roles, 'ROLE_ADMIN') FOR UPDATE
+                    SQL, [$email]);
+                if ($id === false) {
+                    throw new InvalidArgumentException('Elegí el correo de una cuenta administradora activa.');
+                }
+            } else {
+                $roles = json_encode($admin ? [UsuariosAdministrativos::ROL] : [], JSON_THROW_ON_ERROR);
+                $id = $conexion->fetchOne('INSERT INTO usuarios (email, password_hash, roles) VALUES (?, ?, ?) RETURNING id', [$email, $hash, $roles]);
+            }
+            if ($profesional === null) {
+                $conexion->insert('profesionales', ['usuario_id' => $id, 'nombre' => trim($nombre)]);
+
+                return;
+            }
+            $cambiadas = $conexion->executeStatement(
+                'UPDATE profesionales SET usuario_id = ? WHERE id = ? AND activa AND usuario_id IS NULL',
+                [$id, $profesional],
+            );
+            if ($cambiadas !== 1) {
                 throw new InvalidArgumentException('La profesional no está disponible o ya tiene una cuenta.');
             }
-            $id = $conexion->fetchOne('INSERT INTO usuarios (email, password_hash) VALUES (?, ?) RETURNING id', [$email, $hash]);
-            $conexion->executeStatement('UPDATE profesionales SET usuario_id = ? WHERE id = ?', [$id, $profesional]);
         });
     }
 }
