@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Administracion\AgendaAdministrativa;
 use App\Administracion\ComunicacionAgenda;
+use App\Administracion\HorariosProfesionales;
 use App\Administracion\SesionAdministrativa;
 use App\Agenda\TurnoNoDisponible;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -23,6 +24,7 @@ final readonly class AgendaAdministrativaController
         private SesionAdministrativa $sesion,
         private AgendaAdministrativa $agenda,
         private ComunicacionAgenda $comunicacion,
+        private HorariosProfesionales $horarios,
     ) {
     }
 
@@ -47,6 +49,26 @@ final readonly class AgendaAdministrativaController
         $this->sesion->exigir($peticion);
 
         return $this->respuesta($this->agenda->configuracion());
+    }
+
+    #[Route('/profesionales/{id}/horarios', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['GET', 'PUT'])]
+    public function horarios(Request $peticion, string $id): JsonResponse
+    {
+        $this->sesion->exigir($peticion);
+        try {
+            if ($peticion->isMethod('PUT')) {
+                $this->sesion->verificarToken($peticion);
+                $this->horarios->guardar($id, $peticion->toArray());
+            }
+
+            return $this->respuesta($this->horarios->consultar($id));
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos de los horarios.' : $error->getMessage()], 422);
+        } catch (TurnoNoDisponible $error) {
+            return $this->respuesta(['error' => $error->getMessage()], 409);
+        } catch (HttpException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], $error->getStatusCode());
+        }
     }
 
     #[Route('/espacios', methods: ['POST'])]

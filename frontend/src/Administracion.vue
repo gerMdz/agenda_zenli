@@ -34,6 +34,10 @@ const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: f
 const espacioEditado = ref(null)
 const espacioNombre = ref('')
 const espacioDetalle = ref('')
+const profesionalHorario = ref('')
+const horarioProfesional = ref(null)
+const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+const fechaMendoza = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Argentina/Mendoza' })
 const perfilesSinCuenta = computed(() => (ajustesAgenda.value?.profesionales ?? []).filter(item => !Number(item.tiene_cuenta)))
 const usuarioEditado = ref(null)
 const editarActivo = ref(true)
@@ -97,6 +101,8 @@ function aplicarSesion(sesion) {
     altaClave.value = ''
     cuenta.value.clave = ''
     ajustesAgenda.value = null
+    horarioProfesional.value = null
+    profesionalHorario.value = ''
     limpiarImagenTemporal()
   }
 }
@@ -293,6 +299,49 @@ function guardarPreparacionAgenda() {
     await api('/api/admin/agenda/preparacion', { method: 'PUT', datos })
     aplicarConfiguracionAgenda(await api('/api/admin/agenda/configuracion'))
     mensaje.value = 'Preparación guardada.'
+  })
+}
+
+function aplicarHorario(contenido) {
+  horarioProfesional.value = {
+    ...contenido,
+    franjas: contenido.franjas.map(fila => ({
+      ...fila,
+      tipo: fila.vigente_desde === fila.vigente_hasta ? 'puntual' : 'semanal',
+      dia_semana: Number(fila.dia_semana),
+      hora_inicio: fila.hora_inicio.replace(/^(\d{2}:\d{2}):00$/, '$1'),
+      hora_fin: fila.hora_fin.replace(/^(\d{2}:\d{2}):00$/, '$1'),
+      vigente_hasta: fila.vigente_hasta ?? '',
+    })),
+  }
+}
+
+function cargarHorario() {
+  horarioProfesional.value = null
+  if (!profesionalHorario.value) return
+  return ejecutar(async () => {
+    aplicarHorario(await api(`/api/admin/agenda/profesionales/${profesionalHorario.value}/horarios`))
+  })
+}
+
+function agregarFranja(tipo) {
+  horarioProfesional.value.por_franjas = true
+  horarioProfesional.value.franjas.push({
+    tipo,
+    dia_semana: '',
+    vigente_desde: tipo === 'semanal' ? fechaMendoza.format(new Date()) : '',
+    vigente_hasta: '',
+    hora_inicio: '',
+    hora_fin: '',
+  })
+}
+
+function guardarHorario() {
+  return ejecutar(async () => {
+    aplicarHorario(await api(`/api/admin/agenda/profesionales/${profesionalHorario.value}/horarios`, {
+      method: 'PUT', datos: horarioProfesional.value,
+    }))
+    mensaje.value = 'Horarios guardados.'
   })
 }
 
@@ -643,6 +692,46 @@ onBeforeUnmount(() => {
                 <label class="casilla"><input v-model="cuenta.admin" type="checkbox"> También es administradora</label>
               </template>
               <button :disabled="ocupado">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>
+            </form>
+          </section>
+
+          <section class="panel" aria-labelledby="titulo-horarios-profesionales">
+            <h2 id="titulo-horarios-profesionales">Horarios de profesionales</h2>
+            <label>Profesional
+              <select v-model="profesionalHorario" :disabled="ocupado" @change="cargarHorario">
+                <option value="">Elegí una profesional</option>
+                <option v-for="persona in ajustesAgenda.profesionales" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
+              </select>
+            </label>
+            <form v-if="horarioProfesional" @submit.prevent="guardarHorario">
+              <label class="casilla"><input v-model="horarioProfesional.por_franjas" type="checkbox" :disabled="ocupado"> Limitar turnos a las franjas cargadas</label>
+              <small v-if="horarioProfesional.por_franjas && !horarioProfesional.franjas.length">Sin franjas, la profesional queda sin disponibilidad. Agregá una fecha cuando confirme que viene.</small>
+              <small v-else-if="!horarioProfesional.por_franjas">Modo manual: los horarios se acuerdan al cargar cada turno. Se mantienen los controles de ocupación.</small>
+              <div class="acciones">
+                <button type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('semanal')">+ Franja semanal</button>
+                <button type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('puntual')">+ Fecha puntual</button>
+              </div>
+              <fieldset v-for="(franja, indice) in horarioProfesional.franjas" :key="indice" :disabled="ocupado">
+                <legend>{{ franja.tipo === 'semanal' ? 'Franja semanal' : 'Fecha puntual' }}</legend>
+                <label v-if="franja.tipo === 'semanal'">Día
+                  <select v-model.number="franja.dia_semana" required>
+                    <option disabled value="">Elegí un día</option>
+                    <option v-for="(dia, indiceDia) in diasSemana" :key="dia" :value="indiceDia + 1">{{ dia }}</option>
+                  </select>
+                </label>
+                <label>{{ franja.tipo === 'semanal' ? 'Vigente desde' : 'Fecha' }}
+                  <input v-model="franja.vigente_desde" type="date" required>
+                </label>
+                <label v-if="franja.tipo === 'semanal'">Vigente hasta (opcional)
+                  <input v-model="franja.vigente_hasta" type="date" :min="franja.vigente_desde">
+                </label>
+                <div class="acciones">
+                  <label>Desde (24 h) <input v-model.trim="franja.hora_inicio" placeholder="09:00" maxlength="15" required></label>
+                  <label>Hasta (24 h) <input v-model.trim="franja.hora_fin" placeholder="14:30" maxlength="15" required></label>
+                </div>
+                <button type="button" class="secundario" @click="horarioProfesional.franjas.splice(indice, 1)">Quitar franja</button>
+              </fieldset>
+              <button :disabled="ocupado">Guardar horarios</button>
             </form>
           </section>
 

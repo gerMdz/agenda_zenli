@@ -17,7 +17,10 @@ final readonly class AgendaAdministrativa
     private const POLITICA = 'preparacion_agenda_admin';
     private const ZONA = 'America/Argentina/Mendoza';
 
-    public function __construct(private Connection $conexion)
+    public function __construct(
+        private Connection $conexion,
+        private HorariosProfesionales $horarios,
+    )
     {
     }
 
@@ -171,7 +174,9 @@ final readonly class AgendaAdministrativa
                     if ($this->conexion->fetchOne('SELECT id FROM profesionales WHERE id = ? AND activa', [$profesional]) === false) {
                         throw new InvalidArgumentException('Seleccioná profesionales activas.');
                     }
-                    $this->verificarHoras($profesional, $desde, $fin);
+                    if (!$this->horarios->permite($profesional, $desde, $fin)) {
+                        throw new TurnoNoDisponible('El turno y su preparación deben entrar en el horario de todas las profesionales asignadas.');
+                    }
                     $this->verificarLibre('profesionales', 'profesional_id', $profesional, $ocupacion, $editar);
                 }
 
@@ -263,23 +268,6 @@ final readonly class AgendaAdministrativa
             SQL, [$id, ...$intervalo, $editar ?? '0', $id, ...$intervalo]);
         if ($ocupado !== false) {
             throw new TurnoNoDisponible('El espacio o una de las profesionales ya tiene una ocupación en ese horario.');
-        }
-    }
-
-    private function verificarHoras(string $id, DateTimeImmutable $inicio, DateTimeImmutable $fin): void
-    {
-        $fecha = $inicio->format('Y-m-d');
-        $disponible = $this->conexion->fetchOne(<<<'SQL'
-            SELECT CASE WHEN count(*) = 0 THEN 1 ELSE COALESCE((
-                range_agg(tsrange(CAST(? AS date) + hora_inicio, CAST(? AS date) + hora_fin, '[)'))
-                    FILTER (WHERE dia_semana = ? AND vigente_desde <= CAST(? AS date)
-                        AND (vigente_hasta IS NULL OR vigente_hasta >= CAST(? AS date)))
-                @> tsrange(CAST(? AS timestamp), CAST(? AS timestamp), '[)')
-            )::int, 0) END
-            FROM horarios_profesionales WHERE profesional_id = ?
-            SQL, [$fecha, $fecha, (int) $inicio->format('N'), $fecha, $fecha, $inicio->format('Y-m-d H:i:s'), $fin->format('Y-m-d H:i:s'), $id]);
-        if ((int) $disponible !== 1) {
-            throw new TurnoNoDisponible('El turno y su preparación deben entrar en el horario de todas las profesionales asignadas.');
         }
     }
 

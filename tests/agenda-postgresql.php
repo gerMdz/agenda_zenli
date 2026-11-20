@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Administracion\AgendaAdministrativa;
 use App\Administracion\ComunicacionAgenda;
+use App\Administracion\HorariosProfesionales;
 use App\Administracion\SesionAdministrativa;
 use App\Agenda\AgendaPostgresql;
 use App\Agenda\Disponibilidad;
@@ -180,7 +181,7 @@ try {
 
 fwrite(STDOUT, "PostgreSQL: dos confirmaciones concurrentes, un solo ganador y sin escrituras parciales.\n");
 
-foreach (['20261119000100', '20261119000300', '20261119000600', '20261119000700', '20261119000800'] as $version) {
+foreach (['20261119000100', '20261119000300', '20261119000600', '20261119000700', '20261119000800', '20261119000900'] as $version) {
     require __DIR__.'/../migrations/Version'.$version.'.php';
     aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
 }
@@ -189,7 +190,8 @@ $conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripc
 $conexion->executeStatement("INSERT INTO usuarios (id, email, password_hash) VALUES (101, 'admin@example.test', 'prueba')");
 $conexion->executeStatement("INSERT INTO profesionales (id, nombre) VALUES (104, 'Prueba C')");
 $conexion->executeStatement("INSERT INTO recursos (id, codigo, nombre) VALUES (102, 'PRUEBA_2', 'Espacio dos'), (103, 'PRUEBA_3', 'Espacio tres')");
-$interna = new AgendaAdministrativa($conexion);
+$horarios = new HorariosProfesionales($conexion);
+$interna = new AgendaAdministrativa($conexion, $horarios);
 $turno = [
     'servicio' => '101', 'espacio' => '102', 'profesionales' => ['101', '102'],
     'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
@@ -289,3 +291,43 @@ $interna->guardarEspacio(['nombre' => 'Cabina principal', 'detalle' => 'Entrada 
 $espacioEditado = array_values(array_filter($interna->configuracion()['espacios'], static fn (array $espacio): bool => $espacio['id'] === '102'))[0];
 verificar($espacioEditado['nombre'] === 'Cabina principal' && $espacioEditado['detalle'] === 'Entrada a la derecha', 'Se puede editar un espacio existente.');
 verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_recursos WHERE recurso_id = 102 AND turno_admin_id IS NOT NULL') === 1, 'Editar el espacio conserva la ocupación del turno.');
+
+verificar($conexion->fetchOne("SELECT nombre FROM recursos WHERE codigo = 'ESPACIO_1'") === 'Sala principal', 'Se reemplaza el nombre inicial de la sala.');
+$ocasional = $dual['profesional_id'];
+verificar(!$horarios->consultar($ocasional)['por_franjas'], 'Una profesional nueva admite agendado manual inicialmente.');
+$pauta = [
+    'por_franjas' => true,
+    'revision' => 0,
+    'franjas' => [
+        ['tipo' => 'puntual', 'vigente_desde' => '2099-06-04', 'hora_inicio' => '09:00', 'hora_fin' => '11:00'],
+        ['tipo' => 'semanal', 'vigente_desde' => '2099-06-01', 'dia_semana' => 4, 'hora_inicio' => '15:00', 'hora_fin' => '18:00'],
+    ],
+];
+$horarios->guardar($ocasional, $pauta);
+$turnoOcasional = array_replace($turno, [
+    'espacio' => '103', 'profesionales' => [$ocasional], 'inicio' => '2099-06-04T10:00',
+]);
+$idOcasional = $interna->cargar($turnoOcasional, '101');
+try {
+    $interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-11T10:00']), '101');
+    throw new RuntimeException('Una franja puntual se repitió otra semana.');
+} catch (TurnoNoDisponible) {
+}
+$interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-11T15:30']), '101');
+
+try {
+    $horarios->guardar($ocasional, array_replace($pauta, ['revision' => 1, 'franjas' => [$pauta['franjas'][1]]]));
+    throw new RuntimeException('Se retiró una franja con un turno futuro.');
+} catch (TurnoNoDisponible) {
+    verificar(count($horarios->consultar($ocasional)['franjas']) === 2, 'El cambio con conflicto conserva las franjas originales.');
+}
+$interna->cancelar($idOcasional, '101', null, 1);
+$horarios->guardar($ocasional, array_replace($pauta, ['revision' => 1, 'franjas' => [$pauta['franjas'][1]]]));
+verificar(count($horarios->consultar($ocasional)['franjas']) === 1, 'Se puede retirar la franja después de cancelar el turno.');
+$horarios->guardar('1', ['por_franjas' => true, 'revision' => 0, 'franjas' => []]);
+try {
+    $interna->cargar(array_replace($turnoOcasional, ['profesionales' => ['1']]), '101');
+    throw new RuntimeException('Una profesional restringida sin franjas quedó disponible.');
+} catch (TurnoNoDisponible) {
+}
+fwrite(STDOUT, "PostgreSQL: horarios semanales, puntuales y cambios sin afectar turnos verificados.\n");
