@@ -26,5 +26,5 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 - Aplicar el bloqueo del espacio en las futuras escrituras de horarios y bloqueos, y verificar la concurrencia de esas operaciones con las confirmaciones. Las exclusiones GiST protegen las ocupaciones entre sí, pero no cubren las otras tablas.
 - Implementar la capa de aplicación que autoriza las confirmaciones y aplica las políticas comerciales antes de exponer una ruta. Validar el esquema completo en la versión de PostgreSQL prevista para el despliegue.
 - Incorporar al panel la recuperación de contraseñas y la desactivación de cuentas profesionales.
-- Incorporar al panel el alta de espacios y la edición de franjas profesionales. Mientras una profesional tenga franjas registradas, los turnos internos deben ajustarse a ellas. Se permite la carga manual si todavía no tiene franjas.
+- Incorporar al panel la edición de franjas profesionales. Mientras una profesional tenga franjas registradas, los turnos internos deben ajustarse a ellas. Se permite la carga manual si todavía no tiene franjas.
 - Definir qué servicios requieren un equipo y cómo se organiza cada una de sus sesiones.

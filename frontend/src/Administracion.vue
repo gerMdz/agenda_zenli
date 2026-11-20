@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import portadaOriginal from './image/portada.webp'
 
 const usuario = ref(null)
@@ -23,6 +23,18 @@ const restaurar = ref(false)
 const usuarios = ref([])
 const altaEmail = ref('')
 const altaClave = ref('')
+const altaProfesional = ref(false)
+const altaPerfil = ref('')
+const altaNombre = ref('')
+const ajustesAgenda = ref(null)
+const modoPreparacion = ref('')
+const minutosPreparacion = ref('')
+const preparacionServicios = ref({})
+const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false })
+const espacioEditado = ref(null)
+const espacioNombre = ref('')
+const espacioDetalle = ref('')
+const perfilesSinCuenta = computed(() => (ajustesAgenda.value?.profesionales ?? []).filter(item => !Number(item.tiene_cuenta)))
 const usuarioEditado = ref(null)
 const editarActivo = ref(true)
 const editarClave = ref('')
@@ -83,6 +95,8 @@ function aplicarSesion(sesion) {
     usuarioEditado.value = null
     editarClave.value = ''
     altaClave.value = ''
+    cuenta.value.clave = ''
+    ajustesAgenda.value = null
     limpiarImagenTemporal()
   }
 }
@@ -96,14 +110,20 @@ async function cargarPanel() {
     window.location.replace('/admin/agenda')
     return
   }
-  const [portada, listado, svcs] = await Promise.all([
+  const [portada, listado, svcs, ajustes] = await Promise.all([
     api('/api/portada'),
     api('/api/admin/usuarios'),
     api('/api/admin/servicios'),
+    api('/api/admin/agenda/configuracion'),
   ])
   aplicarPortada(portada)
   usuarios.value = listado.usuarios
   servicios.value = svcs.servicios
+  aplicarConfiguracionAgenda(ajustes)
+  if (window.location.hash === '#configuracion-agenda') {
+    await nextTick()
+    document.getElementById('configuracion-agenda')?.scrollIntoView()
+  }
 }
 
 function aplicarPortada(portada) {
@@ -212,16 +232,85 @@ function guardarPortada(evento) {
   })
 }
 
+function aplicarConfiguracionAgenda(ajustes) {
+  ajustesAgenda.value = ajustes
+  modoPreparacion.value = ajustes.preparacion?.modo ?? ''
+  minutosPreparacion.value = ajustes.preparacion?.minutos ?? ''
+  preparacionServicios.value = { ...ajustes.preparacion?.servicios }
+}
+
+async function recargarEquipo() {
+  const [ajustes, listado] = await Promise.all([
+    api('/api/admin/agenda/configuracion'),
+    api('/api/admin/usuarios'),
+  ])
+  ajustesAgenda.value = ajustes
+  usuarios.value = listado.usuarios
+}
+
 function crearUsuario() {
   return ejecutar(async () => {
-    const listado = await api('/api/admin/usuarios', {
-      method: 'POST',
-      datos: { email: altaEmail.value, clave: altaClave.value },
-    })
-    usuarios.value = listado.usuarios
+    const datos = { email: altaEmail.value, clave: altaClave.value }
+    if (altaProfesional.value) {
+      await api('/api/admin/agenda/cuentas-profesionales', {
+        method: 'POST',
+        datos: {
+          ...datos, admin: true, profesional: altaPerfil.value === 'nueva' ? null : altaPerfil.value,
+          nombre: altaNombre.value,
+        },
+      })
+      await recargarEquipo()
+    } else {
+      usuarios.value = (await api('/api/admin/usuarios', { method: 'POST', datos })).usuarios
+    }
     altaEmail.value = ''
     altaClave.value = ''
+    altaProfesional.value = false
+    altaPerfil.value = ''
+    altaNombre.value = ''
     mensaje.value = 'Cuenta administradora creada.'
+  })
+}
+
+function crearCuentaProfesional() {
+  return ejecutar(async () => {
+    await api('/api/admin/agenda/cuentas-profesionales', {
+      method: 'POST',
+      datos: { ...cuenta.value, profesional: cuenta.value.profesional === 'nueva' ? null : cuenta.value.profesional },
+    })
+    const vinculo = cuenta.value.cuenta_existente
+    cuenta.value = { profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false }
+    await recargarEquipo()
+    mensaje.value = vinculo ? 'Cuenta vinculada.' : 'Cuenta profesional creada.'
+  })
+}
+
+function guardarPreparacionAgenda() {
+  return ejecutar(async () => {
+    const datos = modoPreparacion.value === 'general'
+      ? { modo: modoPreparacion.value, minutos: minutosPreparacion.value }
+      : { modo: modoPreparacion.value, servicios: Object.fromEntries(Object.entries(preparacionServicios.value).filter(([, valor]) => valor !== '')) }
+    await api('/api/admin/agenda/preparacion', { method: 'PUT', datos })
+    aplicarConfiguracionAgenda(await api('/api/admin/agenda/configuracion'))
+    mensaje.value = 'Preparación guardada.'
+  })
+}
+
+function editarEspacio(espacio = null) {
+  espacioEditado.value = espacio?.id ?? null
+  espacioNombre.value = espacio?.nombre ?? ''
+  espacioDetalle.value = espacio?.detalle ?? ''
+}
+
+function guardarEspacio() {
+  return ejecutar(async () => {
+    const id = espacioEditado.value
+    ajustesAgenda.value = await api(id ? `/api/admin/agenda/espacios/${id}` : '/api/admin/agenda/espacios', {
+      method: id ? 'PUT' : 'POST',
+      datos: { nombre: espacioNombre.value, detalle: espacioDetalle.value },
+    })
+    editarEspacio()
+    mensaje.value = id ? 'Espacio actualizado.' : 'Espacio creado.'
   })
 }
 
@@ -469,7 +558,7 @@ onBeforeUnmount(() => {
           <h2 id="titulo-usuarios">Cuentas administradoras</h2>
           <ul class="lista">
             <li v-for="cuenta in usuarios" :key="cuenta.id">
-              <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}</small></div>
+              <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}<template v-if="cuenta.profesional"> · {{ cuenta.profesional }}</template></small></div>
               <button type="button" class="secundario" :disabled="ocupado" @click="seleccionarUsuario(cuenta)">Editar</button>
             </li>
           </ul>
@@ -491,9 +580,91 @@ onBeforeUnmount(() => {
             <label for="alta-clave">Contraseña inicial</label>
             <input id="alta-clave" v-model="altaClave" type="password" autocomplete="new-password" minlength="12" maxlength="72" aria-describedby="ayuda-clave" required>
             <small id="ayuda-clave">Usá al menos 12 caracteres.</small>
-            <button :disabled="ocupado">Crear cuenta</button>
+            <label class="casilla"><input v-model="altaProfesional" type="checkbox"> También es profesional</label>
+            <template v-if="altaProfesional">
+              <label>Perfil profesional
+                <select v-model="altaPerfil" required>
+                  <option disabled value="">Elegí una opción</option>
+                  <option value="nueva">Crear nueva profesional</option>
+                  <option v-for="persona in perfilesSinCuenta" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
+                </select>
+              </label>
+              <label v-if="altaPerfil === 'nueva'">Nombre <input v-model.trim="altaNombre" maxlength="120" required></label>
+            </template>
+            <button :disabled="ocupado || (altaProfesional && !ajustesAgenda)">Crear cuenta</button>
           </form>
         </section>
+
+        <details v-if="ajustesAgenda" id="configuracion-agenda" class="panel panel-ancho" open>
+          <summary>Configuración de agenda</summary>
+          <p>Configurá primero los espacios y las profesionales. Después cargá los servicios y definí su preparación.</p>
+        </details>
+
+        <template v-if="ajustesAgenda">
+          <section class="panel">
+            <h2>Espacios de atención</h2>
+            <ul class="lista">
+              <li v-for="espacio in ajustesAgenda.espacios" :key="espacio.id">
+                <div><strong>{{ espacio.nombre }}</strong><small v-if="espacio.detalle">{{ espacio.detalle }}</small></div>
+                <button type="button" class="secundario" :disabled="ocupado" @click="editarEspacio(espacio)">Editar</button>
+              </li>
+            </ul>
+            <form @submit.prevent="guardarEspacio">
+              <h3>{{ espacioEditado ? 'Editar espacio' : 'Nuevo espacio' }}</h3>
+              <label>Nombre <input v-model.trim="espacioNombre" maxlength="120" required></label>
+              <label>Detalle (opcional) <textarea v-model.trim="espacioDetalle" maxlength="1000" rows="3"></textarea></label>
+              <div class="acciones">
+                <button :disabled="ocupado">{{ espacioEditado ? 'Guardar cambios' : 'Crear espacio' }}</button>
+                <button v-if="espacioEditado" type="button" class="secundario" :disabled="ocupado" @click="editarEspacio()">Cancelar</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h2>Cuentas de profesionales</h2>
+            <ul class="lista">
+              <li v-for="persona in ajustesAgenda.profesionales" :key="persona.id">
+                <div><strong>{{ persona.nombre }}</strong><small>{{ Number(persona.admin) ? 'Profesional y administradora' : Number(persona.tiene_cuenta) ? 'Profesional' : 'Sin cuenta' }}</small></div>
+              </li>
+            </ul>
+            <form @submit.prevent="crearCuentaProfesional">
+              <label>Profesional
+                <select v-model="cuenta.profesional" required>
+                  <option disabled value="">Elegí una opción</option>
+                  <option value="nueva">Crear nueva profesional</option>
+                  <option v-for="persona in ajustesAgenda.profesionales.filter(item => !Number(item.tiene_cuenta))" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
+                </select>
+              </label>
+              <label v-if="cuenta.profesional === 'nueva'">Nombre <input v-model.trim="cuenta.nombre" maxlength="120" required></label>
+              <label class="casilla"><input v-model="cuenta.cuenta_existente" type="checkbox"> Vincular una cuenta administradora existente</label>
+              <label>Correo <input v-model="cuenta.email" type="email" maxlength="180" autocomplete="off" required></label>
+              <template v-if="!cuenta.cuenta_existente">
+                <label>Contraseña inicial <input v-model="cuenta.clave" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></label>
+                <label class="casilla"><input v-model="cuenta.admin" type="checkbox"> También es administradora</label>
+              </template>
+              <button :disabled="ocupado">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h2>Preparación</h2>
+            <form @submit.prevent="guardarPreparacionAgenda">
+              <fieldset>
+                <legend>¿Todos los servicios tienen el mismo tiempo de preparación?</legend>
+                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="general" required> Sí, el mismo para todos</label>
+                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="por_servicio" required> No, se define por servicio</label>
+              </fieldset>
+              <label v-if="modoPreparacion === 'general'">Minutos de preparación <input v-model.number="minutosPreparacion" type="number" min="0" max="1440" required></label>
+              <template v-if="modoPreparacion === 'por_servicio'">
+                <p>Dejá sin completar los servicios que todavía no querés agendar.</p>
+                <label v-for="item in servicios" :key="item.id">
+                  {{ item.nombre }} (min) <input v-model.number="preparacionServicios[item.id]" type="number" min="0" max="1440">
+                </label>
+              </template>
+              <button :disabled="ocupado || !modoPreparacion">Guardar preparación</button>
+            </form>
+          </section>
+        </template>
 
         <!-- Servicios de la portada -->
         <section class="panel" aria-labelledby="titulo-servicios" style="grid-column: 1 / -1;">
@@ -593,13 +764,16 @@ h1 { margin: 0 0 1.25rem; font-size: clamp(2rem, 5vw, 3rem); }
 h2, h3 { margin: 0 0 .4rem; }
 h3 { font-size: 1rem; overflow-wrap: anywhere; }
 .cuenta-actual { margin-top: -.85rem; color: #526255; overflow-wrap: anywhere; }
+.panel-ancho { grid-column: 1 / -1; }
+summary { cursor: pointer; font-weight: 700; }
+fieldset { min-width: 0; border: 1px solid #e4dac3; border-radius: .4rem; }
 .paneles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
 .panel { background: #fffaf1; padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid #e4dac3; border-radius: .9rem; }
 .inicio-sesion { max-width: 28rem; }
 form { display: grid; gap: .55rem; margin-top: 1rem; }
 label { font-weight: 650; font-size: .88rem; }
 input, button { font: inherit; }
-input:not([type='checkbox']) { min-width: 0; width: 100%; padding: .62rem .7rem; border: 1px solid #aaab98; border-radius: .4rem; background: #fffdf7; color: #15372a; }
+input:not([type='checkbox'], [type='radio']), select, textarea { min-width: 0; width: 100%; padding: .62rem .7rem; border: 1px solid #aaab98; border-radius: .4rem; background: #fffdf7; color: #15372a; }
 input + label { margin-top: .45rem; }
 button { width: fit-content; padding: .56rem .85rem; border: 1px solid #214d3a; border-radius: .4rem; background: #214d3a; color: #fffdfa; cursor: pointer; font-weight: 650; font-size: .89rem; }
 form > button, .acciones { margin-top: .5rem; }

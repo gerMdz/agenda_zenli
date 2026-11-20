@@ -41,6 +41,31 @@ final readonly class AgendaAdministrativaController
         }
     }
 
+    #[Route('/configuracion', methods: ['GET'])]
+    public function configuracion(Request $peticion): JsonResponse
+    {
+        $this->sesion->exigir($peticion);
+
+        return $this->respuesta($this->agenda->configuracion());
+    }
+
+    #[Route('/espacios', methods: ['POST'])]
+    #[Route('/espacios/{id}', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT'])]
+    public function guardarEspacio(Request $peticion, ?string $id = null): JsonResponse
+    {
+        $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $this->agenda->guardarEspacio($peticion->toArray(), $id);
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del espacio.' : $error->getMessage()], 422);
+        } catch (HttpException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], $error->getStatusCode());
+        }
+
+        return $this->respuesta($this->agenda->configuracion(), $id === null ? 201 : 200);
+    }
+
     #[Route('/preparacion', methods: ['PUT'])]
     public function guardarPreparacion(Request $peticion): JsonResponse
     {

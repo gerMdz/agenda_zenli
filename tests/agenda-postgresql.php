@@ -180,7 +180,7 @@ try {
 
 fwrite(STDOUT, "PostgreSQL: dos confirmaciones concurrentes, un solo ganador y sin escrituras parciales.\n");
 
-foreach (['20261119000100', '20261119000300', '20261119000600', '20261119000700'] as $version) {
+foreach (['20261119000100', '20261119000300', '20261119000600', '20261119000700', '20261119000800'] as $version) {
     require __DIR__.'/../migrations/Version'.$version.'.php';
     aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
 }
@@ -281,3 +281,11 @@ $conexion->executeStatement("INSERT INTO usuarios (email, password_hash, roles) 
 $comunicacion->vincularCuenta(null, 'existente@example.test', null, nombre: 'Profesional con cuenta existente', cuentaExistente: true);
 verificar($conexion->fetchOne("SELECT p.nombre FROM profesionales p JOIN usuarios u ON u.id = p.usuario_id WHERE u.email = 'existente@example.test'") === 'Profesional con cuenta existente', 'Se vincula la cuenta administradora existente.');
 fwrite(STDOUT, "PostgreSQL: vistas por período, creación de profesionales y cuenta de rol doble verificadas.\n");
+
+$interna->guardarEspacio(['nombre' => 'Cabina nueva', 'detalle' => 'Camilla ajustable'], null);
+$nuevoEspacio = array_values(array_filter($interna->configuracion()['espacios'], static fn (array $espacio): bool => $espacio['nombre'] === 'Cabina nueva'))[0];
+verificar($nuevoEspacio['detalle'] === 'Camilla ajustable', 'El espacio permite guardar su detalle.');
+$interna->guardarEspacio(['nombre' => 'Cabina principal', 'detalle' => 'Entrada a la derecha'], '102');
+$espacioEditado = array_values(array_filter($interna->configuracion()['espacios'], static fn (array $espacio): bool => $espacio['id'] === '102'))[0];
+verificar($espacioEditado['nombre'] === 'Cabina principal' && $espacioEditado['detalle'] === 'Entrada a la derecha', 'Se puede editar un espacio existente.');
+verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_recursos WHERE recurso_id = 102 AND turno_admin_id IS NOT NULL') === 1, 'Editar el espacio conserva la ocupación del turno.');

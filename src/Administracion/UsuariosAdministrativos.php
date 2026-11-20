@@ -18,9 +18,10 @@ final readonly class UsuariosAdministrativos
     public function listar(): array
     {
         return $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT id::text AS id, email, activo
-            FROM usuarios WHERE jsonb_exists(roles, 'ROLE_ADMIN')
-            ORDER BY email
+            SELECT u.id::text AS id, u.email, u.activo, p.nombre AS profesional
+            FROM usuarios u LEFT JOIN profesionales p ON p.usuario_id = u.id AND p.activa
+            WHERE jsonb_exists(u.roles, 'ROLE_ADMIN')
+            ORDER BY u.email
             SQL);
     }
 

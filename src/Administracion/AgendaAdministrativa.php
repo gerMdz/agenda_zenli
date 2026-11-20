@@ -59,10 +59,48 @@ final readonly class AgendaAdministrativa
         return [
             'servicios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre FROM servicios_portada ORDER BY orden, nombre'),
             'profesionales' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre, (usuario_id IS NOT NULL)::int AS tiene_cuenta FROM profesionales WHERE activa AND (CAST(? AS bigint) IS NULL OR id = ?) ORDER BY nombre', [$propia, $propia]),
-            'espacios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre FROM recursos WHERE activo ORDER BY nombre'),
+            'espacios' => $this->espacios(),
             'preparacion' => $this->preparacion(),
             'turnos' => $turnos,
         ];
+    }
+
+    public function configuracion(): array
+    {
+        return [
+            'profesionales' => $this->conexion->fetchAllAssociative(<<<'SQL'
+                SELECT p.id::text, p.nombre, (p.usuario_id IS NOT NULL)::int AS tiene_cuenta,
+                       COALESCE(jsonb_exists(u.roles, 'ROLE_ADMIN'), false)::int AS admin
+                FROM profesionales p LEFT JOIN usuarios u ON u.id = p.usuario_id
+                WHERE p.activa ORDER BY p.nombre
+                SQL),
+            'espacios' => $this->espacios(),
+            'preparacion' => $this->preparacion(),
+        ];
+    }
+
+    private function espacios(): array
+    {
+        return $this->conexion->fetchAllAssociative('SELECT id::text, nombre, detalle FROM recursos WHERE activo ORDER BY nombre, id');
+    }
+
+    public function guardarEspacio(array $datos, ?string $id): void
+    {
+        $nombre = $datos['nombre'] ?? null;
+        $detalle = $datos['detalle'] ?? '';
+        if (!is_string($nombre) || preg_match('/\A[^\x00]{1,120}\z/u', trim($nombre)) !== 1
+            || !is_string($detalle) || preg_match('/\A[^\x00]{0,1000}\z/u', trim($detalle)) !== 1) {
+            throw new InvalidArgumentException('Ingresá un nombre y un detalle de hasta 1000 caracteres.');
+        }
+        $campos = ['nombre' => trim($nombre), 'detalle' => trim($detalle)];
+        if ($id === null) {
+            $this->conexion->insert('recursos', $campos + ['codigo' => 'ESP_'.bin2hex(random_bytes(12))]);
+
+            return;
+        }
+        if ($this->conexion->update('recursos', $campos, ['id' => self::id($id)]) === 0) {
+            throw new HttpException(404, 'El espacio ya no está disponible.');
+        }
     }
 
     public function guardarPreparacion(array $datos): void

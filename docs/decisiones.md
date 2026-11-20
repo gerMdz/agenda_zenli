@@ -27,6 +27,8 @@
 - Editar un turno vuelve a comprobar todas las ocupaciones dentro de la transacción. Cancelarlo libera la ocupación del espacio y de las profesionales. El historial conserva el estado anterior y quién hizo cada cambio. Los mensajes de agenda son privados entre la cuenta remitente y la destinataria.
 - La agenda abre en vista semanal, con alternativas diaria y mensual. El alta y la edición se hacen en un modal y las horas se ingresan y muestran en formato de 24 horas de Mendoza.
 - Una misma cuenta puede tener permisos administrativos y estar vinculada a una profesional. Los turnos propios se identifican por ese vínculo y se pueden destacar y filtrar dentro del calendario.
+- En `/admin` se gestionan los espacios con nombre y detalle, el alta de profesionales y la preparación de los servicios. El formulario de cuenta administradora permite vincular o crear un perfil profesional y el de profesionales permite dar permisos de administración.
+- La agenda muestra la selección y el nombre del espacio cuando hay varios activos. Con uno solo, lo asigna en forma automática.
 
 ## Portada y administración
 

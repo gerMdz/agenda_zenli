@@ -105,20 +105,16 @@ const fechaTurno = ref('')
 const bandeja = ref({ contactos: [], mensajes: [] })
 const destinatario = ref('')
 const texto = ref('')
-const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false })
 const ocupado = ref(false)
 const error = ref('')
 const aviso = ref('')
-const configurar = ref(false)
-const modo = ref('')
-const minutos = ref('')
-const porServicio = ref({})
 const cliente = ref('')
 const servicio = ref('')
 const hora = ref('')
 const duracion = ref('')
 const espacio = ref('')
 const equipo = ref([])
+const espacioElegido = computed(() => datos.value?.espacios.find(item => item.id === espacio.value))
 const varias = ref(false)
 const preparacion = computed(() => {
   const ajustes = datos.value?.preparacion
@@ -160,27 +156,6 @@ async function cargarDia() {
   if (datos.value.espacios.length === 1) espacio.value = datos.value.espacios[0].id
   if (datos.value.servicios.length === 1) servicio.value = datos.value.servicios[0].id
   if (!usuario.value.admin && !editando.value) equipo.value = [usuario.value.profesional_id]
-  if (usuario.value.admin && !datos.value.preparacion) abrirConfiguracion()
-}
-
-function abrirConfiguracion() {
-  const configuracion = datos.value?.preparacion
-  modo.value = configuracion?.modo ?? ''
-  minutos.value = configuracion?.minutos ?? ''
-  porServicio.value = { ...configuracion?.servicios }
-  configurar.value = true
-}
-
-function guardarPreparacion() {
-  return ejecutar(async () => {
-    const body = modo.value === 'general'
-      ? { modo: modo.value, minutos: minutos.value }
-      : { modo: modo.value, servicios: Object.fromEntries(Object.entries(porServicio.value).filter(([, valor]) => valor !== '')) }
-    await api('/api/admin/agenda/preparacion', 'PUT', body)
-    await cargarDia()
-    configurar.value = false
-    aviso.value = 'Preparación guardada.'
-  })
 }
 
 function cambiarEquipo() {
@@ -261,20 +236,6 @@ function enviarMensaje() {
   })
 }
 
-function crearCuenta() {
-  return ejecutar(async () => {
-    await api('/api/admin/agenda/cuentas-profesionales', 'POST', {
-      ...cuenta.value,
-      profesional: cuenta.value.profesional === 'nueva' ? null : cuenta.value.profesional,
-    })
-    cuenta.value = { profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false }
-    usuario.value = (await api('/api/admin/sesion')).usuario
-    await cargarDia()
-    bandeja.value = await api('/api/admin/agenda/mensajes')
-    aviso.value = 'Cuenta profesional creada.'
-  })
-}
-
 function salir() {
   return ejecutar(async () => {
     await api('/api/admin/sesion', 'DELETE')
@@ -298,7 +259,7 @@ onMounted(() => ejecutar(async () => {
 <template>
   <div class="agenda">
     <header>
-      <a v-if="usuario?.admin" href="/admin">← Administración</a>
+      <a v-if="usuario?.admin" href="/admin#configuracion-agenda">← Administración</a>
       <span>Zenli</span>
       <button v-if="usuario" type="button" :disabled="ocupado" @click="salir">Cerrar sesión</button>
     </header>
@@ -352,7 +313,7 @@ onMounted(() => ejecutar(async () => {
             <li v-for="turno in turnosDia" :key="turno.id" :class="{ propio: esPropio(turno) }">
               <strong>{{ reloj.format(new Date(turno.inicio)) }}–{{ reloj.format(new Date(turno.fin)) }}</strong>
               <span>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
-              <small>{{ turno.espacio }} · {{ turno.profesionales }}</small>
+              <small><template v-if="datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
               <div v-if="turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
@@ -377,7 +338,7 @@ onMounted(() => ejecutar(async () => {
                   <option v-for="item in datos.servicios" :key="item.id" :value="item.id">{{ item.nombre }}</option>
                 </select>
               </label>
-              <p v-if="servicio && preparacion == null">Configurá la preparación de este servicio para poder agendarlo.</p>
+              <p v-if="servicio && preparacion == null"><template v-if="usuario.admin">Definí la preparación de este servicio en <a href="/admin#configuracion-agenda">Administración</a>.</template><template v-else>Pedile a administración que configure la preparación de este servicio.</template></p>
               <p v-else-if="servicio">Preparación antes del turno: {{ preparacion }} min.</p>
               <label>Fecha del turno <input v-model="fechaTurno" type="date" required></label>
               <label>Nombre del cliente <input v-model="cliente" maxlength="150" required></label>
@@ -391,7 +352,7 @@ onMounted(() => ejecutar(async () => {
                   <option v-for="item in datos.espacios" :key="item.id" :value="item.id">{{ item.nombre }}</option>
                 </select>
               </label>
-              <p v-else>Espacio: {{ datos.espacios[0].nombre }}</p>
+              <small v-if="datos.espacios.length > 1 && espacioElegido?.detalle">{{ espacioElegido.detalle }}</small>
               <label v-if="usuario.admin && datos.profesionales.length > 1" class="opcion"><input v-model="varias" type="checkbox" @change="cambiarEquipo"> Participa más de una profesional</label>
               <fieldset v-if="varias">
                 <legend>Profesionales</legend>
@@ -409,40 +370,7 @@ onMounted(() => ejecutar(async () => {
             </form>
         </dialog>
 
-        <details v-if="usuario.admin" class="panel" :open="!datos.preparacion">
-          <summary>Guía para empezar</summary>
-          <ol>
-            <li><strong>Espacios.</strong> Confirmá dónde se atiende. Si hay uno activo, se elige automáticamente.</li>
-            <li><strong>Profesionales.</strong> Usá las profesionales activas y creales una cuenta abajo si van a cargar su propia agenda.</li>
-            <li><strong>Servicios.</strong> Cargalos en <a href="/admin">Administración</a> y definí acá su tiempo de preparación.</li>
-            <li><strong>Turnos.</strong> Cargá fecha, hora y duración. Administración asigna los turnos de equipo.</li>
-          </ol>
-          <p>{{ datos.espacios.length }} espacios · {{ datos.profesionales.length }} profesionales · {{ datos.servicios.length }} servicios</p>
-        </details>
-        <div v-if="usuario.admin" class="columnas">
-          <section class="panel">
-            <h2>Preparación</h2>
-            <button v-if="!configurar" type="button" @click="abrirConfiguracion">Editar preparación</button>
-            <form v-else @submit.prevent="guardarPreparacion">
-              <fieldset>
-                <legend>¿Todos los servicios tienen el mismo tiempo de preparación?</legend>
-                <label class="opcion"><input v-model="modo" type="radio" value="general" required> Sí, el mismo para todos</label>
-                <label class="opcion"><input v-model="modo" type="radio" value="por_servicio" required> No, se define por servicio</label>
-              </fieldset>
-              <label v-if="modo === 'general'">Minutos de preparación <input v-model.number="minutos" type="number" min="0" max="1440" required></label>
-              <template v-if="modo === 'por_servicio'">
-                <p>Dejá sin completar los servicios que todavía no querés agendar.</p>
-                <label v-for="item in datos.servicios" :key="item.id">
-                  {{ item.nombre }} (min) <input v-model.number="porServicio[item.id]" type="number" min="0" max="1440">
-                </label>
-              </template>
-              <button :disabled="ocupado || !modo">Guardar preparación</button>
-            </form>
-          </section>
-        </div>
-
-        <div class="columnas">
-          <section class="panel">
+        <section class="panel">
             <div class="barra">
               <h2>Mensajes privados</h2>
               <button type="button" class="secundario" :disabled="ocupado" @click="ejecutar(async () => { bandeja = await api('/api/admin/agenda/mensajes') })">Actualizar</button>
@@ -464,29 +392,7 @@ onMounted(() => ejecutar(async () => {
                 <p>{{ mensaje.texto }}</p>
               </li>
             </ul>
-          </section>
-
-          <section v-if="usuario.admin" class="panel">
-            <h2>Cuentas de profesionales</h2>
-            <form @submit.prevent="crearCuenta">
-              <label>Profesional
-                <select v-model="cuenta.profesional" required>
-                  <option disabled value="">Elegí una opción</option>
-                  <option value="nueva">Crear nueva profesional</option>
-                  <option v-for="persona in datos.profesionales.filter(item => !Number(item.tiene_cuenta))" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
-                </select>
-              </label>
-              <label v-if="cuenta.profesional === 'nueva'">Nombre <input v-model.trim="cuenta.nombre" maxlength="120" required></label>
-              <label class="opcion"><input v-model="cuenta.cuenta_existente" type="checkbox"> Vincular una cuenta administradora existente</label>
-              <label>Correo <input v-model="cuenta.email" type="email" maxlength="180" autocomplete="off" required></label>
-              <template v-if="!cuenta.cuenta_existente">
-                <label>Contraseña inicial <input v-model="cuenta.clave" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></label>
-                <label class="opcion"><input v-model="cuenta.admin" type="checkbox"> También es administradora</label>
-              </template>
-              <button :disabled="ocupado">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>
-            </form>
-          </section>
-        </div>
+        </section>
       </template>
     </main>
   </div>
@@ -501,7 +407,6 @@ h1, h2 { font-family: Georgia, serif; }
 h1 { margin-top: 0; }
 h2, p { margin-block: 0 .6rem; }
 .panel { padding: 1rem; background: #fffaf1; border: 1px solid #e4dac3; border-radius: .9rem; margin-bottom: 1rem; }
-.columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
 .barra { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
 form, label { display: grid; gap: .35rem; }
 form { gap: .8rem; }
@@ -518,7 +423,6 @@ button:disabled { opacity: .55; }
 .mensajes { list-style: none; padding: 0; }
 .mensajes li { padding-top: .5rem; border-top: 1px solid #e4dac3; }
 .mensajes p { white-space: pre-wrap; overflow-wrap: anywhere; }
-summary { cursor: pointer; font-weight: 700; }
 [role=alert] { background: #f9e3df; padding: .65rem; }
 [role=status] { padding: .45rem; }
 .cabecera-calendario, .controles-calendario { margin-bottom: .8rem; }
@@ -540,6 +444,6 @@ dialog form { margin-top: .7rem; }
   .resumen-dia { display: none; }
 }
 @media (max-width: 42rem) {
-  .columnas, .turnos li { grid-template-columns: 1fr; }
+  .turnos li { grid-template-columns: 1fr; }
 }
 </style>
