@@ -6,6 +6,8 @@ const telefono = ref('+5492616356192')
 const direccion = ref('Espejo 167, Ciudad de Mendoza')
 const horarios = ref('Lun, mié y vie · 10:00 a 20:00\nMar, jue y sáb · 11:00 a 19:00')
 const imagen = ref(portadaOriginal)
+const soloImagen = ref(false)
+const portadaCargada = ref(false)
 const redes = ref([])
 const servicios = ref([])
 const servicioSeleccionado = ref(null)
@@ -29,12 +31,10 @@ function cerrarModal() {
 
 onMounted(async () => {
   try {
-    const [respPortada, respServicios] = await Promise.all([
-      fetch('/api/portada'),
-      fetch('/api/servicios'),
-    ])
+    const respPortada = await fetch('/api/portada')
     if (respPortada.ok) {
       const portada = await respPortada.json()
+      soloImagen.value = portada.solo_imagen === true
       telefono.value = portada.telefono
       direccion.value = portada.direccion
       horarios.value = portada.horarios
@@ -44,18 +44,29 @@ onMounted(async () => {
         { nombre: 'Facebook', enlace: portada.facebook },
       ].filter(red => red.enlace)
     }
+  } catch {
+    // Si falta la configuración, se usan los valores iniciales.
+  } finally {
+    portadaCargada.value = true
+  }
+
+  if (soloImagen.value) return
+
+  try {
+    const respServicios = await fetch('/api/servicios')
     if (respServicios.ok) {
       const datos = await respServicios.json()
       servicios.value = datos.servicios
     }
   } catch {
-    // Los datos incluidos en la portada permiten mostrarla aunque la API no esté disponible.
+    // El contacto sigue visible aunque no se pueda cargar el catálogo.
   }
 })
 </script>
 
 <template>
-  <div class="sitio" id="inicio">
+  <img v-if="portadaCargada && soloImagen" class="solo-imagen" :src="imagen" alt="" fetchpriority="high" @error="imagen = portadaOriginal">
+  <div v-else-if="portadaCargada" class="sitio" id="inicio">
     <header class="cabecera">
       <div class="ancho cabecera-interior">
         <a class="marca" href="#inicio" aria-label="Zenli, inicio">
@@ -164,6 +175,14 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.solo-imagen {
+  display: block;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  object-fit: cover;
+}
+
 .sitio {
   --verde: #092b20;
   --verde-oscuro: #061b14;

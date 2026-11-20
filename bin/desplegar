@@ -59,6 +59,25 @@ mv -- "$respaldo_temporal" "$respaldo"
 respaldo_temporal=''
 printf 'Respaldo guardado en %s\n' "$respaldo"
 
+paso='rotar los respaldos'
+(
+    export LC_ALL=C
+    shopt -s nullglob
+    respaldos=("$directorio_respaldo"/zenli-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z.??????.dump)
+    conservados=1
+    for (( i=${#respaldos[@]}-1; i>=0; i-- )); do
+        anterior="${respaldos[i]}"
+        if [[ "$anterior" == "$respaldo" || ! -f "$anterior" || -L "$anterior" ]]; then
+            continue
+        fi
+        if (( conservados < 3 )); then
+            conservados=$((conservados + 1))
+        else
+            rm -- "$anterior"
+        fi
+    done
+)
+
 paso='construir las imágenes'
 dc build app nginx
 

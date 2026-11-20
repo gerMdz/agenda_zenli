@@ -65,6 +65,6 @@ Usá `compose.prod.yaml` como archivo independiente. La configuración de produc
 
 En el VPS, ejecutá `./bin/desplegar` para publicar la rama actual. El script actualiza el código con avance rápido de Git, comprueba que PostgreSQL esté listo, respalda la base, construye las imágenes, aplica las migraciones pendientes y verifica las rutas de salud, portada y administración. Si falla una migración, se detiene antes de reemplazar los contenedores web. Requiere Bash, `flock`, Git, curl y Docker Compose.
 
-El despliegue guarda los respaldos en `~/zenli-backups`, o en el directorio indicado por `ZENLI_BACKUP_DIR`. Cada ejecución verifica el índice del archivo con `pg_restore --list`. Podés probar su restauración en una base de prueba vacía.
+El despliegue guarda los respaldos en `~/zenli-backups`, o en el directorio indicado por `ZENLI_BACKUP_DIR`. Después de verificar el respaldo nuevo con `pg_restore --list`, conserva ese archivo y los dos más recientes generados por el script. Podés probar su restauración en una base de prueba vacía.
 
 Los archivos `composer.lock` y `frontend/package-lock.json` deben incorporarse al repositorio para fijar versiones. Hasta entonces, el build resuelve las dependencias con `composer install` y `npm install`. Con sus lockfiles presentes, Composer usa las versiones registradas y el frontend usa `npm ci`.

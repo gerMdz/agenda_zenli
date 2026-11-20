@@ -66,6 +66,26 @@ final readonly class AdministracionController
         return $this->sesion($peticion);
     }
 
+    #[Route('/portada/modo', methods: ['PATCH'])]
+    public function cambiarModoPortada(Request $peticion): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $datos = $peticion->toArray();
+        } catch (JsonException) {
+            $datos = [];
+        }
+        $soloImagen = $datos['solo_imagen'] ?? null;
+        if (!is_bool($soloImagen)) {
+            return $this->error('Elegí un modo de portada válido.', 422);
+        }
+
+        $this->portada->cambiarModo($soloImagen, $usuario['id']);
+
+        return $this->respuesta(['solo_imagen' => $soloImagen]);
+    }
+
     #[Route('/portada', methods: ['POST'])]
     public function guardarPortada(Request $peticion): JsonResponse
     {

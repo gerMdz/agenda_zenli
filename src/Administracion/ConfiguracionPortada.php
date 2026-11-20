@@ -20,7 +20,7 @@ final readonly class ConfiguracionPortada
 
     public function consultar(): array
     {
-        $fila = $this->conexion->fetchAssociative('SELECT telefono, imagen_version, instagram, facebook, direccion, horarios FROM configuracion_portada WHERE id = 1');
+        $fila = $this->conexion->fetchAssociative('SELECT telefono, imagen_version, instagram, facebook, direccion, horarios, solo_imagen::int AS solo_imagen FROM configuracion_portada WHERE id = 1');
 
         return [
             'telefono' => $fila['telefono'] ?? self::TELEFONO_INICIAL,
@@ -29,6 +29,7 @@ final readonly class ConfiguracionPortada
             'facebook' => $fila['facebook'] ?? null,
             'direccion' => $fila['direccion'] ?? self::DIRECCION_INICIAL,
             'horarios' => $fila['horarios'] ?? self::HORARIOS_INICIALES,
+            'solo_imagen' => (bool) ($fila['solo_imagen'] ?? false),
         ];
     }
 
@@ -38,6 +39,18 @@ final readonly class ConfiguracionPortada
             "SELECT encode(imagen, 'base64') AS contenido, imagen_tipo FROM configuracion_portada WHERE id = 1 AND imagen_version = ?",
             [$version],
         );
+    }
+
+    public function cambiarModo(bool $soloImagen, string $autor): void
+    {
+        $this->conexion->executeStatement(<<<'SQL'
+            INSERT INTO configuracion_portada (id, telefono, actualizado_por, solo_imagen)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                solo_imagen = excluded.solo_imagen,
+                actualizado_por = excluded.actualizado_por,
+                actualizado_en = statement_timestamp()
+            SQL, [self::TELEFONO_INICIAL, $autor, $soloImagen ? 'true' : 'false']);
     }
 
     public function guardar(
@@ -106,7 +119,12 @@ final readonly class ConfiguracionPortada
             $sql .= ', horarios = excluded.horarios';
         }
 
-        $this->conexion->executeStatement($sql, [$telefono, $contenido, $tipo, $version, $autor, $enlaceInstagram, $enlaceFacebook, $direccion === null ? self::DIRECCION_INICIAL : trim($direccion), $horarios === null ? self::HORARIOS_INICIALES : trim($horarios)]);
+
+        $this->conexion->executeStatement($sql, [
+            $telefono, $contenido, $tipo, $version, $autor, $enlaceInstagram, $enlaceFacebook,
+            $direccion === null ? self::DIRECCION_INICIAL : trim($direccion),
+            $horarios === null ? self::HORARIOS_INICIALES : trim($horarios),
+        ]);
     }
 
     /** @param list<string> $dominios */

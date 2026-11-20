@@ -15,6 +15,7 @@ const direccion = ref('')
 const horarios = ref('')
 const instagram = ref('')
 const facebook = ref('')
+const soloImagen = ref(false)
 const imagenGuardada = ref(null)
 const imagenTemporal = ref(null)
 const entradaArchivo = ref(null)
@@ -107,6 +108,7 @@ function aplicarPortada(portada) {
   horarios.value = portada.horarios ?? ''
   instagram.value = portada.instagram ?? ''
   facebook.value = portada.facebook ?? ''
+  soloImagen.value = portada.solo_imagen === true
   imagenGuardada.value = portada.imagen
   restaurar.value = false
 }
@@ -177,6 +179,19 @@ function restaurarImagen() {
   limpiarImagenTemporal()
   entradaArchivo.value.value = ''
   restaurar.value = true
+}
+
+function cambiarModoPortada() {
+  return ejecutar(async () => {
+    const modo = await api('/api/admin/portada/modo', {
+      method: 'PATCH',
+      datos: { solo_imagen: !soloImagen.value },
+    })
+    soloImagen.value = modo.solo_imagen === true
+    mensaje.value = soloImagen.value
+      ? 'Sitio bajado. La portada pública muestra solo la imagen.'
+      : 'Sitio subido. La portada completa está visible.'
+  })
 }
 
 function guardarPortada(evento) {
@@ -416,6 +431,11 @@ onBeforeUnmount(() => {
       <div v-if="usuario" class="paneles">
         <section class="panel" aria-labelledby="titulo-portada">
           <h2 id="titulo-portada">Portada</h2>
+          <p id="estado-portada">{{ soloImagen ? 'Estado público: solo imagen' : 'Estado público: portada completa' }}</p>
+          <button type="button" class="secundario" aria-describedby="estado-portada ayuda-modo" :disabled="ocupado" @click="cambiarModoPortada">
+            {{ soloImagen ? 'Subir sitio' : 'Bajar sitio' }}
+          </button>
+          <div><small id="ayuda-modo">Al bajar el sitio, queda visible la imagen principal actual.</small></div>
           <form @submit.prevent="guardarPortada">
             <label for="telefono">Teléfono de WhatsApp</label>
             <input id="telefono" v-model="telefono" name="telefono" type="tel" autocomplete="tel" placeholder="+54…" :disabled="ocupado" required>
