@@ -40,10 +40,21 @@ final readonly class HorariosProfesionales
                 FROM horarios_profesionales WHERE profesional_id = ?
                 ORDER BY vigente_desde, dia_semana, hora_inicio, id
                 SQL, [$id]),
+            'excepciones' => $this->conexion->fetchAllAssociative(<<<'SQL'
+                SELECT 'especial' AS tipo, fecha::text, hora_inicio::text, hora_fin::text
+                FROM horarios_profesionales_especiales WHERE profesional_id = ?
+                UNION ALL
+                SELECT 'bloqueo', (inicio AT TIME ZONE 'America/Argentina/Mendoza')::date::text,
+                       (inicio AT TIME ZONE 'America/Argentina/Mendoza')::time::text,
+                       CASE WHEN (fin AT TIME ZONE 'America/Argentina/Mendoza')::time = TIME '00:00'
+                            THEN '24:00:00' ELSE (fin AT TIME ZONE 'America/Argentina/Mendoza')::time::text END
+                FROM bloqueos WHERE profesional_id = ? AND gestion_horarios
+                ORDER BY fecha, hora_inicio, tipo
+                SQL, [$id, $id]),
         ];
     }
 
-    public function guardar(string $id, array $datos): void
+    public function guardar(string $id, array $datos, ?string $autor = null): void
     {
         $modo = $datos['por_franjas'] ?? null;
         $filas = $datos['franjas'] ?? null;
@@ -52,10 +63,16 @@ final readonly class HorariosProfesionales
             throw new InvalidArgumentException('Revisá los horarios e ingresá hasta 200 franjas.');
         }
         $franjas = array_map(self::validarFranja(...), $filas);
+        $excepciones = null;
+        if (array_key_exists('excepciones', $datos)) {
+            if (!is_array($datos['excepciones']) || !array_is_list($datos['excepciones']) || count($datos['excepciones']) > 200) {
+                throw new InvalidArgumentException('Revisá las excepciones e ingresá hasta 200 franjas por fecha.');
+            }
+            $excepciones = array_map(self::validarExcepcion(...), $datos['excepciones']);
+        }
 
-        $this->conexion->transactional(function () use ($id, $modo, $revision, $franjas): void {
-            // Las altas y ediciones de turnos bloquean el espacio antes de comprobar la disponibilidad.
-            $this->conexion->executeStatement('LOCK TABLE recursos IN EXCLUSIVE MODE');
+        $this->conexion->transactional(function () use ($id, $modo, $revision, $franjas, $excepciones, $autor): void {
+            $this->bloquearCambiosAgenda();
             if ($this->consultar($id)['revision'] !== $revision) {
                 throw new TurnoNoDisponible('Los horarios cambiaron. Volvé a cargarlos antes de guardar.');
             }
@@ -67,22 +84,69 @@ final readonly class HorariosProfesionales
             foreach ($franjas as $franja) {
                 $this->conexion->insert('horarios_profesionales', $franja + ['profesional_id' => $id]);
             }
-            if (!$modo) {
-                return;
-            }
-
-            $ocupaciones = $this->conexion->fetchAllAssociative(
-                'SELECT inicio, fin FROM ocupaciones_profesionales WHERE profesional_id = ? AND fin > now() ORDER BY inicio',
-                [$id],
-            );
-            foreach ($ocupaciones as $ocupacion) {
-                $inicio = new DateTimeImmutable($ocupacion['inicio']);
-                if (!$this->permite($id, $inicio, new DateTimeImmutable($ocupacion['fin']))) {
-                    $fecha = $inicio->setTimezone(new DateTimeZone(self::ZONA))->format('d/m/Y H:i');
-                    throw new TurnoNoDisponible("El cambio deja fuera de horario una ocupación del $fecha. Mové o cancelá ese turno antes de guardar.");
+            if ($excepciones !== null) {
+                $this->conexion->delete('horarios_profesionales_especiales', ['profesional_id' => $id]);
+                $this->conexion->executeStatement('DELETE FROM bloqueos WHERE profesional_id = ? AND gestion_horarios', [$id]);
+                foreach ($excepciones as $excepcion) {
+                    if ($excepcion['tipo'] === 'bloqueo') {
+                        $this->insertarBloqueo($id, $excepcion, $autor);
+                    } else {
+                        $this->conexion->executeStatement(<<<'SQL'
+                            INSERT INTO horarios_profesionales_especiales (profesional_id, fecha, hora_inicio, hora_fin)
+                            VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING
+                            SQL, [$id, $excepcion['fecha'], $excepcion['hora_inicio'], $excepcion['hora_fin']]);
+                    }
                 }
             }
+            $this->verificarTurnosExistentes($id);
         });
+    }
+
+    public function agregarBloqueo(string $id, array $datos, ?string $autor = null): void
+    {
+        $bloqueo = self::validarExcepcion(['tipo' => 'bloqueo'] + $datos);
+        $this->conexion->transactional(function () use ($id, $bloqueo, $autor): void {
+            $this->bloquearCambiosAgenda();
+            $this->consultar($id);
+            $this->insertarBloqueo($id, $bloqueo, $autor);
+            $this->verificarTurnosExistentes($id);
+            $this->conexion->executeStatement('UPDATE profesionales SET horarios_revision = horarios_revision + 1 WHERE id = ?', [$id]);
+        });
+    }
+
+    private function bloquearCambiosAgenda(): void
+    {
+        // Las altas y ediciones de turnos bloquean el espacio antes de comprobar la disponibilidad.
+        $this->conexion->executeStatement('LOCK TABLE recursos IN EXCLUSIVE MODE');
+    }
+
+    private function insertarBloqueo(string $id, array $bloqueo, ?string $autor): void
+    {
+        $inicio = $bloqueo['fecha'].' '.$bloqueo['hora_inicio'];
+        $fin = $bloqueo['fecha'].' '.$bloqueo['hora_fin'];
+        $this->conexion->executeStatement(<<<'SQL'
+            INSERT INTO bloqueos (profesional_id, inicio, fin, gestion_horarios, creado_por)
+            VALUES (?, CAST(? AS timestamp) AT TIME ZONE 'America/Argentina/Mendoza',
+                       CAST(? AS timestamp) AT TIME ZONE 'America/Argentina/Mendoza', true, ?)
+            ON CONFLICT (profesional_id, inicio, fin) WHERE gestion_horarios DO NOTHING
+            SQL, [$id, $inicio, $fin, $autor]);
+    }
+
+    private function verificarTurnosExistentes(string $id): void
+    {
+        $ocupaciones = $this->conexion->fetchAllAssociative(<<<'SQL'
+            SELECT o.inicio, o.fin, COALESCE(t.inicio, s.inicio, o.inicio) AS turno_inicio
+            FROM ocupaciones_profesionales o
+            LEFT JOIN turnos_administrativos t ON t.id = o.turno_admin_id
+            LEFT JOIN reserva_sesiones s ON s.id = o.sesion_id
+            WHERE o.profesional_id = ? AND o.fin > now() ORDER BY o.inicio
+            SQL, [$id]);
+        foreach ($ocupaciones as $ocupacion) {
+            if (!$this->permite($id, new DateTimeImmutable($ocupacion['inicio']), new DateTimeImmutable($ocupacion['fin']))) {
+                $fecha = (new DateTimeImmutable($ocupacion['turno_inicio']))->setTimezone(new DateTimeZone(self::ZONA))->format('d/m/Y H:i');
+                throw new TurnoNoDisponible("Ya hay un turno el $fecha que quedaría fuera del horario o bloqueado. Mové o cancelá ese turno antes de guardar.");
+            }
+        }
     }
 
     public function permite(string $id, DateTimeImmutable $inicio, DateTimeImmutable $fin): bool
@@ -93,21 +157,61 @@ final readonly class HorariosProfesionales
         $resultado = $this->conexion->fetchOne(<<<'SQL'
             WITH periodo AS (SELECT CAST(? AS timestamp) AS inicio, CAST(? AS timestamp) AS fin),
                  dias AS (
-                     SELECT generate_series(date_trunc('day', inicio), date_trunc('day', fin), interval '1 day')::date AS dia
+                     SELECT generate_series(date_trunc('day', inicio), date_trunc('day', fin - interval '1 microsecond'), interval '1 day')::date AS dia
                      FROM periodo
                  ),
+                 perfil AS (
+                     SELECT p.id, COALESCE(p.horario_por_franjas, EXISTS (
+                         SELECT 1 FROM horarios_profesionales h WHERE h.profesional_id = p.id
+                     )) AS restringido
+                     FROM profesionales p WHERE p.id = ? AND p.activa
+                 ),
+                 especiales AS (
+                     SELECT e.fecha AS dia, e.hora_inicio, e.hora_fin
+                     FROM horarios_profesionales_especiales e JOIN dias d ON d.dia = e.fecha
+                     JOIN perfil p ON p.id = e.profesional_id
+                 ),
+                 franjas AS (
+                     SELECT dia, hora_inicio, hora_fin FROM especiales
+                     UNION ALL
+                     SELECT d.dia, h.hora_inicio, h.hora_fin FROM dias d
+                     JOIN horarios_profesionales h ON h.dia_semana = extract(isodow FROM d.dia)
+                     JOIN perfil p ON p.id = h.profesional_id AND p.restringido
+                     WHERE h.vigente_desde <= d.dia AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= d.dia)
+                       AND NOT EXISTS (SELECT 1 FROM especiales e WHERE e.dia = d.dia)
+                     UNION ALL
+                     SELECT d.dia, TIME '00:00', TIME '24:00' FROM dias d CROSS JOIN perfil p
+                     WHERE NOT p.restringido AND NOT EXISTS (SELECT 1 FROM especiales e WHERE e.dia = d.dia)
+                 ),
                  cobertura AS (
-                     SELECT range_agg(tsrange(d.dia + h.hora_inicio, d.dia + h.hora_fin, '[)')) AS franjas
-                     FROM horarios_profesionales h JOIN dias d ON h.dia_semana = extract(isodow FROM d.dia)
-                     WHERE h.profesional_id = ? AND h.vigente_desde <= d.dia AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= d.dia)
+                     SELECT range_agg(tsrange(dia + hora_inicio, dia + hora_fin, '[)')) AS franjas FROM franjas
                  )
-            SELECT CASE WHEN COALESCE(p.horario_por_franjas, EXISTS (
-                SELECT 1 FROM horarios_profesionales h WHERE h.profesional_id = p.id
-            )) THEN COALESCE((c.franjas @> tsrange(periodo.inicio, periodo.fin, '[)'))::int, 0) ELSE 1 END
-            FROM profesionales p CROSS JOIN cobertura c CROSS JOIN periodo WHERE p.id = ? AND p.activa
-            SQL, [$inicioLocal, $finLocal, $id, $id]);
+            SELECT (COALESCE(c.franjas @> tsrange(periodo.inicio, periodo.fin, '[)'), false)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM bloqueos b WHERE b.profesional_id = p.id AND b.gestion_horarios
+                          AND b.inicio < (periodo.fin AT TIME ZONE 'America/Argentina/Mendoza')
+                          AND b.fin > (periodo.inicio AT TIME ZONE 'America/Argentina/Mendoza')
+                    ))::int
+            FROM perfil p CROSS JOIN cobertura c CROSS JOIN periodo
+            SQL, [$inicioLocal, $finLocal, $id]);
 
         return (int) $resultado === 1;
+    }
+
+    private static function validarExcepcion(mixed $fila): array
+    {
+        if (!is_array($fila) || !in_array($fila['tipo'] ?? null, ['especial', 'bloqueo'], true)) {
+            throw new InvalidArgumentException('Elegí un horario especial o un bloqueo.');
+        }
+        $fecha = self::fecha($fila['fecha'] ?? null)->format('Y-m-d');
+        $todoElDia = $fila['tipo'] === 'bloqueo' && ($fila['todo_el_dia'] ?? false) === true;
+        $inicio = self::hora($todoElDia ? '00:00' : ($fila['hora_inicio'] ?? null));
+        $fin = self::hora($todoElDia ? '24:00' : ($fila['hora_fin'] ?? null));
+        if ($fin <= $inicio) {
+            throw new InvalidArgumentException('La hora de fin debe ser posterior al inicio.');
+        }
+
+        return ['tipo' => $fila['tipo'], 'fecha' => $fecha, 'hora_inicio' => $inicio, 'hora_fin' => $fin];
     }
 
     private static function validarFranja(mixed $fila): array

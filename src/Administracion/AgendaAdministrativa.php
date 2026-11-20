@@ -59,12 +59,29 @@ final readonly class AgendaAdministrativa
         }
         unset($turno);
 
+        $bloqueos = $this->conexion->fetchAllAssociative(<<<'SQL'
+            SELECT b.id::text, b.inicio, b.fin, p.id::text AS profesional_id, p.nombre AS profesionales,
+                   (((b.inicio AT TIME ZONE 'America/Argentina/Mendoza')::time = TIME '00:00')
+                    AND ((b.fin AT TIME ZONE 'America/Argentina/Mendoza')::time = TIME '00:00'))::int AS todo_el_dia
+            FROM bloqueos b JOIN profesionales p ON p.id = b.profesional_id
+            WHERE b.gestion_horarios AND b.inicio < ? AND b.fin > ?
+              AND (CAST(? AS bigint) IS NULL OR p.id = ?)
+            ORDER BY b.inicio, b.id
+            SQL, [...$intervalo, $propia, $propia]);
+        foreach ($bloqueos as &$bloqueo) {
+            $bloqueo['inicio'] = (new DateTimeImmutable($bloqueo['inicio']))->format(DATE_ATOM);
+            $bloqueo['fin'] = (new DateTimeImmutable($bloqueo['fin']))->format(DATE_ATOM);
+            $bloqueo['todo_el_dia'] = (bool) $bloqueo['todo_el_dia'];
+        }
+        unset($bloqueo);
+
         return [
             'servicios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre FROM servicios_portada ORDER BY orden, nombre'),
             'profesionales' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre, (usuario_id IS NOT NULL)::int AS tiene_cuenta FROM profesionales WHERE activa AND (CAST(? AS bigint) IS NULL OR id = ?) ORDER BY nombre', [$propia, $propia]),
             'espacios' => $this->espacios(),
             'preparacion' => $this->preparacion(),
             'turnos' => $turnos,
+            'bloqueos' => $bloqueos,
         ];
     }
 

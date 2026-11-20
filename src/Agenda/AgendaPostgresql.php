@@ -132,9 +132,17 @@ final readonly class AgendaPostgresql
             SELECT h.profesional_id, h.dia_semana, h.hora_inicio, h.hora_fin, h.vigente_desde, h.vigente_hasta
             FROM horarios_profesionales h
             JOIN profesionales p ON p.id = h.profesional_id
-            WHERE p.activa AND h.dia_semana = ? AND h.vigente_desde <= ?
+            WHERE p.activa AND p.horario_por_franjas IS DISTINCT FROM false
+              AND h.dia_semana = ? AND h.vigente_desde <= ?
               AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= ?)
-            SQL, [(int) $desde->format('N'), $fecha, $fecha]);
+              AND NOT EXISTS (
+                  SELECT 1 FROM horarios_profesionales_especiales e WHERE e.profesional_id = p.id AND e.fecha = ?
+              )
+            UNION ALL
+            SELECT e.profesional_id, CAST(? AS smallint), e.hora_inicio, e.hora_fin, e.fecha, e.fecha
+            FROM horarios_profesionales_especiales e JOIN profesionales p ON p.id = e.profesional_id
+            WHERE p.activa AND e.fecha = ?
+            SQL, [(int) $desde->format('N'), $fecha, $fecha, $fecha, (int) $desde->format('N'), $fecha]);
         $horarios = [];
         foreach ($filas as $fila) {
             $horarios[] = new HorarioSemanal(

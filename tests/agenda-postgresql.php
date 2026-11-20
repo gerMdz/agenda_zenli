@@ -79,6 +79,11 @@ foreach ([Version20261118000100::class, Version20261118000200::class] as $clase)
     aplicarMigracion($conexion, $clase);
 }
 
+foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000'] as $version) {
+    require __DIR__.'/../migrations/Version'.$version.'.php';
+    aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
+}
+
 function aplicarMigracion(Connection $conexion, string $clase): void
 {
     $migracion = new $clase($conexion, new NullLogger());
@@ -181,10 +186,7 @@ try {
 
 fwrite(STDOUT, "PostgreSQL: dos confirmaciones concurrentes, un solo ganador y sin escrituras parciales.\n");
 
-foreach (['20261119000100', '20261119000300', '20261119000600', '20261119000700', '20261119000800', '20261119000900'] as $version) {
-    require __DIR__.'/../migrations/Version'.$version.'.php';
-    aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
-}
+
 
 $conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripcion_corta, actualizado_por) VALUES (101, 'Sesión interna', 'Prueba', 'prueba')");
 $conexion->executeStatement("INSERT INTO usuarios (id, email, password_hash) VALUES (101, 'admin@example.test', 'prueba')");
@@ -331,3 +333,32 @@ try {
 } catch (TurnoNoDisponible) {
 }
 fwrite(STDOUT, "PostgreSQL: horarios semanales, puntuales y cambios sin afectar turnos verificados.\n");
+
+$especial = ['tipo' => 'especial', 'fecha' => '2099-06-18', 'hora_inicio' => '09:00', 'hora_fin' => '11:00'];
+$pautaSemanal = array_replace($pauta, ['revision' => 2, 'franjas' => [$pauta['franjas'][1]], 'excepciones' => [$especial]]);
+$horarios->guardar($ocasional, $pautaSemanal);
+try {
+    $interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-18T15:30']), '101');
+    throw new RuntimeException('El horario especial no reemplazó la franja semanal de la fecha.');
+} catch (TurnoNoDisponible) {
+}
+$interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-18T10:00']), '101');
+$interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-25T15:30']), '101');
+try {
+    $horarios->agregarBloqueo($ocasional, ['fecha' => '2099-06-18', 'todo_el_dia' => true], '101');
+    throw new RuntimeException('Se guardó un bloqueo que pisa un turno.');
+} catch (TurnoNoDisponible $error) {
+    verificar(str_contains($error->getMessage(), '18/06/2099 10:00'), 'El aviso identifica la fecha y hora del turno.');
+    verificar($interna->consultar('2099-06-18')['bloqueos'] === [], 'El bloqueo con conflicto se revierte.');
+}
+$horarios->agregarBloqueo($ocasional, ['fecha' => '2099-06-18', 'hora_inicio' => '10:40', 'hora_fin' => '11:00'], '101');
+$horarios->agregarBloqueo('104', ['fecha' => '2099-06-19', 'todo_el_dia' => true], '101');
+verificar(count($interna->consultar('2099-06-18')['bloqueos']) === 1, 'El bloqueo aparece junto a los turnos.');
+verificar($interna->consultar('2099-06-19', '104')['bloqueos'][0]['todo_el_dia'] === true, 'Un bloqueo de día completo aparece en la agenda propia.');
+verificar($interna->consultar('2099-06-19', $ocasional)['bloqueos'] === [], 'No se exponen bloqueos de otras profesionales.');
+try {
+    $interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-19T14:00', 'profesionales' => ['104']]), '101');
+    throw new RuntimeException('El bloqueo de día completo permitió agendar un turno en modo manual.');
+} catch (TurnoNoDisponible) {
+}
+fwrite(STDOUT, "PostgreSQL: excepciones por fecha y bloqueos sin cliente verificados.\n");

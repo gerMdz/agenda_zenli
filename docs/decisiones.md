@@ -31,6 +31,7 @@
 - La agenda muestra la selección y el nombre del espacio cuando hay varios activos. Con uno solo, lo asigna en forma automática.
 - En `/admin` se editan las franjas de cada profesional. Se pueden combinar días semanales con vigencia y fechas puntuales. La agenda respeta las franjas cuando está habilitada la restricción. El modo manual conserva los controles de ocupación.
 - La edición de franjas se guarda en conjunto y se rechaza si dejaría fuera de horario una ocupación futura, incluida su preparación. El nombre predeterminado del primer espacio es «Sala principal».
+- Un horario especial reemplaza las franjas de una profesional solo en la fecha indicada. Los bloqueos de día completo o por hora se muestran en la agenda sin cliente y no ocupan una sala. Antes de guardarlos se comprueba que no entren en conflicto con los turnos.
 
 ## Portada y administración
 

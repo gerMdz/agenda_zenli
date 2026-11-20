@@ -26,5 +26,4 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 - Aplicar el bloqueo del espacio en las futuras escrituras de horarios y bloqueos, y verificar la concurrencia de esas operaciones con las confirmaciones. Las exclusiones GiST protegen las ocupaciones entre sí, pero no cubren las otras tablas.
 - Implementar la capa de aplicación que autoriza las confirmaciones y aplica las políticas comerciales antes de exponer una ruta. Validar el esquema completo en la versión de PostgreSQL prevista para el despliegue.
 - Incorporar al panel la recuperación de contraseñas y la desactivación de cuentas profesionales.
-- Incorporar excepciones que suspendan una franja semanal solo para una fecha, como un feriado.
 - Definir qué servicios requieren un equipo y cómo se organiza cada una de sus sesiones.

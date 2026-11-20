@@ -10,6 +10,9 @@ const vista = ref('semana')
 const soloMios = ref(false)
 const dialogo = ref(null)
 const modalAbierto = ref(false)
+const dialogoBloqueo = ref(null)
+const modoBloqueo = ref(false)
+const bloqueoNuevo = ref({ profesional: '', fecha: '', todo_el_dia: false, hora_inicio: '', hora_fin: '' })
 const nombreDia = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
 const tituloMes = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 const etiquetaDia = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
@@ -54,9 +57,23 @@ function esPropio(turno) {
   return turno.equipo.includes(usuario.value?.profesional_id)
 }
 
-const turnosVisibles = computed(() =>
-  (datos.value?.turnos ?? []).filter(turno => !soloMios.value || esPropio(turno)),
-)
+const turnosVisibles = computed(() => {
+  const bloqueos = (datos.value?.bloqueos ?? []).map(bloqueo => ({
+    ...bloqueo,
+    id: `bloqueo-${bloqueo.id}`,
+    equipo: [bloqueo.profesional_id],
+    bloqueado: true,
+  }))
+  return [...(datos.value?.turnos ?? []), ...bloqueos]
+    .filter(turno => !soloMios.value || esPropio(turno))
+    .sort((a, b) => new Date(a.inicio) - new Date(b.inicio))
+})
+
+function horarioVisible(turno) {
+  if (turno.todo_el_dia) return 'Todo el día'
+  const fin = reloj.format(new Date(turno.fin))
+  return `${reloj.format(new Date(turno.inicio))}–${turno.bloqueado && fin === '00:00' ? '24:00' : fin}`
+}
 
 function turnosEnDia(dia) {
   return turnosVisibles.value.filter(turno =>
@@ -71,7 +88,11 @@ const dias = computed(() => {
   for (let dia = inicio; dia <= fin; dia = sumarDias(dia, 1)) {
     const clave = claveDia(dia)
     const turnos = turnosEnDia(clave)
-    resultado.push({ clave, numero: dia.getUTCDate(), nombre: nombreDia.format(dia), turnos, propios: turnos.filter(esPropio).length })
+    const bloqueos = turnos.filter(turno => turno.bloqueado).length
+    resultado.push({
+      clave, numero: dia.getUTCDate(), nombre: nombreDia.format(dia), turnos, bloqueos,
+      citas: turnos.length - bloqueos, propios: turnos.filter(turno => !turno.bloqueado && esPropio(turno)).length,
+    })
   }
   return resultado
 })
@@ -165,6 +186,27 @@ function cambiarEquipo() {
 function abrirModal() {
   dialogo.value.showModal()
   modalAbierto.value = true
+}
+
+function abrirNuevoBloqueo() {
+  bloqueoNuevo.value = {
+    profesional: usuario.value.profesional_id ?? (datos.value.profesionales.length === 1 ? datos.value.profesionales[0].id : ''),
+    fecha: fecha.value, todo_el_dia: false, hora_inicio: '', hora_fin: '',
+  }
+  error.value = ''
+  dialogoBloqueo.value.showModal()
+  modoBloqueo.value = true
+}
+
+function guardarBloqueo() {
+  return ejecutar(async () => {
+    const { profesional, ...bloqueo } = bloqueoNuevo.value
+    await api(`/api/admin/agenda/profesionales/${profesional}/bloqueos`, 'POST', bloqueo)
+    fecha.value = bloqueo.fecha
+    dialogoBloqueo.value.close()
+    await cargarDia()
+    aviso.value = 'Horario bloqueado.'
+  })
 }
 
 function abrirNuevoTurno() {
@@ -265,7 +307,7 @@ onMounted(() => ejecutar(async () => {
     </header>
     <main>
       <h1>Agenda interna</h1>
-      <p v-if="error && !modalAbierto" role="alert">{{ error }}</p>
+      <p v-if="error && !modalAbierto && !modoBloqueo" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
       <p v-if="!datos && ocupado" role="status">Cargando agenda…</p>
 
@@ -276,7 +318,10 @@ onMounted(() => ejecutar(async () => {
               <button v-for="opcion in vistas" :key="opcion.id" type="button" :aria-pressed="vista === opcion.id"
                 :class="{ secundario: vista !== opcion.id }" :disabled="ocupado" @click="cambiarVista(opcion.id)">{{ opcion.nombre }}</button>
             </div>
-            <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno">+ Nuevo turno</button>
+            <div class="acciones">
+              <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Bloquear horario</button>
+              <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno">+ Nuevo turno</button>
+            </div>
           </div>
           <div class="barra controles-calendario">
             <div class="acciones">
@@ -298,30 +343,56 @@ onMounted(() => ejecutar(async () => {
             <button v-for="dia in dias" :key="dia.clave" type="button" class="celda"
               :class="{ propia: dia.propios }" :aria-pressed="fecha === dia.clave" :disabled="ocupado" @click="fecha = dia.clave">
               <strong><span v-if="vista === 'semana'">{{ dia.nombre }} </span>{{ dia.numero }}</strong>
-              <small v-if="dia.turnos.length">{{ dia.turnos.length }} {{ dia.turnos.length === 1 ? 'turno' : 'turnos' }}</small>
+              <small v-if="dia.citas">{{ dia.citas }} {{ dia.citas === 1 ? 'turno' : 'turnos' }}</small>
+              <small v-if="dia.bloqueos" class="marca-bloqueo">{{ dia.bloqueos }} {{ dia.bloqueos === 1 ? 'bloqueo' : 'bloqueos' }}</small>
               <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
               <span v-if="vista === 'semana'" class="resumen-dia">
                 <small v-for="turno in dia.turnos.slice(0, 3)" :key="turno.id">
-                  {{ reloj.format(new Date(turno.inicio)) }} · {{ turno.servicio }}
+                  {{ turno.todo_el_dia ? 'Todo el día' : reloj.format(new Date(turno.inicio)) }} · {{ turno.bloqueado ? 'Bloqueado' : turno.servicio }}
                 </small>
               </span>
             </button>
           </div>
           <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
-          <p v-if="!turnosDia.length">No hay turnos para este día.</p>
+          <p v-if="!turnosDia.length">No hay turnos ni bloqueos para este día.</p>
           <ul v-else class="turnos">
-            <li v-for="turno in turnosDia" :key="turno.id" :class="{ propio: esPropio(turno) }">
-              <strong>{{ reloj.format(new Date(turno.inicio)) }}–{{ reloj.format(new Date(turno.fin)) }}</strong>
-              <span>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
-              <small><template v-if="datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
-              <div v-if="turno.editable" class="acciones">
+            <li v-for="turno in turnosDia" :key="turno.id" :class="{ propio: !turno.bloqueado && esPropio(turno), bloqueado: turno.bloqueado }">
+              <strong>{{ horarioVisible(turno) }}</strong>
+              <span v-if="turno.bloqueado" class="marca-bloqueo">Horario bloqueado</span>
+              <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
+              <small><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
+              <a v-if="turno.bloqueado && usuario.admin" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar bloqueo</a>
+              <div v-else-if="turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
               </div>
-              <small v-else>Turno compartido · lo administra el equipo de administración</small>
+              <small v-else-if="!turno.bloqueado">Turno compartido · lo administra el equipo de administración</small>
             </li>
           </ul>
         </section>
+
+        <dialog ref="dialogoBloqueo" aria-labelledby="titulo-bloqueo" @close="modoBloqueo = false" @cancel="ocupado && $event.preventDefault()">
+          <div class="barra">
+            <h2 id="titulo-bloqueo">Bloquear horario</h2>
+            <button type="button" class="secundario" :disabled="ocupado" @click="dialogoBloqueo.close()">Cerrar</button>
+          </div>
+          <p v-if="error && modoBloqueo" role="alert">{{ error }}</p>
+          <form @submit.prevent="guardarBloqueo">
+            <label>Profesional
+              <select v-model="bloqueoNuevo.profesional" required>
+                <option disabled value="">Elegí una profesional</option>
+                <option v-for="persona in datos.profesionales" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
+              </select>
+            </label>
+            <label>Fecha <input v-model="bloqueoNuevo.fecha" type="date" required></label>
+            <label class="opcion"><input v-model="bloqueoNuevo.todo_el_dia" type="checkbox"> Todo el día</label>
+            <div v-if="!bloqueoNuevo.todo_el_dia" class="acciones">
+              <label>Desde (24 h) <input v-model.trim="bloqueoNuevo.hora_inicio" placeholder="09:00" maxlength="5" required></label>
+              <label>Hasta (24 h) <input v-model.trim="bloqueoNuevo.hora_fin" placeholder="14:30" maxlength="5" required></label>
+            </div>
+            <button :disabled="ocupado">Guardar bloqueo</button>
+          </form>
+        </dialog>
 
         <dialog ref="dialogo" aria-labelledby="titulo-turno" @close="modalAbierto = false" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
@@ -435,6 +506,8 @@ button:disabled { opacity: .55; }
 .dia-semana { text-align: center; font-size: .8rem; font-weight: 700; }
 .resumen-dia { display: grid; gap: .2rem; }
 .mio { display: inline-block; width: fit-content; border-radius: .25rem; padding: .1rem .25rem; background: #d2ead7; color: #134627; font-weight: 700; }
+.turnos li.bloqueado { background: #f4e8d6; border-left: 4px solid #95642d; padding-left: .5rem; }
+.marca-bloqueo { color: #61411b; font-weight: 700; }
 .detalle-dia { margin-top: 1rem; }
 dialog { max-height: 88dvh; width: min(calc(100% - 1.5rem), 38rem); padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
 dialog::backdrop { background: #071b13a8; }

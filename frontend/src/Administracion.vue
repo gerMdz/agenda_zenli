@@ -126,9 +126,14 @@ async function cargarPanel() {
   usuarios.value = listado.usuarios
   servicios.value = svcs.servicios
   aplicarConfiguracionAgenda(ajustes)
-  if (window.location.hash === '#configuracion-agenda') {
+  if (['#configuracion-agenda', '#horarios-profesionales'].includes(window.location.hash)) {
+    const perfil = new URLSearchParams(window.location.search).get('profesional')
+    if (window.location.hash === '#horarios-profesionales' && ajustes.profesionales.some(persona => persona.id === perfil)) {
+      profesionalHorario.value = perfil
+      aplicarHorario(await api(`/api/admin/agenda/profesionales/${perfil}/horarios`))
+    }
     await nextTick()
-    document.getElementById('configuracion-agenda')?.scrollIntoView()
+    document.getElementById(window.location.hash.slice(1))?.scrollIntoView()
   }
 }
 
@@ -305,6 +310,12 @@ function guardarPreparacionAgenda() {
 function aplicarHorario(contenido) {
   horarioProfesional.value = {
     ...contenido,
+    excepciones: (contenido.excepciones ?? []).map(fila => ({
+      ...fila,
+      todo_el_dia: fila.tipo === 'bloqueo' && fila.hora_inicio === '00:00:00' && fila.hora_fin === '24:00:00',
+      hora_inicio: fila.hora_inicio.replace(/^(\d{2}:\d{2}):00$/, '$1'),
+      hora_fin: fila.hora_fin.replace(/^(\d{2}:\d{2}):00$/, '$1'),
+    })),
     franjas: contenido.franjas.map(fila => ({
       ...fila,
       tipo: fila.vigente_desde === fila.vigente_hasta ? 'puntual' : 'semanal',
@@ -333,6 +344,12 @@ function agregarFranja(tipo) {
     vigente_hasta: '',
     hora_inicio: '',
     hora_fin: '',
+  })
+}
+
+function agregarExcepcion(tipo) {
+  horarioProfesional.value.excepciones.push({
+    tipo, fecha: '', hora_inicio: '', hora_fin: '', todo_el_dia: false,
   })
 }
 
@@ -695,7 +712,7 @@ onBeforeUnmount(() => {
             </form>
           </section>
 
-          <section class="panel" aria-labelledby="titulo-horarios-profesionales">
+          <section id="horarios-profesionales" class="panel" aria-labelledby="titulo-horarios-profesionales">
             <h2 id="titulo-horarios-profesionales">Horarios de profesionales</h2>
             <label>Profesional
               <select v-model="profesionalHorario" :disabled="ocupado" @change="cargarHorario">
@@ -730,6 +747,22 @@ onBeforeUnmount(() => {
                   <label>Hasta (24 h) <input v-model.trim="franja.hora_fin" placeholder="14:30" maxlength="15" required></label>
                 </div>
                 <button type="button" class="secundario" @click="horarioProfesional.franjas.splice(indice, 1)">Quitar franja</button>
+              </fieldset>
+              <h3>Excepciones por fecha</h3>
+              <small>El horario especial reemplaza las franjas de ese día. Un bloqueo impide agendar durante ese período, incluso en modo manual.</small>
+              <div class="acciones">
+                <button type="button" class="secundario" :disabled="ocupado" @click="agregarExcepcion('especial')">+ Horario especial</button>
+                <button type="button" class="secundario" :disabled="ocupado" @click="agregarExcepcion('bloqueo')">+ Bloqueo</button>
+              </div>
+              <fieldset v-for="(excepcion, indice) in horarioProfesional.excepciones" :key="indice" :disabled="ocupado">
+                <legend>{{ excepcion.tipo === 'especial' ? 'Horario especial' : 'Bloqueo' }}</legend>
+                <label>Fecha <input v-model="excepcion.fecha" type="date" required></label>
+                <label v-if="excepcion.tipo === 'bloqueo'" class="casilla"><input v-model="excepcion.todo_el_dia" type="checkbox"> Todo el día</label>
+                <div v-if="!excepcion.todo_el_dia" class="acciones">
+                  <label>Desde (24 h) <input v-model.trim="excepcion.hora_inicio" placeholder="09:00" maxlength="15" required></label>
+                  <label>Hasta (24 h) <input v-model.trim="excepcion.hora_fin" placeholder="14:30" maxlength="15" required></label>
+                </div>
+                <button type="button" class="secundario" @click="horarioProfesional.excepciones.splice(indice, 1)">Quitar excepción</button>
               </fieldset>
               <button :disabled="ocupado">Guardar horarios</button>
             </form>

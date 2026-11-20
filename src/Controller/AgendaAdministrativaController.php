@@ -52,13 +52,19 @@ final readonly class AgendaAdministrativaController
     }
 
     #[Route('/profesionales/{id}/horarios', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['GET', 'PUT'])]
+    #[Route('/profesionales/{id}/bloqueos', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['POST'])]
     public function horarios(Request $peticion, string $id): JsonResponse
     {
-        $this->sesion->exigir($peticion);
+        $usuario = $this->sesion->exigir($peticion);
         try {
-            if ($peticion->isMethod('PUT')) {
+            if (!$peticion->isMethod('GET')) {
                 $this->sesion->verificarToken($peticion);
-                $this->horarios->guardar($id, $peticion->toArray());
+                if ($peticion->isMethod('POST')) {
+                    $this->horarios->agregarBloqueo($id, $peticion->toArray(), $usuario['id']);
+
+                    return $this->respuesta(['guardado' => true], 201);
+                }
+                $this->horarios->guardar($id, $peticion->toArray(), $usuario['id']);
             }
 
             return $this->respuesta($this->horarios->consultar($id));
