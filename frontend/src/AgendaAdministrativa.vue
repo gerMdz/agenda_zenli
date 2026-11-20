@@ -1,5 +1,18 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import LayoutAdministracion from './LayoutAdministracion.vue'
+
+function seccionDeAgenda() {
+  return window.location.hash === '#mensajes' ? 'mensajes' : 'agenda'
+}
+
+const seccionAgenda = ref(seccionDeAgenda())
+
+function actualizarSeccion() {
+  seccionAgenda.value = seccionDeAgenda()
+}
+
+onBeforeUnmount(() => window.removeEventListener('hashchange', actualizarSeccion))
 
 const zona = 'America/Argentina/Mendoza'
 const fecha = ref(new Intl.DateTimeFormat('sv-SE', { timeZone: zona }).format(new Date()))
@@ -287,6 +300,7 @@ function salir() {
 
 onMounted(() => ejecutar(async () => {
   document.title = 'Agenda · Zenli'
+  window.addEventListener('hashchange', actualizarSeccion)
   const sesion = await api('/api/admin/sesion')
   if (!sesion.usuario) {
     window.location.replace('/admin')
@@ -295,17 +309,21 @@ onMounted(() => ejecutar(async () => {
   usuario.value = sesion.usuario
   csrf.value = sesion.csrf
   await Promise.all([cargarDia(), api('/api/admin/agenda/mensajes').then(contenido => { bandeja.value = contenido })])
+  if (seccionAgenda.value === 'mensajes') {
+    await nextTick()
+    document.getElementById('mensajes')?.scrollIntoView()
+  }
 }))
 </script>
 
 <template>
   <div class="agenda">
     <header>
-      <a v-if="usuario?.admin" href="/admin#configuracion-agenda">← Administración</a>
       <span>Zenli</span>
       <button v-if="usuario" type="button" :disabled="ocupado" @click="salir">Cerrar sesión</button>
     </header>
-    <main>
+    <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda">
+    <main id="turnos">
       <h1>Agenda interna</h1>
       <p v-if="error && !modalAbierto && !modoBloqueo" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
@@ -441,9 +459,9 @@ onMounted(() => ejecutar(async () => {
             </form>
         </dialog>
 
-        <section class="panel">
+        <section id="mensajes" class="panel" aria-labelledby="titulo-mensajes">
             <div class="barra">
-              <h2>Mensajes privados</h2>
+              <h2 id="titulo-mensajes">Mensajes privados</h2>
               <button type="button" class="secundario" :disabled="ocupado" @click="ejecutar(async () => { bandeja = await api('/api/admin/agenda/mensajes') })">Actualizar</button>
             </div>
             <form v-if="bandeja.contactos.length" @submit.prevent="enviarMensaje">
@@ -466,14 +484,14 @@ onMounted(() => ejecutar(async () => {
         </section>
       </template>
     </main>
+    </LayoutAdministracion>
   </div>
 </template>
 
 <style scoped>
 .agenda { min-height: 100vh; background: #f8f3e7; color: #15372a; }
 header { display: flex; justify-content: space-between; padding: 1rem max(1rem, (100% - 70rem) / 2); background: #08271c; color: #f4dfb2; }
-header a { color: inherit; }
-main { width: min(100% - 2rem, 70rem); margin: auto; padding-block: 2rem; }
+main { padding-block: clamp(1.25rem, 4vw, 2.6rem); }
 h1, h2 { font-family: Georgia, serif; }
 h1 { margin-top: 0; }
 h2, p { margin-block: 0 .6rem; }
@@ -488,7 +506,7 @@ input:not([type=checkbox], [type=radio]), select, textarea { min-width: 0; paddi
 button { width: fit-content; padding: .6rem .8rem; border: 1px solid #214d3a; border-radius: .4rem; background: #214d3a; color: white; }
 button:disabled { opacity: .55; }
 .turnos { list-style: none; padding: 0; margin: 0; }
-.turnos li { display: grid; grid-template-columns: 7rem 1fr 1fr auto; gap: .6rem; padding-block: .65rem; border-top: 1px solid #e4dac3; }
+.turnos li { display: grid; grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr) minmax(0, 1fr) auto; overflow-wrap: anywhere; gap: .6rem; padding-block: .65rem; border-top: 1px solid #e4dac3; }
 .secundario { background: #fffaf1; color: #214d3a; }
 .acciones { display: flex; flex-wrap: wrap; gap: .4rem; }
 .mensajes { list-style: none; padding: 0; }
@@ -516,7 +534,7 @@ dialog form { margin-top: .7rem; }
   .celda { font-size: .72rem; padding: .25rem; }
   .resumen-dia { display: none; }
 }
-@media (max-width: 42rem) {
+@media (max-width: 62rem) {
   .turnos li { grid-template-columns: 1fr; }
 }
 </style>

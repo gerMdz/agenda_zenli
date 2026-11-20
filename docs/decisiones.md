@@ -39,6 +39,6 @@
 - Las cuentas administradoras ingresan por sesión en `/admin`. Pueden configurar el teléfono y la imagen de la portada, gestionar los servicios de la portada y administrar otras cuentas. La configuración y el último autor del cambio se guardan en PostgreSQL.
 - Los perfiles de Instagram y Facebook son opcionales y se editan en `/admin`. La portada muestra los enlaces configurados junto a los datos de contacto.
 - El modo de sitio de baja muestra la tarjeta de Zenli que se usa para compartir el enlace. Se activa con «Bajar sitio» y se desactiva con «Subir sitio» desde la sección Portada de `/admin`.
-- El menú de administración abre una sección a la vez y se puede contraer en pantallas angostas.
+- `/admin` y `/admin/agenda` comparten un menú lateral que se pliega en pantallas angostas. Administración puede entrar a cada sección de configuración desde la agenda. Las profesionales tienen acceso a su agenda y a mensajes privados.
 - Los servicios de la portada se gestionan desde `/admin` con CRUD completo: crear, editar, eliminar, reordenar y mostrar/ocultar. Cada servicio tiene nombre, descripción corta, detalle extenso e imagen individual. La portada los carga desde `/api/servicios` y muestra un modal con detalle al hacer clic en "Ver detalle".
 - La dirección y los horarios generales publicados se editan desde administración como texto informativo; no determinan disponibilidad ni horarios de profesionales. Se confirmaron como vigentes los valores iniciales: lunes, miércoles y viernes de 10:00 a 20:00; martes, jueves y sábados de 11:00 a 19:00.

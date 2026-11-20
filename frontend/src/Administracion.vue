@@ -1,28 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import portadaOriginal from './image/portada.webp'
-
-const gruposMenu = [
-  {
-    nombre: 'Sitio',
-    enlaces: [
-      { id: 'portada', nombre: 'Portada' },
-      { id: 'servicios', nombre: 'Servicios' },
-    ],
-  },
-  {
-    nombre: 'Agenda',
-    enlaces: [
-      { id: 'espacios', nombre: 'Espacios de atención' },
-      { id: 'profesionales', nombre: 'Profesionales' },
-      { id: 'horarios-profesionales', nombre: 'Horarios' },
-      { id: 'preparacion', nombre: 'Preparación' },
-      { id: 'configuracion-agenda', nombre: 'Guía de configuración' },
-    ],
-  },
-  { nombre: 'Acceso', enlaces: [{ id: 'cuentas', nombre: 'Cuentas administradoras' }] },
-]
-const secciones = gruposMenu.flatMap(grupo => grupo.enlaces)
+import LayoutAdministracion from './LayoutAdministracion.vue'
+import { secciones } from './navegacionAdministracion.js'
 
 function seccionDeUrl() {
   const id = window.location.hash.slice(1)
@@ -30,12 +10,10 @@ function seccionDeUrl() {
 }
 
 const seccionActiva = ref(seccionDeUrl())
-const menuAbierto = ref(false)
 const contenidoPrincipal = ref(null)
 
 async function actualizarSeccion() {
   seccionActiva.value = seccionDeUrl()
-  menuAbierto.value = false
   await nextTick()
   contenidoPrincipal.value?.focus({ preventScroll: true })
   window.scrollTo({ top: 0, behavior: 'instant' })
@@ -604,23 +582,7 @@ onBeforeUnmount(() => {
       <button v-if="usuario" type="button" class="secundario" :disabled="ocupado" @click="salir">Cerrar sesión</button>
     </header>
 
-    <div class="estructura" :class="{ autenticada: usuario?.admin }">
-      <aside v-if="usuario?.admin" class="menu">
-        <button type="button" class="boton-menu secundario" aria-controls="navegacion-admin" :aria-expanded="menuAbierto" @click="menuAbierto = !menuAbierto">
-          <span aria-hidden="true">☰</span> {{ menuAbierto ? 'Cerrar menú' : 'Menú de administración' }}
-        </button>
-        <nav id="navegacion-admin" :class="{ abierto: menuAbierto }" aria-label="Menú de administración">
-          <a href="/admin/agenda" class="enlace-agenda">Abrir agenda <span aria-hidden="true">↗</span></a>
-          <div v-for="grupo in gruposMenu" :key="grupo.nombre" class="grupo-menu">
-            <p>{{ grupo.nombre }}</p>
-            <a v-for="item in grupo.enlaces" :key="item.id" :href="'#' + item.id"
-              :aria-current="seccionActiva.id === item.id ? 'page' : undefined" @click="menuAbierto = false">
-              {{ item.nombre }}
-            </a>
-          </div>
-        </nav>
-      </aside>
-
+    <LayoutAdministracion :usuario="usuario?.admin ? usuario : null" :seccion="seccionActiva.id">
     <main ref="contenidoPrincipal" tabindex="-1">
       <h1 id="titulo-seccion-admin">{{ usuario?.admin ? seccionActiva.nombre : 'Administración de Zenli' }}</h1>
       <p v-if="usuario" class="cuenta-actual">{{ usuario.email }}</p>
@@ -923,7 +885,7 @@ onBeforeUnmount(() => {
         </section>
       </div>
     </main>
-    </div>
+    </LayoutAdministracion>
   </div>
 </template>
 
@@ -933,19 +895,8 @@ header { background: #08271c; color: #fff7e6; display: flex; align-items: center
 header a { color: inherit; text-underline-offset: .2em; }
 .marca { color: #eac26f; font: 2rem Georgia, serif; text-decoration: none; margin-right: auto; }
 .enlace-portada { font-size: .88rem; }
-.estructura { width: min(calc(100% - 2rem), 80rem); margin-inline: auto; }
-.estructura.autenticada { display: grid; grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr); gap: clamp(1rem, 3vw, 2.4rem); align-items: start; }
-main { min-width: 0; padding-block: clamp(1.25rem, 4vw, 2.6rem); }
+main { padding-block: clamp(1.25rem, 4vw, 2.6rem); }
 main:focus { outline: none; }
-.menu { position: sticky; top: 1rem; margin-block: clamp(1.25rem, 4vw, 2.6rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
-.menu nav { display: grid; gap: .85rem; padding: .85rem; border: 1px solid #e4dac3; border-radius: .9rem; background: #fffaf1; }
-.menu nav a { display: block; padding: .52rem .65rem; border-radius: .45rem; color: #214d3a; font-size: .9rem; text-decoration: none; line-height: 1.3; }
-.menu nav a:hover { background: #f5ecda; }
-.menu nav a[aria-current=page] { background: #dceadf; color: #143c2a; font-weight: 750; }
-.menu .enlace-agenda { display: flex; justify-content: space-between; background: #214d3a; color: #fffdfa; font-weight: 700; }
-.menu .enlace-agenda:hover { background: #2c624b; }
-.grupo-menu p { margin: 0 0 .2rem .65rem; color: #526255; font-size: .69rem; letter-spacing: .09em; text-transform: uppercase; font-weight: 700; }
-.boton-menu { display: none; }
 .pasos { padding-left: 1.2rem; }
 .pasos li { margin-block: .5rem; }
 .pasos a { color: #214d3a; text-underline-offset: .2em; }
@@ -1003,11 +954,6 @@ small { font-size: .79rem; color: #526255; }
 .vacío { color: #526255; font-style: italic; margin: 1rem 0 0; }
 
 @media (max-width: 46rem) {
-  .estructura.autenticada { display: block; }
-  .menu { position: static; margin-block: .75rem 0; max-height: none; overflow: visible; }
-  .menu nav { display: none; margin-top: .45rem; }
-  .menu nav.abierto { display: grid; }
-  .boton-menu { display: inline-flex; gap: .5rem; align-items: center; width: 100%; justify-content: center; }
   header { gap: .55rem; }
   header button { padding-inline: .45rem; }
   .lista-servicios li { flex-direction: column; align-items: flex-start; }
