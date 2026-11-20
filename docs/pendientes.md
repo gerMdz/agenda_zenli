@@ -27,3 +27,10 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 - Implementar la capa de aplicación que autoriza las confirmaciones y aplica las políticas comerciales antes de exponer una ruta. Validar el esquema completo en la versión de PostgreSQL prevista para el despliegue.
 - Incorporar al panel la recuperación de contraseñas y la desactivación de cuentas profesionales.
 - Definir qué servicios requieren un equipo y cómo se organiza cada una de sus sesiones.
+
+## Próxima mejora sugerida: mensajes privados
+
+- Abrir «Mensajes privados» en una sección propia del menú lateral, igual que las demás secciones del panel.
+- Mostrar junto a «Mensajes privados» un contador de mensajes recibidos sin leer para la cuenta que inició sesión.
+- Guardar el estado de lectura por destinatario. Se propone marcar un mensaje como leído cuando la destinataria lo abre y actualizar el contador en ese momento.
+- Mantener la privacidad actual: solo la cuenta remitente y la destinataria pueden ver sus mensajes.
