@@ -18,7 +18,7 @@ final readonly class PresentacionProfesionales
     {
         return [
             'modo' => $this->conexion->fetchOne('SELECT modo FROM presentacion_profesionales_config WHERE id = 1') ?: 'ocultos',
-            'profesionales' => $this->conexion->fetchAllAssociative('SELECT p.id::text, p.nombre, p.activa, i.imagen_version FROM profesionales p LEFT JOIN presentacion_profesionales_imagenes i ON i.profesional_id = p.id ORDER BY p.orden_portada NULLS LAST, p.nombre, p.id'),
+            'profesionales' => $this->conexion->fetchAllAssociative('SELECT p.id::text, p.nombre, p.activa, p.visible_portada, i.imagen_version FROM profesionales p LEFT JOIN presentacion_profesionales_imagenes i ON i.profesional_id = p.id ORDER BY p.orden_portada NULLS LAST, p.nombre, p.id'),
         ];
     }
 
@@ -29,9 +29,35 @@ final readonly class PresentacionProfesionales
             SELECT p.id::text, p.nombre, CASE WHEN c.modo = 'imagenes' THEN i.imagen_version ELSE NULL END AS imagen_version
             FROM presentacion_profesionales_config c CROSS JOIN profesionales p
             LEFT JOIN presentacion_profesionales_imagenes i ON i.profesional_id = p.id
-            WHERE c.id = 1 AND c.modo IN ('nombres', 'imagenes') AND p.activa
+            WHERE c.id = 1 AND c.modo IN ('nombres', 'imagenes') AND p.activa AND p.visible_portada
             ORDER BY p.orden_portada NULLS LAST, p.nombre, p.id
             SQL);
+    }
+
+    public function cambiarNombre(string $id, mixed $nombre, string $autor): void
+    {
+        if (!is_string($nombre) || preg_match('/\A[^\x00]{1,120}\z/u', trim($nombre)) !== 1) {
+            throw new InvalidArgumentException('Ingresá un nombre de hasta 120 caracteres.');
+        }
+        $this->conexion->transactional(function (Connection $conexion) use ($id, $nombre, $autor): void {
+            if ($conexion->executeStatement('UPDATE profesionales SET nombre = ? WHERE id = ?', [trim($nombre), $id]) !== 1) {
+                throw new InvalidArgumentException('La profesional no existe.');
+            }
+            $conexion->executeStatement('UPDATE presentacion_profesionales_config SET actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = 1', [$autor]);
+        });
+    }
+
+    public function cambiarVisibilidad(string $id, mixed $visible, string $autor): void
+    {
+        if (!is_bool($visible)) {
+            throw new InvalidArgumentException('Elegí una visibilidad válida.');
+        }
+        $this->conexion->transactional(function (Connection $conexion) use ($id, $visible, $autor): void {
+            if ($conexion->executeStatement('UPDATE profesionales SET visible_portada = ? WHERE id = ?', [$visible, $id], [\Doctrine\DBAL\ParameterType::BOOLEAN, \Doctrine\DBAL\ParameterType::STRING]) !== 1) {
+                throw new InvalidArgumentException('La profesional no existe.');
+            }
+            $conexion->executeStatement('UPDATE presentacion_profesionales_config SET actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = 1', [$autor]);
+        });
     }
 
     public function mover(string $id, mixed $direccion, string $autor): array
@@ -62,7 +88,7 @@ final readonly class PresentacionProfesionales
 
     public function imagen(string $id, string $version, bool $publica): array|false
     {
-        $filtro = $publica ? "AND p.activa AND EXISTS (SELECT 1 FROM presentacion_profesionales_config c WHERE c.id = 1 AND c.modo = 'imagenes')" : '';
+        $filtro = $publica ? "AND p.activa AND p.visible_portada AND EXISTS (SELECT 1 FROM presentacion_profesionales_config c WHERE c.id = 1 AND c.modo = 'imagenes')" : '';
         return $this->conexion->fetchAssociative("SELECT encode(i.imagen, 'base64') AS contenido, i.imagen_tipo FROM presentacion_profesionales_imagenes i JOIN profesionales p ON p.id = i.profesional_id WHERE p.id = ? AND i.imagen_version = ? $filtro", [$id, $version]);
     }
 

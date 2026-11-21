@@ -47,6 +47,32 @@ final readonly class PresentacionProfesionalesController
         return $this->respuesta($this->presentacion->configuracion());
     }
 
+    #[Route('/api/admin/profesionales-portada/{id}/nombre', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PATCH'])]
+    public function nombre(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $this->presentacion->cambiarNombre($id, $peticion->toArray()['nombre'] ?? null, $usuario['id']);
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del nombre.' : $error->getMessage()], 422);
+        }
+        return $this->respuesta($this->presentacion->configuracion());
+    }
+
+    #[Route('/api/admin/profesionales-portada/{id}/visibilidad', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PATCH'])]
+    public function visibilidad(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $this->presentacion->cambiarVisibilidad($id, $peticion->toArray()['visible'] ?? null, $usuario['id']);
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos de visibilidad.' : $error->getMessage()], 422);
+        }
+        return $this->respuesta($this->presentacion->configuracion());
+    }
+
     #[Route('/api/admin/profesionales-portada/{id}/orden', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PATCH'])]
     public function orden(Request $peticion, string $id): JsonResponse
     {

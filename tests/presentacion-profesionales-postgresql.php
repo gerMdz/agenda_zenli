@@ -9,6 +9,7 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
 use DoctrineMigrations\Version20261120000200;
 use DoctrineMigrations\Version20261120000400;
+use DoctrineMigrations\Version20261121000300;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
@@ -19,6 +20,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
 require __DIR__.'/../migrations/Version20261120000200.php';
 require __DIR__.'/../migrations/Version20261120000400.php';
+require __DIR__.'/../migrations/Version20261121000300.php';
 require __DIR__.'/../src/Administracion/PresentacionProfesionales.php';
 require __DIR__.'/../src/Administracion/SesionAdministrativa.php';
 require __DIR__.'/../src/Controller/PresentacionProfesionalesController.php';
@@ -39,7 +41,11 @@ foreach ($migracion->getSql() as $sql) $db->executeStatement($sql->getStatement(
 $migracion = new Version20261120000400($db, new NullLogger());
 $migracion->up(new Schema());
 foreach ($migracion->getSql() as $sql) $db->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());
+$migracion = new Version20261121000300($db, new NullLogger());
+$migracion->up(new Schema());
+foreach ($migracion->getSql() as $sql) $db->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());
 $verificar = static function (bool $valor, string $mensaje): void { if (!$valor) throw new RuntimeException($mensaje); };
+$verificar((int) $db->fetchOne('SELECT count(*) FROM profesionales WHERE visible_portada') === 2, 'Solo los activos existentes conservan visibilidad.');
 $servicio = new PresentacionProfesionales($db);
 $ids = static fn (array $lista): array => array_column($lista, 'id');
 $verificar($ids($servicio->configuracion()['profesionales']) === ['3', '2', '1'], 'Orden inicial por nombre.');
@@ -52,8 +58,11 @@ $servicio->cambiarModo('ocultos', '1');
 foreach ([['3', -1], ['2', 1], ['999', 1], ['1', 0]] as [$id, $direccion]) {
     try { $servicio->mover($id, $direccion, '1'); throw new RuntimeException('Movimiento inválido aceptado.'); } catch (InvalidArgumentException) {}
 }
-$db->executeStatement("INSERT INTO profesionales VALUES (4, 'Ana', true, NULL, NULL)");
+$db->executeStatement("INSERT INTO profesionales (id, nombre, activa) VALUES (4, 'Ana', true)");
 $verificar($ids($servicio->configuracion()['profesionales']) === ['3', '1', '2', '4'], 'Perfil nuevo al final.');
+$servicio->cambiarModo('nombres', '1');
+$verificar(!in_array('4', $ids($servicio->publicos()), true), 'Perfil nuevo oculto por defecto.');
+$servicio->cambiarModo('ocultos', '1');
 $db->executeStatement('DELETE FROM profesionales WHERE id = 4');
 $verificar($servicio->configuracion()['modo'] === 'ocultos' && $servicio->publicos() === [], 'Inicialmente ocultos.');
 $archivo = new UploadedFile(__DIR__.'/../frontend/src/image/favicon.svg', 'archivo.svg', null, null, true);
@@ -68,8 +77,19 @@ $publicos = $servicio->publicos();
 $verificar(count($publicos) === 2 && $publicos[0]['imagen_version'] === null && $servicio->imagen('1', $version, true) === false, 'Nombres sin imágenes ni perfiles inactivos.');
 $servicio->cambiarModo('imagenes', '1');
 $verificar($servicio->imagen('1', $version, true) !== false && count($servicio->publicos()) === 2, 'Modo imágenes habilita imágenes existentes.');
+$servicio->cambiarVisibilidad('1', false, '1');
+$verificar($ids($servicio->publicos()) === ['2'] && $servicio->imagen('1', $version, true) === false && $servicio->imagen('1', $version, false) !== false, 'Ocultar revoca lista e imagen públicas, no imagen privada.');
+$perfil = array_values(array_filter($servicio->configuracion()['profesionales'], static fn (array $p): bool => $p['id'] === '1'))[0];
+$verificar($perfil['visible_portada'] === false && $perfil['activa'] === true, 'Configuración expone visibilidad booleana independiente de actividad.');
+$servicio->cambiarModo('ocultos', '1');
+$servicio->cambiarModo('imagenes', '1');
+$verificar($ids($servicio->publicos()) === ['2'], 'Cambiar modo conserva visibilidad individual.');
+$servicio->cambiarVisibilidad('1', true, '1');
+$verificar($servicio->imagen('1', $version, true) !== false, 'Mostrar restablece imagen.');
 $db->executeStatement('UPDATE profesionales SET activa = false WHERE id = 1');
 $verificar($servicio->imagen('1', $version, true) === false, 'Una profesional inactiva no publica imagen.');
+$servicio->cambiarVisibilidad('1', true, '1');
+$verificar(!in_array('1', $ids($servicio->publicos()), true), 'Habilitar visibilidad no activa el perfil.');
 $db->executeStatement('UPDATE profesionales SET activa = true WHERE id = 1');
 $servicio->cambiarModo('ocultos', '1');
 $verificar($servicio->imagen('1', $version, true) === false && $servicio->publicos() === [], 'Ocultar revoca acceso público.');
@@ -78,6 +98,26 @@ $servicio->guardarImagen('1', null, true, '1');
 $verificar($servicio->imagen('1', $version, false) === false && (string) $db->fetchOne('SELECT actualizado_por FROM presentacion_profesionales_imagenes WHERE profesional_id = 1') === '1', 'Eliminar conserva autor y revoca imagen.');
 $controller = new PresentacionProfesionalesController($servicio, new SesionAdministrativa($db));
 $sesion = new Session(new MockArraySessionStorage());
+$visibilidad = Request::create('/api/admin/profesionales-portada/1/visibilidad', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"visible":false}');
+$visibilidad->setSession($sesion);
+try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('Visibilidad anónima aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Visibilidad requiere sesión.'); }
+$sesion->set('admin_id', '2'); $sesion->set('admin_credencial', hash('sha256', $hash));
+try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('Visibilidad profesional aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Visibilidad requiere administración.'); }
+$sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $hash)); $sesion->set('admin_csrf', 'token');
+try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('Visibilidad sin CSRF aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Visibilidad requiere CSRF.'); }
+$visibilidad->headers->set('X-Zenli-CSRF', 'incorrecto');
+try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('CSRF incorrecto aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Visibilidad requiere CSRF válido.'); }
+$visibilidad->headers->set('X-Zenli-CSRF', 'token');
+$verificar($controller->visibilidad($visibilidad, '1')->getStatusCode() === 200, 'Administración puede ocultar.');
+$verificar((string) $db->fetchOne('SELECT actualizado_por FROM presentacion_profesionales_config WHERE id = 1') === '1', 'Visibilidad registra autor.');
+foreach (['{"visible":"false"}', '{}', '{'] as $contenido) {
+    $invalida = Request::create('/', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: $contenido);
+    $invalida->setSession($sesion); $invalida->headers->set('X-Zenli-CSRF', 'token');
+    $verificar($controller->visibilidad($invalida, '1')->getStatusCode() === 422, 'Visibilidad inválida rechazada.');
+}
+$verificar($controller->visibilidad($visibilidad, '999')->getStatusCode() === 422, 'Profesional inexistente rechazada.');
+$servicio->cambiarVisibilidad('1', true, '1');
+$sesion->remove('admin_id');
 $peticion = Request::create('/api/admin/profesionales-portada/modo', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"modo":"imagenes"}');
 $peticion->setSession($sesion);
 try { $controller->modo($peticion); throw new RuntimeException('Acceso anónimo aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Debe requerir sesión.'); }
@@ -100,4 +140,25 @@ $verificar($controller->orden($orden, '1')->getStatusCode() === 200, 'Administra
 $orden = Request::create('/api/admin/profesionales-portada/1/orden', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"direccion":"1"}');
 $orden->setSession($sesion); $orden->headers->set('X-Zenli-CSRF', 'token');
 $verificar($controller->orden($orden, '1')->getStatusCode() === 422, 'Dirección debe ser entera.');
+$nombre = Request::create('/api/admin/profesionales-portada/1/nombre', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"nombre":"  Nataly Editada  "}');
+$nombre->setSession($sesion);
+$sesion->remove('admin_id');
+try { $controller->nombre($nombre, '1'); throw new RuntimeException('Nombre anónimo aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Nombre requiere sesión.'); }
+$sesion->set('admin_id', '2'); $sesion->set('admin_credencial', hash('sha256', $hash));
+try { $controller->nombre($nombre, '1'); throw new RuntimeException('Nombre profesional aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Nombre requiere administración.'); }
+$sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $hash));
+try { $controller->nombre($nombre, '1'); throw new RuntimeException('Nombre sin CSRF aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Nombre requiere CSRF.'); }
+$nombre->headers->set('X-Zenli-CSRF', 'token');
+$verificar($controller->nombre($nombre, '1')->getStatusCode() === 200, 'Nombre guardado.');
+$verificar($db->fetchOne('SELECT nombre FROM profesionales WHERE id = 1') === 'Nataly Editada', 'Nombre compartido actualizado.');
+$verificar((string) $db->fetchOne('SELECT actualizado_por FROM presentacion_profesionales_config WHERE id = 1') === '1', 'Cambio registra autor.');
+$servicio->cambiarModo('nombres', '1');
+$verificar(in_array('Nataly Editada', array_column($servicio->publicos(), 'nombre'), true), 'Nombre actualizado en portada.');
+foreach (['{"nombre":"   "}', '{"nombre":123}', '{"nombre":"'.str_repeat('x', 121).'"}', '{'] as $contenido) {
+    $invalida = Request::create('/api/admin/profesionales-portada/1/nombre', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: $contenido);
+    $invalida->setSession($sesion); $invalida->headers->set('X-Zenli-CSRF', 'token');
+    $verificar($controller->nombre($invalida, '1')->getStatusCode() === 422, 'Nombre inválido rechazado.');
+}
+$verificar($controller->nombre($nombre, '999')->getStatusCode() === 422, 'Profesional inexistente rechazada.');
+$verificar($db->fetchOne('SELECT nombre FROM profesionales WHERE id = 1') === 'Nataly Editada', 'Los errores no modifican el nombre.');
 fwrite(STDOUT, "Presentación, privacidad y permisos verificados.\n");

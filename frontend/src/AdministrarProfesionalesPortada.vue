@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps({ csrf: { type: String, required: true } })
+const emit = defineEmits(['nombre-actualizado'])
 const configuracion = ref(null)
 const error = ref('')
 const mensaje = ref('')
@@ -9,6 +10,7 @@ const ocupado = ref(false)
 const dialogo = ref(null)
 const entradaImagen = ref(null)
 const profesionalEditando = ref(null)
+const nombreEditado = ref('')
 const archivoEditado = ref(null)
 const imagenTemporal = ref(null)
 const eliminarImagen = ref(false)
@@ -52,6 +54,13 @@ async function cambiarModo(evento) {
   })) selector.value = configuracion.value.modo
 }
 
+function cambiarVisibilidad(profesional) {
+  solicitar(`/api/admin/profesionales-portada/${profesional.id}/visibilidad`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Zenli-CSRF': props.csrf },
+    body: JSON.stringify({ visible: !profesional.visible_portada }),
+  })
+}
+
 function mover(id, direccion) {
   solicitar(`/api/admin/profesionales-portada/${id}/orden`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Zenli-CSRF': props.csrf },
@@ -72,6 +81,19 @@ async function guardarImagen() {
     limpiarImagen()
     if (entradaImagen.value) entradaImagen.value.value = ''
     eliminarImagen.value = false
+  }
+}
+
+async function guardarNombre() {
+  const id = profesionalEditando.value.id
+  if (await solicitar(`/api/admin/profesionales-portada/${id}/nombre`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Zenli-CSRF': props.csrf },
+    body: JSON.stringify({ nombre: nombreEditado.value }),
+  }, true)) {
+    profesionalEditando.value = configuracion.value.profesionales.find(profesional => profesional.id === id)
+    nombreEditado.value = profesionalEditando.value.nombre
+    mensajeEdicion.value = 'Nombre guardado.'
+    emit('nombre-actualizado')
   }
 }
 
@@ -100,6 +122,7 @@ async function abrirEdicion(profesional) {
   error.value = ''
   mensaje.value = ''
   profesionalEditando.value = profesional
+  nombreEditado.value = profesional.nombre
   await nextTick()
   dialogo.value.showModal()
 }
@@ -107,6 +130,7 @@ async function abrirEdicion(profesional) {
 function cerrarEdicion() {
   if (dialogo.value?.open) dialogo.value.close()
   profesionalEditando.value = null
+  nombreEditado.value = ''
   limpiarImagen()
   eliminarImagen.value = false
   errorEdicion.value = ''
@@ -133,22 +157,24 @@ onBeforeUnmount(limpiarImagen)
           <option value="nombres">Solo nombres</option>
           <option value="imagenes">Nombres e imágenes</option>
         </select>
-        <small id="ayuda-modo-profesionales">Solo se muestran profesionales activas. Si falta alguna imagen, se muestran solo nombres hasta completar todas.</small>
+        <small id="ayuda-modo-profesionales">Solo se muestran profesionales activas y visibles. El modo global prevalece sobre la visibilidad individual. Si falta alguna imagen, se muestran solo nombres hasta completar todas.</small>
       </div>
       <ul class="lista-servicios">
-        <li v-for="(profesional, index) in configuracion.profesionales" :key="profesional.id" :class="{ oculto: !profesional.activa }">
+        <li v-for="(profesional, index) in configuracion.profesionales" :key="profesional.id" :class="{ oculto: !profesional.activa || !profesional.visible_portada }">
           <div class="servicio-info">
             <span class="servicio-orden">{{ index + 1 }}</span>
             <div class="servicio-detalle">
               <strong>{{ profesional.nombre }}</strong>
               <small v-if="!profesional.activa">Inactiva</small>
+              <small>{{ profesional.visible_portada ? 'Visible en portada' : 'Oculta en portada' }}</small>
               <span class="badge" :class="{ 'sin-imagen': !profesional.imagen_version }">{{ profesional.imagen_version ? 'con imagen' : 'sin imagen' }}</span>
             </div>
           </div>
           <div class="servicio-acciones">
+            <button type="button" class="secundario" :disabled="ocupado" :aria-label="`${profesional.visible_portada ? 'Ocultar' : 'Mostrar'} a ${profesional.nombre} en portada`" @click="cambiarVisibilidad(profesional)">{{ profesional.visible_portada ? 'Ocultar' : 'Mostrar' }}</button>
             <button type="button" class="secundario icono" :disabled="ocupado || index === 0" :aria-label="`Subir a ${profesional.nombre}`" title="Mover arriba" @click="mover(profesional.id, -1)">↑</button>
             <button type="button" class="secundario icono" :disabled="ocupado || index === configuracion.profesionales.length - 1" :aria-label="`Bajar a ${profesional.nombre}`" title="Mover abajo" @click="mover(profesional.id, 1)">↓</button>
-            <button type="button" class="secundario" :disabled="ocupado" :aria-label="`Editar imagen de ${profesional.nombre}`" @click="abrirEdicion(profesional)">Editar</button>
+            <button type="button" class="secundario" :disabled="ocupado" :aria-label="`Editar ${profesional.nombre}`" @click="abrirEdicion(profesional)">Editar</button>
           </div>
         </li>
       </ul>
@@ -163,6 +189,12 @@ onBeforeUnmount(limpiarImagen)
             <p v-if="errorEdicion" class="error" role="alert">{{ errorEdicion }}</p>
             <p v-if="mensajeEdicion" class="mensaje" role="status">{{ mensajeEdicion }}</p>
           </div>
+          <form class="formulario-servicio" @submit.prevent="guardarNombre">
+            <label for="nombre-profesional-portada">Nombre</label>
+            <input id="nombre-profesional-portada" v-model.trim="nombreEditado" maxlength="120" required :disabled="ocupado" aria-describedby="ayuda-nombre-profesional">
+            <small id="ayuda-nombre-profesional">Este nombre también se usa en la agenda y en el perfil profesional.</small>
+            <div class="acciones"><button :disabled="ocupado || !nombreEditado || nombreEditado === profesionalEditando.nombre">Guardar nombre</button></div>
+          </form>
           <form class="formulario-servicio" :key="profesionalEditando.id" @submit.prevent="guardarImagen">
             <h3>Información para la portada</h3>
             <label for="imagen-profesional">Imagen</label>
@@ -173,7 +205,7 @@ onBeforeUnmount(limpiarImagen)
             <input id="imagen-profesional" ref="entradaImagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" aria-describedby="ayuda-imagen-profesional" @change="elegirImagen">
             <label v-if="profesionalEditando.imagen_version" class="casilla"><input v-model="eliminarImagen" type="checkbox" :disabled="ocupado"> Eliminar imagen actual</label>
             <small id="ayuda-imagen-profesional">JPG, PNG o WebP, hasta 4 MB de peso. Subí una nueva imagen para reemplazar la actual o marcá para eliminarla. Si marcás eliminar, no se guardará la imagen nueva.</small>
-            <div class="acciones"><button :disabled="ocupado || (!archivoEditado && !eliminarImagen)">Guardar cambios</button></div>
+            <div class="acciones"><button :disabled="ocupado || (!archivoEditado && !eliminarImagen)">Guardar imagen</button></div>
           </form>
           <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarEdicion">Cerrar</button></div>
         </template>

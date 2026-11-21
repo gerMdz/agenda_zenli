@@ -62,6 +62,8 @@ const minutosPreparacion = ref('')
 const preparacionServicios = ref({})
 const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false })
 const nombreProfesional = ref('')
+const profesionalEditado = ref(null)
+const perfilesProfesionales = ref([])
 const dialogoProfesional = ref(null)
 const accionProfesional = ref('')
 const espacioEditado = ref(null)
@@ -149,6 +151,7 @@ function aplicarSesion(sesion) {
     altaClave.value = ''
     cuenta.value.clave = ''
     ajustesAgenda.value = null
+    perfilesProfesionales.value = []
     horarioProfesional.value = null
     profesionalHorario.value = ''
     limpiarImagenTemporal()
@@ -164,16 +167,18 @@ async function cargarPanel() {
     window.location.replace('/admin/agenda')
     return
   }
-  const [portada, listado, svcs, ajustes] = await Promise.all([
+  const [portada, listado, svcs, ajustes, perfiles] = await Promise.all([
     api('/api/portada'),
     api('/api/admin/usuarios'),
     api('/api/admin/servicios'),
     api('/api/admin/agenda/configuracion'),
+    api('/api/admin/agenda/profesionales'),
   ])
   aplicarPortada(portada)
   usuarios.value = listado.usuarios
   servicios.value = svcs.servicios
   aplicarConfiguracionAgenda(ajustes)
+  perfilesProfesionales.value = perfiles.profesionales
   const perfil = new URLSearchParams(window.location.search).get('profesional')
   if (seccionActiva.value.id === 'horarios-profesionales' && ajustes.profesionales.some(persona => persona.id === perfil)) {
     profesionalHorario.value = perfil
@@ -305,12 +310,14 @@ function aplicarConfiguracionAgenda(ajustes) {
 }
 
 async function recargarEquipo() {
-  const [ajustes, listado] = await Promise.all([
+  const [ajustes, listado, perfiles] = await Promise.all([
     api('/api/admin/agenda/configuracion'),
     api('/api/admin/usuarios'),
+    api('/api/admin/agenda/profesionales'),
   ])
   ajustesAgenda.value = ajustes
   usuarios.value = listado.usuarios
+  perfilesProfesionales.value = perfiles.profesionales
 }
 
 function crearUsuario() {
@@ -343,6 +350,27 @@ function crearProfesional() {
   })
 }
 
+function guardarProfesional() {
+  return ejecutar(async () => {
+    await api(`/api/admin/agenda/profesionales/${profesionalEditado.value.id}`, {
+      method: 'PUT', datos: { nombre: nombreProfesional.value },
+    })
+    await recargarEquipo()
+    cerrarDialogoProfesional()
+    mensaje.value = 'Nombre actualizado.'
+  })
+}
+
+function cambiarEstadoProfesional(persona) {
+  const activar = !persona.activa
+  if (!activar && !window.confirm(`¿Dar de baja a ${persona.nombre}? Se conservará su historial y su cuenta de acceso no cambiará.`)) return
+  return ejecutar(async () => {
+    await api(`/api/admin/agenda/profesionales/${persona.id}/estado`, { method: 'PUT', datos: { activa: activar } })
+    await recargarEquipo()
+    mensaje.value = activar ? 'Profesional reactivada.' : 'Profesional dada de baja.'
+  })
+}
+
 function crearCuentaProfesional() {
   return ejecutar(async () => {
     await api('/api/admin/agenda/cuentas-profesionales', {
@@ -361,7 +389,12 @@ async function abrirDialogoProfesional(accion, profesional = '') {
   error.value = ''
   mensaje.value = ''
   accionProfesional.value = accion
-  cuenta.value.profesional = profesional
+  if (accion === 'editar') {
+    profesionalEditado.value = profesional
+    nombreProfesional.value = profesional.nombre
+  } else {
+    cuenta.value.profesional = profesional
+  }
   await nextTick()
   dialogoProfesional.value.showModal()
 }
@@ -369,6 +402,7 @@ async function abrirDialogoProfesional(accion, profesional = '') {
 function cerrarDialogoProfesional() {
   if (dialogoProfesional.value?.open) dialogoProfesional.value.close()
   accionProfesional.value = ''
+  profesionalEditado.value = null
   nombreProfesional.value = ''
   cuenta.value = { profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false }
   error.value = ''
@@ -747,7 +781,7 @@ onBeforeUnmount(() => {
 
       <div v-if="usuario?.admin" class="paneles">
         <PromocionesAdministracion v-if="seccionActiva.id === 'promociones'" :csrf="csrf" />
-        <div v-if="seccionActiva.id === 'equipo-portada'" class="panel"><AdministrarProfesionalesPortada :csrf="csrf" /></div>
+        <div v-if="seccionActiva.id === 'equipo-portada'" class="panel"><AdministrarProfesionalesPortada :csrf="csrf" @nombre-actualizado="ejecutar(recargarEquipo)" /></div>
         <section v-show="seccionActiva.id === 'portada'" class="panel" aria-labelledby="titulo-seccion-admin">
           <p id="estado-portada">{{ soloImagen ? 'Estado público: solo imagen' : 'Estado público: portada completa' }}</p>
           <button type="button" class="secundario" aria-describedby="estado-portada ayuda-modo" :disabled="ocupado" @click="cambiarModoPortada">
@@ -874,21 +908,29 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <ul class="lista">
-              <li v-for="persona in ajustesAgenda.profesionales" :key="persona.id">
-                <div><strong>{{ persona.nombre }}</strong><small>{{ Number(persona.admin) ? 'Profesional y administradora' : Number(persona.tiene_cuenta) ? 'Profesional' : 'Sin cuenta' }}</small></div>
-                <button v-if="!Number(persona.tiene_cuenta)" type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('cuenta', persona.id)">Vincular cuenta</button>
+              <li v-for="persona in perfilesProfesionales" :key="persona.id">
+                <div><strong>{{ persona.nombre }}</strong><small>{{ persona.activa ? (persona.admin ? 'Profesional y administradora' : persona.tiene_cuenta ? 'Profesional' : 'Sin cuenta') : 'Dada de baja' }}</small></div>
+                <div class="acciones">
+                  <button v-if="persona.activa && !persona.tiene_cuenta" type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('cuenta', persona.id)">Vincular cuenta</button>
+                  <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('editar', persona)">Editar</button>
+                  <button type="button" class="secundario" :disabled="ocupado" @click="cambiarEstadoProfesional(persona)">{{ persona.activa ? 'Dar de baja' : 'Reactivar' }}</button>
+                </div>
               </li>
             </ul>
-            <p v-if="!ajustesAgenda.profesionales.length" class="vacío">Todavía no hay profesionales cargadas.</p>
+            <p v-if="!perfilesProfesionales.length" class="vacío">Todavía no hay profesionales cargadas.</p>
             <dialog ref="dialogoProfesional" class="modal-servicio" aria-labelledby="titulo-dialogo-profesional" @close="cerrarDialogoProfesional" @cancel="ocupado && $event.preventDefault()">
               <div class="modal-cabecera">
-                <div><span class="modal-etiqueta">EQUIPO DE ZENLI</span><h2 id="titulo-dialogo-profesional">{{ accionProfesional === 'perfil' ? 'Nueva profesional' : 'Crear o vincular cuenta' }}</h2><p>{{ accionProfesional === 'perfil' ? 'Agregá una profesional sin crear una cuenta de acceso.' : 'Asigná una cuenta a una profesional del equipo.' }}</p></div>
+                <div><span class="modal-etiqueta">EQUIPO DE ZENLI</span><h2 id="titulo-dialogo-profesional">{{ accionProfesional === 'perfil' ? 'Nueva profesional' : accionProfesional === 'editar' ? 'Editar profesional' : 'Crear o vincular cuenta' }}</h2><p>{{ accionProfesional === 'perfil' ? 'Agregá una profesional sin crear una cuenta de acceso.' : accionProfesional === 'editar' ? 'El nombre se actualiza también en la portada.' : 'Asigná una cuenta a una profesional del equipo.' }}</p></div>
                 <button type="button" class="cerrar-modal" aria-label="Cerrar" :disabled="ocupado" @click="cerrarDialogoProfesional">✕</button>
               </div>
               <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
             <form v-if="accionProfesional === 'perfil'" @submit.prevent="crearProfesional">
               <label>Nombre <input v-model.trim="nombreProfesional" maxlength="120" required></label>
               <button :disabled="ocupado">Crear profesional</button>
+            </form>
+            <form v-else-if="accionProfesional === 'editar'" @submit.prevent="guardarProfesional">
+              <label>Nombre <input v-model.trim="nombreProfesional" maxlength="120" required></label>
+              <button :disabled="ocupado">Guardar cambios</button>
             </form>
             <form v-else-if="accionProfesional === 'cuenta'" @submit.prevent="crearCuentaProfesional">
               <label>Profesional

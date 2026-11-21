@@ -206,10 +206,13 @@ final readonly class AgendaAdministrativaController
         return $this->respuesta(['creada' => true], 201);
     }
 
-    #[Route('/profesionales', methods: ['POST'])]
+    #[Route('/profesionales', methods: ['GET', 'POST'])]
     public function crearProfesional(Request $peticion): JsonResponse
     {
         $this->sesion->exigir($peticion);
+        if ($peticion->isMethod('GET')) {
+            return $this->respuesta(['profesionales' => $this->perfiles->listar()]);
+        }
         $this->sesion->verificarToken($peticion);
         try {
             $datos = $peticion->toArray();
@@ -221,6 +224,28 @@ final readonly class AgendaAdministrativaController
         }
 
         return $this->respuesta(['id' => $id], 201);
+    }
+
+    #[Route('/profesionales/{id}', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT'])]
+    #[Route('/profesionales/{id}/estado', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT'])]
+    public function modificarProfesional(Request $peticion, string $id): JsonResponse
+    {
+        $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $datos = $peticion->toArray();
+            if (str_ends_with($peticion->getPathInfo(), '/estado')) {
+                $this->perfiles->cambiarEstado($id, $datos['activa'] ?? null);
+            } else {
+                $this->perfiles->renombrar($id, $datos['nombre'] ?? null);
+            }
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del perfil profesional.' : $error->getMessage()], 422);
+        } catch (HttpException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], $error->getStatusCode());
+        }
+
+        return $this->respuesta(['guardado' => true]);
     }
 
     private static function agendaPropia(array $usuario): ?string
