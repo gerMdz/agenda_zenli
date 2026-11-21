@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Administracion;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\ParameterType;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
@@ -214,7 +215,8 @@ final readonly class ServiciosPortada
         }
         $this->conexion->executeStatement(
             'UPDATE servicios_portada SET visible = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
-            [$visible, $autor, $id]
+            [$visible, $autor, $id],
+            [ParameterType::BOOLEAN, ParameterType::STRING, ParameterType::INTEGER],
         );
     }
 
