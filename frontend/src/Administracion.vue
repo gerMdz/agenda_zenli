@@ -81,6 +81,10 @@ const editProfesionales = ref('')
 const editArchivo = ref(null)
 const editEliminarImagen = ref(false)
 const servicioImagenTemporal = ref(null)
+const imagenNuevaTemporal = ref(null)
+const dialogoServicio = ref(null)
+const entradaImagenEdicion = ref(null)
+const editarMensaje = ref('')
 const crearError = ref('')
 const editarError = ref('')
 
@@ -435,7 +439,7 @@ function iniciarCreacion() {
   nuevoDescCorta.value = ''
   nuevoDetalle.value = ''
   nuevoArchivo.value = null
-  servicioImagenTemporal.value = null
+  imagenNuevaTemporal.value = null
   crearError.value = ''
   error.value = ''
 }
@@ -446,8 +450,8 @@ function cancelarCreacion() {
   nuevoDescCorta.value = ''
   nuevoDetalle.value = ''
   nuevoArchivo.value = null
-  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
-  servicioImagenTemporal.value = null
+  if (imagenNuevaTemporal.value) URL.revokeObjectURL(imagenNuevaTemporal.value)
+  imagenNuevaTemporal.value = null
   crearError.value = ''
 }
 
@@ -460,8 +464,8 @@ function elegirImagenServicio(evento) {
     return
   }
   crearError.value = ''
-  if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
-  servicioImagenTemporal.value = URL.createObjectURL(archivo)
+  if (imagenNuevaTemporal.value) URL.revokeObjectURL(imagenNuevaTemporal.value)
+  imagenNuevaTemporal.value = URL.createObjectURL(archivo)
   nuevoArchivo.value = archivo
 }
 
@@ -498,12 +502,16 @@ async function iniciarEdicion(servicio) {
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
   servicioImagenTemporal.value = null
   editarError.value = ''
+  editarMensaje.value = ''
   error.value = ''
+  mensaje.value = ''
   await nextTick()
+  dialogoServicio.value.showModal()
   document.getElementById('edit-nombre')?.focus()
 }
 
 function cancelarEdicion() {
+  if (dialogoServicio.value?.open) dialogoServicio.value.close()
   servicioEditando.value = null
   editNombre.value = ''
   editDescCorta.value = ''
@@ -513,6 +521,7 @@ function cancelarEdicion() {
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
   servicioImagenTemporal.value = null
   editarError.value = ''
+  editarMensaje.value = ''
 }
 
 function elegirImagenEdicion(evento) {
@@ -532,6 +541,7 @@ function elegirImagenEdicion(evento) {
 
 async function guardarEdicion() {
   editarError.value = ''
+  editarMensaje.value = ''
   if (ocupado.value) return
   ocupado.value = true
   try {
@@ -543,8 +553,13 @@ async function guardarEdicion() {
     if (editEliminarImagen.value) datos.set('eliminar_imagen', '1')
     const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'POST', datos })
     servicios.value = resultado.servicios
-    cancelarEdicion()
-    mensaje.value = 'Servicio actualizado.'
+    servicioEditando.value = resultado.servicios.find(servicio => servicio.id === servicioEditando.value.id)
+    editArchivo.value = null
+    editEliminarImagen.value = false
+    if (entradaImagenEdicion.value) entradaImagenEdicion.value.value = ''
+    if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
+    servicioImagenTemporal.value = null
+    editarMensaje.value = 'Datos del servicio guardados.'
   } catch (fallo) {
     editarError.value = fallo.message
   } finally {
@@ -552,8 +567,12 @@ async function guardarEdicion() {
   }
 }
 
-function guardarConfiguracionServicio() {
-  return ejecutar(async () => {
+async function guardarConfiguracionServicio() {
+  if (ocupado.value) return
+  ocupado.value = true
+  editarError.value = ''
+  editarMensaje.value = ''
+  try {
     const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}/configuracion`, {
       method: 'PATCH',
       datos: {
@@ -562,8 +581,12 @@ function guardarConfiguracionServicio() {
       },
     })
     servicios.value = resultado.servicios
-    mensaje.value = 'Configuración de agenda guardada.'
-  })
+    editarMensaje.value = 'Configuración de agenda guardada.'
+  } catch (fallo) {
+    editarError.value = fallo.message
+  } finally {
+    ocupado.value = false
+  }
 }
 
 async function eliminarServicio(id) {
@@ -602,6 +625,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('hashchange', actualizarSeccion)
   limpiarImagenTemporal()
   limpiarImagenTemporalServicio()
+  if (imagenNuevaTemporal.value) URL.revokeObjectURL(imagenNuevaTemporal.value)
 })
 </script>
 
@@ -619,8 +643,8 @@ onBeforeUnmount(() => {
       <h1 id="titulo-seccion-admin">{{ usuario?.admin ? seccionActiva.nombre : 'Administración de Zenli' }}</h1>
       <p v-if="usuario" class="cuenta-actual">{{ usuario.email }}</p>
       <p v-if="cargando" role="status">Cargando…</p>
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
-      <p v-if="mensaje" class="mensaje" role="status">{{ mensaje }}</p>
+      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios')" class="error" role="alert">{{ error }}</p>
+      <p v-if="mensaje && (!usuario?.admin || seccionActiva.id !== 'servicios')" class="mensaje" role="status">{{ mensaje }}</p>
 
       <section v-if="!cargando && !usuario" class="panel inicio-sesion">
         <h2>Ingresá a tu cuenta</h2>
@@ -842,6 +866,10 @@ onBeforeUnmount(() => {
 
         <!-- Servicios de la portada -->
         <section v-show="seccionActiva.id === 'servicios'" class="panel" aria-labelledby="titulo-servicios">
+          <div class="avisos-servicios">
+            <p v-if="error" class="error" role="alert">{{ error }}</p>
+            <p v-if="mensaje" class="mensaje" role="status">{{ mensaje }}</p>
+          </div>
           <div class="panel-header">
             <h2 id="titulo-servicios">Servicios de la portada</h2>
             <button v-if="!servicioCreando" type="button" class="secundario" :disabled="ocupado" @click="iniciarCreacion">+ Nuevo servicio</button>
@@ -885,8 +913,8 @@ onBeforeUnmount(() => {
             <textarea id="nuevo-detalle" v-model="nuevoDetalle" rows="4" placeholder="Descripción completa del masaje, beneficios, técnica…" :disabled="ocupado"></textarea>
             <small>Después de crear el servicio, configurá su duración mínima y profesionales para poder agendarlo.</small>
             <label for="nuevo-imagen">Imagen</label>
-            <div v-if="servicioImagenTemporal" class="vista-previa-servicio">
-              <img :src="servicioImagenTemporal" alt="Vista previa">
+            <div v-if="imagenNuevaTemporal" class="vista-previa-servicio">
+              <img :src="imagenNuevaTemporal" alt="Vista previa">
             </div>
             <input id="nuevo-imagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" @change="elegirImagenServicio">
             <small>JPG, PNG o WebP, hasta 4 MB de peso. Se mostrará en la tarjeta de la portada.</small>
@@ -896,10 +924,18 @@ onBeforeUnmount(() => {
             </div>
           </form>
 
-          <!-- Formulario editar -->
-          <form v-if="servicioEditando" class="formulario-servicio" :key="servicioEditando.id" @submit.prevent="guardarEdicion">
-            <p v-if="editarError" class="error inline" role="alert">{{ editarError }}</p>
-            <h3>Editar: {{ servicioEditando.nombre }}</h3>
+          <dialog ref="dialogoServicio" class="modal-servicio" aria-labelledby="titulo-editar-servicio" @close="cancelarEdicion" @cancel="ocupado && $event.preventDefault()">
+            <template v-if="servicioEditando">
+            <div class="modal-cabecera">
+              <div><span class="modal-etiqueta">SERVICIOS DE ZENLI</span><h2 id="titulo-editar-servicio">Editar servicio</h2><p>{{ servicioEditando.nombre }}</p></div>
+              <button type="button" class="cerrar-modal" aria-label="Cerrar edición" :disabled="ocupado" @click="cancelarEdicion">✕</button>
+            </div>
+            <div class="modal-avisos" aria-live="polite">
+              <p v-if="editarError" class="error inline" role="alert">{{ editarError }}</p>
+              <p v-if="editarMensaje" class="mensaje" role="status">{{ editarMensaje }}</p>
+            </div>
+          <form class="formulario-servicio" :key="servicioEditando.id" @submit.prevent="guardarEdicion">
+            <h3>Información para la portada</h3>
             <label for="edit-nombre">Nombre</label>
             <input id="edit-nombre" v-model="editNombre" type="text" maxlength="100" :disabled="ocupado" required>
             <label for="edit-desc">Descripción corta</label>
@@ -913,23 +949,25 @@ onBeforeUnmount(() => {
             <div v-if="servicioImagenTemporal" class="vista-previa-servicio">
               <img :src="servicioImagenTemporal" alt="Vista previa nueva">
             </div>
-            <input id="edit-imagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" @change="elegirImagenEdicion">
+            <input id="edit-imagen" ref="entradaImagenEdicion" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" @change="elegirImagenEdicion">
             <label v-if="servicioEditando.imagen_version" class="casilla">
               <input v-model="editEliminarImagen" type="checkbox" :disabled="ocupado"> Eliminar imagen actual
             </label>
             <small>Subí una nueva imagen para reemplazar la actual o marcá para eliminarla.</small>
             <div class="acciones">
               <button :disabled="ocupado">Guardar cambios</button>
-              <button type="button" class="secundario" :disabled="ocupado" @click="cancelarEdicion">Cancelar</button>
             </div>
           </form>
-          <form v-if="servicioEditando" class="formulario-servicio" @submit.prevent="guardarConfiguracionServicio">
-            <h3>Configuración de agenda: {{ servicioEditando.nombre }}</h3>
+          <form class="formulario-servicio configuracion-modal" @submit.prevent="guardarConfiguracionServicio">
+            <h3>Configuración de agenda</h3>
             <label>Tiempo mínimo (minutos) <input v-model.number="editMinimo" type="number" min="1" :disabled="ocupado"></label>
             <label>Cantidad mínima de profesionales <input v-model.number="editProfesionales" type="number" min="1" :disabled="ocupado"></label>
             <small>Sin estos datos el servicio no puede agendarse. La duración mínima es informativa; se pueden elegir las cuatro duraciones.</small>
             <button :disabled="ocupado">Guardar configuración de agenda</button>
           </form>
+          <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cancelarEdicion">Cerrar</button></div>
+            </template>
+          </dialog>
         </section>
       </div>
     </main>
@@ -999,8 +1037,23 @@ small { font-size: .79rem; color: #526255; }
 .badge.sin-imagen { background: #f9e3df; color: #75271f; }
 .formulario-servicio { margin-top: 1.25rem; }
 .formulario-servicio textarea { min-width: 0; width: 100%; padding: .62rem .7rem; border: 1px solid #aaab98; border-radius: .4rem; background: #fffdf7; color: #15372a; font: inherit; resize: vertical; }
+.avisos-servicios { display: contents; }
+.avisos-servicios p { position: sticky; top: .5rem; z-index: 1; margin: 0 0 .75rem; box-shadow: 0 .25rem 1rem #15372a1a; }
+.modal-servicio { width: min(42rem, calc(100% - 2rem)); max-height: min(90svh, 60rem); padding: clamp(1.2rem, 4vw, 2rem); border: 1px solid #e4dac3; border-radius: 1.1rem; background: #fffaf1; color: #15372a; box-shadow: 0 1.5rem 5rem #08271c55; }
+.modal-servicio::backdrop { background: #08271cb8; }
+.modal-cabecera { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #e4dac3; }
+.modal-cabecera h2 { font-size: clamp(1.6rem, 4vw, 2.1rem); margin: .25rem 0; }
+.modal-cabecera p { margin: 0; color: #526255; overflow-wrap: anywhere; }
+.modal-etiqueta { color: #8f631e; font-size: .7rem; font-weight: 750; letter-spacing: .12em; }
+button.cerrar-modal { flex-shrink: 0; border: 1px solid #e4dac3; border-radius: 50%; width: 2.5rem; height: 2.5rem; padding: 0; background: #fffdf7; color: #214d3a; }
+.modal-avisos { display: contents; }
+.modal-avisos p { position: sticky; top: 0; z-index: 1; margin: .6rem 0; box-shadow: 0 .25rem 1rem #15372a1a; }
+.modal-servicio .formulario-servicio { margin-top: 1.4rem; }
+.configuracion-modal { padding-top: 1.4rem; border-top: 1px solid #e4dac3; }
+.configuracion-modal label { display: grid; gap: .45rem; }
+.modal-pie { display: flex; justify-content: flex-end; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e4dac3; }
 .vista-previa-servicio, .imagen-actual { margin: .5rem 0; }
-.vista-previa-servicio img, .imagen-actual img { max-width: 20rem; height: auto; border-radius: .5rem; border: 1px solid #e4dac3; }
+.vista-previa-servicio img, .imagen-actual img { max-width: min(100%, 20rem); height: auto; border-radius: .5rem; border: 1px solid #e4dac3; }
 .vacío { color: #526255; font-style: italic; margin: 1rem 0 0; }
 
 @media (max-width: 46rem) {
