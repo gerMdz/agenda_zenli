@@ -63,6 +63,7 @@ const profesionalHorario = ref('')
 const horarioProfesional = ref(null)
 const dialogoHorario = ref(null)
 const horarioAnterior = ref(null)
+const diaHorario = ref(null)
 const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const fechaMendoza = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Argentina/Mendoza' })
 const resumenSemanal = computed(() => diasSemana.map((dia, indice) => ({
@@ -393,9 +394,10 @@ function cargarHorario() {
   })
 }
 
-async function abrirDialogoHorario() {
+async function abrirDialogoHorario(dia = null) {
   error.value = ''
   mensaje.value = ''
+  diaHorario.value = dia
   horarioAnterior.value = JSON.parse(JSON.stringify(horarioProfesional.value))
   await nextTick()
   dialogoHorario.value.showModal()
@@ -405,14 +407,15 @@ function cerrarDialogoHorario() {
   if (dialogoHorario.value?.open) dialogoHorario.value.close()
   if (horarioAnterior.value) horarioProfesional.value = horarioAnterior.value
   horarioAnterior.value = null
+  diaHorario.value = null
   error.value = ''
 }
 
 function agregarFranja(tipo) {
-  horarioProfesional.value.por_franjas = true
+  if (!diaHorario.value) horarioProfesional.value.por_franjas = true
   horarioProfesional.value.franjas.push({
     tipo,
-    dia_semana: '',
+    dia_semana: diaHorario.value ?? '',
     vigente_desde: tipo === 'semanal' ? fechaMendoza.format(new Date()) : '',
     vigente_hasta: '',
     hora_inicio: '',
@@ -887,13 +890,13 @@ onBeforeUnmount(() => {
               </select>
             </label>
             <div v-if="horarioProfesional" class="acciones">
-              <button type="button" :disabled="ocupado" @click="abrirDialogoHorario">Editar horarios</button>
+              <button type="button" :disabled="ocupado" @click="abrirDialogoHorario()">Editar horarios</button>
             </div>
             <div v-if="horarioProfesional" class="resumen-horarios">
               <p>{{ horarioProfesional.por_franjas ? 'Turnos limitados a las franjas cargadas.' : 'Modo manual: las franjas cargadas no limitan los turnos.' }}</p>
               <h3>Franjas cargadas</h3>
               <ul class="lista resumen-semanal">
-                <li v-for="dia in resumenSemanal" :key="dia.dia">
+                <li v-for="(dia, indiceDia) in resumenSemanal" :key="dia.dia" class="dia-semanal">
                   <div>
                     <strong>{{ dia.dia }}</strong>
                     <small v-if="!dia.franjas.length">Sin franjas cargadas</small>
@@ -903,6 +906,7 @@ onBeforeUnmount(() => {
                       <template v-else>Desde {{ franja.vigente_desde }}{{ franja.vigente_hasta ? ` hasta ${franja.vigente_hasta}` : ' · Sin fecha de fin' }}</template>
                     </small>
                   </div>
+                  <button type="button" class="secundario" :disabled="ocupado" :aria-label="`Editar horarios de ${dia.dia}`" @click="abrirDialogoHorario(indiceDia + 1)">Editar</button>
                 </li>
               </ul>
               <h3>Excepciones por fecha</h3>
@@ -918,21 +922,22 @@ onBeforeUnmount(() => {
             </div>
             <dialog ref="dialogoHorario" class="modal-servicio" aria-labelledby="titulo-dialogo-horario" @close="cerrarDialogoHorario" @cancel="ocupado && $event.preventDefault()">
               <div class="modal-cabecera">
-                <div><span class="modal-etiqueta">AGENDA DE ZENLI</span><h2 id="titulo-dialogo-horario">Editar horarios</h2><p>{{ ajustesAgenda.profesionales.find(persona => persona.id === profesionalHorario)?.nombre }}</p></div>
+                <div><span class="modal-etiqueta">AGENDA DE ZENLI</span><h2 id="titulo-dialogo-horario">{{ diaHorario ? `Horarios del ${diasSemana[diaHorario - 1]}` : 'Editar horarios' }}</h2><p>{{ ajustesAgenda.profesionales.find(persona => persona.id === profesionalHorario)?.nombre }}</p></div>
                 <button type="button" class="cerrar-modal" aria-label="Cerrar edición de horarios" :disabled="ocupado" @click="cerrarDialogoHorario">✕</button>
               </div>
               <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
             <form v-if="horarioProfesional" @submit.prevent="guardarHorario">
-              <label class="casilla"><input v-model="horarioProfesional.por_franjas" type="checkbox" :disabled="ocupado"> Limitar turnos a las franjas cargadas</label>
+              <label v-if="!diaHorario" class="casilla"><input v-model="horarioProfesional.por_franjas" type="checkbox" :disabled="ocupado"> Limitar turnos a las franjas cargadas</label>
               <small v-if="horarioProfesional.por_franjas && !horarioProfesional.franjas.length">Sin franjas, la profesional queda sin disponibilidad. Agregá una fecha cuando confirme que viene.</small>
               <small v-else-if="!horarioProfesional.por_franjas">Modo manual: los horarios se acuerdan al cargar cada turno. Se mantienen los controles de ocupación.</small>
               <div class="acciones">
                 <button type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('semanal')">+ Franja semanal</button>
-                <button type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('puntual')">+ Fecha puntual</button>
+                <button v-if="!diaHorario" type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('puntual')">+ Fecha puntual</button>
               </div>
-              <fieldset v-for="(franja, indice) in horarioProfesional.franjas" :key="indice" :disabled="ocupado">
+              <template v-for="(franja, indice) in horarioProfesional.franjas" :key="indice">
+              <fieldset v-if="!diaHorario || franja.dia_semana === diaHorario" :disabled="ocupado">
                 <legend>{{ franja.tipo === 'semanal' ? 'Franja semanal' : 'Fecha puntual' }}</legend>
-                <label v-if="franja.tipo === 'semanal'">Día
+                <label v-if="franja.tipo === 'semanal' && !diaHorario">Día
                   <select v-model.number="franja.dia_semana" required>
                     <option disabled value="">Elegí un día</option>
                     <option v-for="(dia, indiceDia) in diasSemana" :key="dia" :value="indiceDia + 1">{{ dia }}</option>
@@ -950,6 +955,8 @@ onBeforeUnmount(() => {
                 </div>
                 <button type="button" class="secundario" @click="horarioProfesional.franjas.splice(indice, 1)">Quitar franja</button>
               </fieldset>
+              </template>
+              <template v-if="!diaHorario">
               <h3>Excepciones por fecha</h3>
               <small>El horario especial reemplaza las franjas de ese día. Un horario no disponible impide agendar durante ese período, incluso en modo manual.</small>
               <div class="acciones">
@@ -966,6 +973,7 @@ onBeforeUnmount(() => {
                 </div>
                 <button type="button" class="secundario" @click="horarioProfesional.excepciones.splice(indice, 1)">Quitar excepción</button>
               </fieldset>
+              </template>
               <button :disabled="ocupado">Guardar horarios</button>
             </form>
               <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarDialogoHorario">Cancelar</button></div>
@@ -1144,6 +1152,7 @@ small { font-size: .79rem; color: #526255; }
 .resumen-horarios { margin-top: 1rem; }
 .resumen-horarios h3 { margin-top: 1rem; }
 .resumen-semanal li { display: block; }
+.resumen-semanal li.dia-semanal { display: flex; }
 .casilla { display: flex; align-items: center; gap: .4rem; }
 .formulario-cuenta { margin-top: 1.25rem; }
 .error, .mensaje { border-radius: .4rem; padding: .65rem .8rem; }
