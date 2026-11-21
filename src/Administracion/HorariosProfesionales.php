@@ -144,7 +144,7 @@ final readonly class HorariosProfesionales
         foreach ($ocupaciones as $ocupacion) {
             if (!$this->permite($id, new DateTimeImmutable($ocupacion['inicio']), new DateTimeImmutable($ocupacion['fin']))) {
                 $fecha = (new DateTimeImmutable($ocupacion['turno_inicio']))->setTimezone(new DateTimeZone(self::ZONA))->format('d/m/Y H:i');
-                throw new TurnoNoDisponible("Ya hay un turno el $fecha que quedaría fuera del horario o bloqueado. Mové o cancelá ese turno antes de guardar.");
+                throw new TurnoNoDisponible("Ya hay un turno el $fecha que quedaría fuera del horario o en un horario no disponible. Mové o cancelá ese turno antes de guardar.");
             }
         }
     }
@@ -201,7 +201,7 @@ final readonly class HorariosProfesionales
     private static function validarExcepcion(mixed $fila): array
     {
         if (!is_array($fila) || !in_array($fila['tipo'] ?? null, ['especial', 'bloqueo'], true)) {
-            throw new InvalidArgumentException('Elegí un horario especial o un bloqueo.');
+            throw new InvalidArgumentException('Elegí un horario especial o un horario no disponible.');
         }
         $fecha = self::fecha($fila['fecha'] ?? null)->format('Y-m-d');
         $todoElDia = $fila['tipo'] === 'bloqueo' && ($fila['todo_el_dia'] ?? false) === true;

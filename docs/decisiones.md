@@ -46,3 +46,5 @@
 - La agenda interna permite turnos sin profesional o con equipo incompleto y los señala; el espacio permanece ocupado. Las reservas públicas mantienen sus reglas de asignación y pareja no se habilita para reserva pública.
 - Las profesionales pueden registrarse sin cuenta ni correo; la cuenta de acceso es opcional. En cada turno interno se puede registrar y editar el estado de la seña y su importe, sin establecer una política de cobro.
 - Los tratamientos documentados que faltan se incorporan como servicios ocultos, sin inventar sus parámetros operativos; la configuración debe completarse antes de agendarlos.
+- La presentación de profesionales en portada es global y comienza oculta. Administración puede elegir nombres o nombres con imágenes; si falta alguna imagen se muestran solo nombres. Solo se publican perfiles activos y la configuración no registra ni presume consentimiento.
+- Las promociones de portada son textos informativos administrables, ocultos al crearse; no aplican descuentos ni condiciones a la agenda. La eliminación lógica conserva el último autor, sin sustituir una auditoría histórica.

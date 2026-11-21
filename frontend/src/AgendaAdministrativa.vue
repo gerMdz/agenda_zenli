@@ -242,7 +242,7 @@ function guardarBloqueo() {
     fecha.value = bloqueo.fecha
     dialogoBloqueo.value.close()
     await cargarDia()
-    aviso.value = 'Horario bloqueado.'
+    aviso.value = 'Horario no disponible guardado.'
   })
 }
 
@@ -377,7 +377,7 @@ onMounted(() => ejecutar(async () => {
                 :class="{ secundario: vista !== opcion.id }" :disabled="ocupado" @click="cambiarVista(opcion.id)">{{ opcion.nombre }}</button>
             </div>
             <div class="acciones">
-              <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Bloquear horario</button>
+              <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">+ Horario no disponible</button>
               <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno">+ Nuevo turno</button>
             </div>
           </div>
@@ -402,28 +402,28 @@ onMounted(() => ejecutar(async () => {
               :class="{ propia: dia.propios }" :aria-pressed="fecha === dia.clave" :disabled="ocupado" @click="fecha = dia.clave">
               <strong><span v-if="vista === 'semana'">{{ dia.nombre }} </span>{{ dia.numero }}</strong>
               <small v-if="dia.citas">{{ dia.citas }} {{ dia.citas === 1 ? 'turno' : 'turnos' }}</small>
-              <small v-if="dia.bloqueos" class="marca-bloqueo">{{ dia.bloqueos }} {{ dia.bloqueos === 1 ? 'bloqueo' : 'bloqueos' }}</small>
+              <small v-if="dia.bloqueos" class="marca-bloqueo">{{ dia.bloqueos }} {{ dia.bloqueos === 1 ? 'horario no disponible' : 'horarios no disponibles' }}</small>
               <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
               <span v-if="vista === 'semana'" class="resumen-dia">
                 <small v-for="turno in dia.turnos.slice(0, 3)" :key="turno.id">
-                  {{ turno.todo_el_dia ? 'Todo el día' : reloj.format(new Date(turno.inicio)) }} · {{ turno.bloqueado ? 'Bloqueado' : turno.servicio }}{{ !turno.bloqueado && turno.equipo_incompleto ? ' ⚠ Sin equipo completo' : '' }}
+                  {{ turno.todo_el_dia ? 'Todo el día' : reloj.format(new Date(turno.inicio)) }} · {{ turno.bloqueado ? 'Horario no disponible' : turno.servicio }}{{ !turno.bloqueado && turno.equipo_incompleto ? ' ⚠ Sin equipo completo' : '' }}
                 </small>
               </span>
             </button>
           </div>
           <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
-          <p v-if="!turnosDia.length">No hay turnos ni bloqueos para este día.</p>
+          <p v-if="!turnosDia.length">No hay turnos ni horarios no disponibles para este día.</p>
           <ul v-else class="turnos">
             <li v-for="turno in turnosDia" :key="turno.id" :class="{ propio: !turno.bloqueado && esPropio(turno), bloqueado: turno.bloqueado }">
               <strong>{{ horarioVisible(turno) }}</strong>
               <div class="detalle-turno">
-                <span v-if="turno.bloqueado" class="marca-bloqueo">Horario bloqueado</span>
+                <span v-if="turno.bloqueado" class="marca-bloqueo">Horario no disponible</span>
                 <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
                 <small><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
                 <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
                 <small v-if="!turno.bloqueado">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
               </div>
-              <a v-if="turno.bloqueado && usuario.admin" class="enlace-accion" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar bloqueo</a>
+              <a v-if="turno.bloqueado && usuario.admin" class="enlace-accion" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar horario no disponible</a>
               <div v-else-if="turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
@@ -435,7 +435,7 @@ onMounted(() => ejecutar(async () => {
 
         <dialog ref="dialogoBloqueo" aria-labelledby="titulo-bloqueo" @close="modoBloqueo = false" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
-            <h2 id="titulo-bloqueo">Bloquear horario</h2>
+            <h2 id="titulo-bloqueo">Horario no disponible</h2>
             <button type="button" class="secundario" :disabled="ocupado" @click="dialogoBloqueo.close()">Cerrar</button>
           </div>
           <p v-if="error && modoBloqueo" role="alert">{{ error }}</p>
@@ -452,7 +452,7 @@ onMounted(() => ejecutar(async () => {
               <label>Desde (24 h) <EntradaHora v-model="bloqueoNuevo.hora_inicio" required /></label>
               <label>Hasta (24 h) <EntradaHora v-model="bloqueoNuevo.hora_fin" permitir-medianoche required /></label>
             </div>
-            <button :disabled="ocupado">Guardar bloqueo</button>
+            <button :disabled="ocupado">Guardar horario no disponible</button>
           </form>
         </dialog>
 

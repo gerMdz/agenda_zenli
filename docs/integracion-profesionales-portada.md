@@ -1,0 +1,7 @@
+# Integración de profesionales en portada
+
+- `ProfesionalesPortada.vue` está integrado en la portada normal; no muestra sección si está oculta o falla la consulta.
+- `AdministrarProfesionalesPortada.vue` está integrado en el menú Sitio y solo es accesible a administradoras autenticadas.
+- La API administrativa exige rol administrador y token `X-Zenli-CSRF` para escrituras. `GET /api/admin/profesionales-portada` devuelve `modo` y `profesionales`; `PATCH /api/admin/profesionales-portada/modo` recibe JSON con `modo` (`ocultos`, `nombres`, `imagenes`). `POST /api/admin/profesionales-portada/{id}/imagen` recibe multipart con `imagen` o `eliminar_imagen=1`. La vista previa usa `/api/admin/profesionales-portada/{id}/imagen/{version}`.
+- La API pública devuelve solo profesionales activas cuando el modo lo permite. Las imágenes públicas requieren modo `imagenes`, perfil activo y versión vigente; ambas rutas de imagen usan `no-store`. En modo nombres no se divulgan versiones. Si falta alguna imagen, la portada muestra solo nombres.
+- Aplicar `Version20261120000200` junto con las migraciones anteriores únicamente en un entorno autorizado. Las migraciones heredadas son borrador; la reversión de esta migración es irreversible para no borrar imágenes y auditoría accidentalmente.

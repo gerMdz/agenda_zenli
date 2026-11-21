@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import portadaOriginal from './image/portada.webp'
 import LayoutAdministracion from './LayoutAdministracion.vue'
 import EntradaHora from './EntradaHora.vue'
+import PromocionesAdministracion from './PromocionesAdministracion.vue'
+import AdministrarProfesionalesPortada from './AdministrarProfesionalesPortada.vue'
 import { secciones } from './navegacionAdministracion.js'
 
 function seccionDeUrl() {
@@ -63,6 +65,10 @@ const dialogoHorario = ref(null)
 const horarioAnterior = ref(null)
 const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const fechaMendoza = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Argentina/Mendoza' })
+const resumenSemanal = computed(() => diasSemana.map((dia, indice) => ({
+  dia,
+  franjas: (horarioProfesional.value?.franjas ?? []).filter(franja => franja.dia_semana === indice + 1),
+})))
 const perfilesSinCuenta = computed(() => (ajustesAgenda.value?.profesionales ?? []).filter(item => !Number(item.tiene_cuenta)))
 const usuarioEditado = ref(null)
 const editarActivo = ref(true)
@@ -715,6 +721,8 @@ onBeforeUnmount(() => {
       </section>
 
       <div v-if="usuario?.admin" class="paneles">
+        <PromocionesAdministracion v-if="seccionActiva.id === 'promociones'" :csrf="csrf" />
+        <div v-if="seccionActiva.id === 'equipo-portada'" class="panel"><AdministrarProfesionalesPortada :csrf="csrf" /></div>
         <section v-show="seccionActiva.id === 'portada'" class="panel" aria-labelledby="titulo-seccion-admin">
           <p id="estado-portada">{{ soloImagen ? 'Estado público: solo imagen' : 'Estado público: portada completa' }}</p>
           <button type="button" class="secundario" aria-describedby="estado-portada ayuda-modo" :disabled="ocupado" @click="cambiarModoPortada">
@@ -881,6 +889,33 @@ onBeforeUnmount(() => {
             <div v-if="horarioProfesional" class="acciones">
               <button type="button" :disabled="ocupado" @click="abrirDialogoHorario">Editar horarios</button>
             </div>
+            <div v-if="horarioProfesional" class="resumen-horarios">
+              <p>{{ horarioProfesional.por_franjas ? 'Turnos limitados a las franjas cargadas.' : 'Modo manual: las franjas cargadas no limitan los turnos.' }}</p>
+              <h3>Franjas cargadas</h3>
+              <ul class="lista resumen-semanal">
+                <li v-for="dia in resumenSemanal" :key="dia.dia">
+                  <div>
+                    <strong>{{ dia.dia }}</strong>
+                    <small v-if="!dia.franjas.length">Sin franjas cargadas</small>
+                    <small v-for="(franja, indice) in dia.franjas" :key="indice">
+                      {{ franja.hora_inicio }}–{{ franja.hora_fin }} ·
+                      <template v-if="franja.tipo === 'puntual'">Fecha puntual: {{ franja.vigente_desde }}</template>
+                      <template v-else>Desde {{ franja.vigente_desde }}{{ franja.vigente_hasta ? ` hasta ${franja.vigente_hasta}` : ' · Sin fecha de fin' }}</template>
+                    </small>
+                  </div>
+                </li>
+              </ul>
+              <h3>Excepciones por fecha</h3>
+              <p v-if="!horarioProfesional.excepciones.length">Sin excepciones cargadas.</p>
+              <ul v-else class="lista resumen-semanal">
+                <li v-for="(excepcion, indice) in horarioProfesional.excepciones" :key="indice">
+                  <div><strong>{{ excepcion.tipo === 'especial' ? 'Horario especial' : 'Horario no disponible' }} · {{ excepcion.fecha }}</strong>
+                    <small>{{ excepcion.todo_el_dia ? 'Todo el día' : `${excepcion.hora_inicio}–${excepcion.hora_fin}` }}</small>
+                  </div>
+                </li>
+              </ul>
+              <small>El horario especial reemplaza las franjas de esa fecha.</small>
+            </div>
             <dialog ref="dialogoHorario" class="modal-servicio" aria-labelledby="titulo-dialogo-horario" @close="cerrarDialogoHorario" @cancel="ocupado && $event.preventDefault()">
               <div class="modal-cabecera">
                 <div><span class="modal-etiqueta">AGENDA DE ZENLI</span><h2 id="titulo-dialogo-horario">Editar horarios</h2><p>{{ ajustesAgenda.profesionales.find(persona => persona.id === profesionalHorario)?.nombre }}</p></div>
@@ -916,13 +951,13 @@ onBeforeUnmount(() => {
                 <button type="button" class="secundario" @click="horarioProfesional.franjas.splice(indice, 1)">Quitar franja</button>
               </fieldset>
               <h3>Excepciones por fecha</h3>
-              <small>El horario especial reemplaza las franjas de ese día. Un bloqueo impide agendar durante ese período, incluso en modo manual.</small>
+              <small>El horario especial reemplaza las franjas de ese día. Un horario no disponible impide agendar durante ese período, incluso en modo manual.</small>
               <div class="acciones">
                 <button type="button" class="secundario" :disabled="ocupado" @click="agregarExcepcion('especial')">+ Horario especial</button>
-                <button type="button" class="secundario" :disabled="ocupado" @click="agregarExcepcion('bloqueo')">+ Bloqueo</button>
+                <button type="button" class="secundario" :disabled="ocupado" @click="agregarExcepcion('bloqueo')">+ Horario no disponible</button>
               </div>
               <fieldset v-for="(excepcion, indice) in horarioProfesional.excepciones" :key="indice" :disabled="ocupado">
-                <legend>{{ excepcion.tipo === 'especial' ? 'Horario especial' : 'Bloqueo' }}</legend>
+                <legend>{{ excepcion.tipo === 'especial' ? 'Horario especial' : 'Horario no disponible' }}</legend>
                 <label>Fecha <input v-model="excepcion.fecha" type="date" required></label>
                 <label v-if="excepcion.tipo === 'bloqueo'" class="casilla"><input v-model="excepcion.todo_el_dia" type="checkbox"> Todo el día</label>
                 <div v-if="!excepcion.todo_el_dia" class="acciones">
@@ -1106,6 +1141,9 @@ small { font-size: .79rem; color: #526255; }
 .lista li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem 0; border-bottom: 1px solid #e4dac3; font-size: .88rem; }
 .lista li div { min-width: 0; overflow-wrap: anywhere; }
 .lista small { display: block; }
+.resumen-horarios { margin-top: 1rem; }
+.resumen-horarios h3 { margin-top: 1rem; }
+.resumen-semanal li { display: block; }
 .casilla { display: flex; align-items: center; gap: .4rem; }
 .formulario-cuenta { margin-top: 1.25rem; }
 .error, .mensaje { border-radius: .4rem; padding: .65rem .8rem; }

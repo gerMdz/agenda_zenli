@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import portadaOriginal from './image/portada.webp'
+import ProfesionalesPortada from './ProfesionalesPortada.vue'
 
 const telefono = ref('+5492616356192')
 const direccion = ref('Espejo 167, Ciudad de Mendoza')
@@ -10,6 +11,7 @@ const soloImagen = ref(false)
 const portadaCargada = ref(false)
 const redes = ref([])
 const servicios = ref([])
+const promociones = ref([])
 const servicioSeleccionado = ref(null)
 const modalAbierto = ref(false)
 const enlaceContacto = computed(() => `https://wa.me/${telefono.value.slice(1)}`)
@@ -60,6 +62,12 @@ onMounted(async () => {
     }
   } catch {
     // El contacto sigue visible aunque no se pueda cargar el catálogo.
+  }
+  try {
+    const respuesta = await fetch('/api/promociones')
+    if (respuesta.ok) promociones.value = (await respuesta.json()).promociones
+  } catch {
+    // La portada sigue disponible si no se pueden cargar las promociones.
   }
 })
 </script>
@@ -124,6 +132,15 @@ onMounted(async () => {
         </div>
       </section>
 
+      <section v-if="promociones.length" class="ancho masajes" aria-labelledby="titulo-promociones">
+        <div class="titulo-seccion"><span class="loto" aria-hidden="true"><i></i></span><h2 id="titulo-promociones">Promociones</h2></div>
+        <div class="tratamientos">
+          <article v-for="promocion in promociones" :key="promocion.id">
+            <div class="tratamiento-texto"><h3>{{ promocion.nombre }}</h3><p class="descripcion-promocion">{{ promocion.descripcion }}</p></div>
+          </article>
+        </div>
+      </section>
+
       <!-- Modal de detalle -->
       <Teleport to="body">
         <div v-if="modalAbierto && servicioSeleccionado" class="modal-overlay" @click.self="cerrarModal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
@@ -140,12 +157,13 @@ onMounted(async () => {
         </div>
       </Teleport>
 
+      <ProfesionalesPortada />
       <section id="nosotras" class="ancho" aria-labelledby="titulo-nosotras">
         <div class="nosotras">
           <span class="loto" aria-hidden="true"><i></i></span>
           <div>
-            <h2 id="titulo-nosotras">Nataly y Micaela</h2>
-            <p>Somos las profesionales de Zenli, nuestro centro de masajes en Mendoza.</p>
+            <h2 id="titulo-nosotras">Nuestro espacio</h2>
+            <p>Te damos la bienvenida a Zenli, nuestro centro de masajes en Mendoza.</p>
           </div>
           <a class="boton-dorado" :href="enlaceContacto">Escribinos <span aria-hidden="true">↗</span></a>
         </div>
@@ -241,6 +259,7 @@ nav a:hover { text-decoration: underline; color: var(--oro); }
 .tratamiento-texto { padding: 1rem .75rem 1.15rem; display: flex; flex-direction: column; gap: .5rem; flex: 1; }
 .tratamiento-texto h3 { margin: 0; font: bold 1.18rem Georgia, serif; }
 .tratamiento-texto p { margin: 0; font-size: .9rem; color: #344238; }
+.tratamiento-texto .descripcion-promocion { white-space: pre-wrap; overflow-wrap: anywhere; }
 .btn-detalle { margin-top: auto; border: 1px solid var(--oro-oscuro); background: transparent; color: var(--oro-oscuro); padding: .4rem .8rem; border-radius: .4rem; font-size: .82rem; font-weight: 600; cursor: pointer; transition: background .2s, color .2s; }
 .btn-detalle:hover { background: var(--oro-oscuro); color: #fffaf0; }
 

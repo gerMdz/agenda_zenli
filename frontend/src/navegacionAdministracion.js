@@ -4,6 +4,8 @@ export const gruposMenu = [
     enlaces: [
       { id: 'portada', nombre: 'Portada' },
       { id: 'servicios', nombre: 'Servicios' },
+      { id: 'promociones', nombre: 'Promociones' },
+      { id: 'equipo-portada', nombre: 'Profesionales en portada' },
     ],
   },
   {
