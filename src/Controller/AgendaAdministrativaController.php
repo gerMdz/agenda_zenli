@@ -118,6 +118,23 @@ final readonly class AgendaAdministrativaController
         return $this->modificarTurno($peticion);
     }
 
+    #[Route('/preparaciones/{id}', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT', 'DELETE'])]
+    public function modificarPreparacion(Request $peticion, string $id): JsonResponse
+    {
+        $autor = $this->sesion->exigirAgenda($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $this->agenda->modificarPreparacion($id, $peticion->toArray(), $autor['id'], self::agendaPropia($autor), $peticion->isMethod('DELETE'));
+            return $this->respuesta(['guardado' => true]);
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos de preparación.' : $error->getMessage()], 422);
+        } catch (TurnoNoDisponible $error) {
+            return $this->respuesta(['error' => $error->getMessage()], 409);
+        } catch (HttpException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], $error->getStatusCode());
+        }
+    }
+
     #[Route('/turnos/{id}', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT', 'DELETE'])]
     public function actualizar(Request $peticion, string $id): JsonResponse
     {

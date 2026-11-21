@@ -90,7 +90,7 @@ foreach ([Version20261118000100::class, Version20261118000200::class] as $clase)
     aplicarMigracion($conexion, $clase);
 }
 
-foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000', '20261119001100', '20261119001200'] as $version) {
+foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000', '20261119001100', '20261119001200', '20261121000100'] as $version) {
     require __DIR__.'/../migrations/Version'.$version.'.php';
     aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
 }
@@ -210,6 +210,48 @@ $turno = [
     'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
 ];
 $interna->guardarPreparacion(['modo' => 'general', 'minutos' => 10]);
+$pruebaPreparacion = $interna->cargar(array_replace($turno, ['inicio' => '2099-08-03T10:00', 'profesionales' => ['104']]), '101');
+$preparaciones = $interna->consultar('2099-08-03')['preparaciones'] ?? [];
+verificar(count($preparaciones) === 1 && $preparaciones[0]['turno_id'] === $pruebaPreparacion && new DateTimeImmutable($preparaciones[0]['inicio']) == new DateTimeImmutable('2099-08-03 10:40 America/Argentina/Mendoza'), 'La preparación debe ser independiente y posterior al turno.');
+$prepId = $preparaciones[0]['id'];
+verificar($interna->consultar('2099-08-03', '105')['preparaciones'] === [], 'La preparación de otra profesional debe ser privada.');
+verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ? AND fin > ?', [$pruebaPreparacion, '2099-08-03 10:40-03']) === 0, 'La preparación no ocupa a la profesional.');
+try {
+    $interna->cargar(array_replace($turno, ['inicio' => '2099-08-03T10:40', 'profesionales' => ['105']]), '101');
+    throw new RuntimeException('La preparación no bloqueó el espacio.');
+} catch (TurnoNoDisponible) {
+}
+try {
+    $interna->modificarPreparacion($prepId, ['revision' => 1], '101', '105', true);
+    throw new RuntimeException('Otra profesional eliminó la preparación.');
+} catch (HttpException $error) {
+    verificar($error->getStatusCode() === 404, 'La preparación ajena no debe revelarse.');
+}
+$interna->modificarPreparacion($prepId, ['inicio' => '2099-08-03T11:00', 'fin' => '2099-08-03T11:20', 'revision' => 1], '101', '104', false);
+try {
+    $interna->modificarPreparacion($prepId, ['revision' => 1], '101', '104', true);
+    throw new RuntimeException('La revisión obsoleta fue aceptada.');
+} catch (TurnoNoDisponible) {
+}
+$interna->cargar(array_replace($turno, ['inicio' => '2099-08-03T10:00', 'profesionales' => ['104'], 'revision' => 1]), '101', null, $pruebaPreparacion);
+verificar($interna->consultar('2099-08-03')['preparaciones'][0]['revision'] === 2, 'Editar el turno debe conservar la preparación editada.');
+$interna->modificarPreparacion($prepId, ['revision' => 2], '101', '104', true);
+$interna->cargar(array_replace($turno, ['inicio' => '2099-08-03T10:00', 'profesionales' => ['104'], 'revision' => 2]), '101', null, $pruebaPreparacion);
+verificar($interna->consultar('2099-08-03')['preparaciones'] === [], 'Editar el turno no debe recrear una preparación eliminada.');
+$interna->cancelar($pruebaPreparacion, '101', null, 3);
+$pruebaCancelacion = $interna->cargar(array_replace($turno, ['inicio' => '2099-08-04T10:00', 'profesionales' => ['104']]), '101');
+$interna->cancelar($pruebaCancelacion, '101', null, 1);
+verificar($interna->consultar('2099-08-04')['preparaciones'] === [], 'Cancelar debe liberar la preparación.');
+verificar((int) $conexion->fetchOne("SELECT count(*) FROM eventos_turnos_administrativos WHERE turno_id = ? AND tipo IN ('PREP_EDITADA', 'PREP_ELIMINADA')", [$pruebaPreparacion]) === 2, 'Las modificaciones de preparación deben auditarse.');
+$legado = $interna->cargar(array_replace($turno, ['inicio' => '2099-08-05T10:00', 'profesionales' => ['104']]), '101');
+$conexion->executeStatement('DELETE FROM ocupaciones_recursos WHERE preparacion_id IN (SELECT id FROM preparaciones_agenda WHERE turno_id = ?)', [$legado]);
+$conexion->executeStatement('DELETE FROM preparaciones_agenda WHERE turno_id = ?', [$legado]);
+$conexion->executeStatement("UPDATE ocupaciones_recursos SET inicio = '2099-08-05 09:50-03' WHERE turno_admin_id = ?", [$legado]);
+$conexion->executeStatement("UPDATE ocupaciones_profesionales SET inicio = '2099-08-05 09:50-03' WHERE turno_admin_id = ?", [$legado]);
+$interna->cargar(array_replace($turno, ['inicio' => '2099-08-05T10:00', 'profesionales' => ['104'], 'revision' => 1]), '101', null, $legado);
+verificar((int) $conexion->fetchOne("SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ? AND inicio = '2099-08-05 09:50-03'", [$legado]) === 1, 'La ocupación profesional histórica debe conservarse.');
+verificar((int) $conexion->fetchOne("SELECT count(*) FROM ocupaciones_recursos WHERE turno_admin_id = ? AND inicio = '2099-08-05 09:50-03'", [$legado]) === 1, 'La ocupación histórica del espacio debe conservarse.');
+$interna->cancelar($legado, '101', null, 2);
 $horarios->agregarBloqueo('104', ['fecha' => '2099-07-10', 'todo_el_dia' => true], '101');
 $horarios->agregarBloqueo('104', ['fecha' => '2099-07-11', 'hora_inicio' => '10:00', 'hora_fin' => '11:00'], '101');
 verificar((int) $conexion->fetchOne("SELECT count(*) FROM bloqueos WHERE profesional_id = 104 AND gestion_horarios AND recurso_id IS NULL AND inicio >= '2099-07-10 00:00-03' AND inicio < '2099-07-12 00:00-03'") === 2, 'Los bloqueos personales no deben asociarse a una sala.');
@@ -225,11 +267,8 @@ try {
 }
 $contiguo = $interna->cargar(array_replace($porHora, ['profesionales' => ['104'], 'inicio' => '2099-07-11T11:10']), '101');
 $interna->cancelar($contiguo, '101', null, 1);
-try {
-    $interna->cargar(array_replace($porHora, ['profesionales' => ['104'], 'inicio' => '2099-07-11T11:00']), '101');
-    throw new RuntimeException('La preparación no detectó el bloqueo anterior.');
-} catch (TurnoNoDisponible) {
-}
+$contiguo = $interna->cargar(array_replace($porHora, ['profesionales' => ['104'], 'inicio' => '2099-07-11T11:00']), '101');
+$interna->cancelar($contiguo, '101', null, 1);
 $aislado = array_replace($turno, ['profesionales' => ['105'], 'inicio' => '2099-07-10T10:00']);
 $aisladoId = $interna->cargar($aislado, '101');
 try {
@@ -377,7 +416,12 @@ try {
 } catch (TurnoNoDisponible) {
     verificar($interna->consultar('2099-06-03', '101')['turnos'][0]['espacio_id'] === '102', 'El intento fallido debe conservar el turno original.');
 }
-$interna->cargar(array_replace($turno, ['inicio' => '2099-06-03T12:15', 'revision' => 1]), '101', null, $id);
+try {
+    $interna->cargar(array_replace($turno, ['inicio' => '2099-06-03T12:15', 'revision' => 1]), '101', null, $id);
+    throw new RuntimeException('Se permitió superponer el turno con su preparación.');
+} catch (TurnoNoDisponible) {
+}
+$interna->cargar(array_replace($turno, ['revision' => 1]), '101', null, $id);
 verificar((int) $interna->consultar('2099-06-03', '101')['turnos'][0]['revision'] === 2, 'La edición valida el equipo sin chocar con su propia ocupación.');
 $interna->cancelar($id, '101', null, 2);
 verificar($interna->consultar('2099-06-03', '101')['turnos'] === [], 'Cancelar debe retirar el turno activo.');
