@@ -1013,16 +1013,17 @@ onBeforeUnmount(() => {
 
           <section v-show="seccionActiva.id === 'preparacion'" class="panel" aria-labelledby="titulo-seccion-admin">
             <form @submit.prevent="guardarPreparacionAgenda">
+              <p class="ayuda-preparacion">Estos minutos se reservan para preparar el espacio después de cada turno.</p>
               <fieldset>
                 <legend>¿Todos los servicios tienen el mismo tiempo de preparación?</legend>
                 <label class="casilla"><input v-model="modoPreparacion" type="radio" value="general" required> Sí, el mismo para todos</label>
                 <label class="casilla"><input v-model="modoPreparacion" type="radio" value="por_servicio" required> No, se define por servicio</label>
               </fieldset>
-              <label v-if="modoPreparacion === 'general'">Minutos de preparación <input v-model.number="minutosPreparacion" type="number" min="0" max="1440" required></label>
+              <label v-if="modoPreparacion === 'general'" class="fila-preparacion"><span>Todos los servicios</span><span class="minutos-preparacion"><input v-model.number="minutosPreparacion" type="number" min="0" max="1440" required aria-label="Minutos de preparación posteriores para todos los servicios"> <span>min</span></span></label>
               <template v-if="modoPreparacion === 'por_servicio'">
                 <p>Dejá sin completar los servicios que todavía no querés agendar.</p>
-                <label v-for="item in servicios" :key="item.id">
-                  {{ item.nombre }} (min) <input v-model.number="preparacionServicios[item.id]" type="number" min="0" max="1440">
+                <label v-for="item in servicios" :key="item.id" class="fila-preparacion">
+                  <span>{{ item.nombre }}</span><span class="minutos-preparacion"><input v-model.number="preparacionServicios[item.id]" type="number" min="0" max="1440" :aria-label="`Minutos de preparación posteriores para ${item.nombre}`"> <span>min</span></span>
                 </label>
               </template>
               <button :disabled="ocupado || !modoPreparacion">Guardar preparación</button>
@@ -1165,6 +1166,11 @@ fieldset { min-width: 0; border: 1px solid #e4dac3; border-radius: .4rem; }
 .inicio-sesion { max-width: 28rem; }
 form { display: grid; gap: .55rem; margin-top: 1rem; }
 label { font-weight: 650; font-size: .88rem; }
+.ayuda-preparacion { margin: 0 0 .4rem; color: #526255; }
+.fila-preparacion { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .5rem .7rem; border-bottom: 1px solid #e4dac3; }
+.fila-preparacion > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.minutos-preparacion { display: flex; align-items: center; gap: .4rem; flex-shrink: 0; color: #526255; }
+.minutos-preparacion input:not([type='checkbox'], [type='radio']) { box-sizing: border-box; width: 5.5rem; }
 input, button { font: inherit; }
 input:not([type='checkbox'], [type='radio']), select, textarea { min-width: 0; width: 100%; padding: .62rem .7rem; border: 1px solid #aaab98; border-radius: .4rem; background: #fffdf7; color: #15372a; }
 input + label { margin-top: .45rem; }

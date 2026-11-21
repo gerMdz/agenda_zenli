@@ -74,6 +74,24 @@ final readonly class PromocionesController
         ]);
     }
 
+    #[Route('/api/admin/promociones/{id}/orden', requirements: ['id' => '[1-9][0-9]{0,9}'], methods: ['PATCH'])]
+    public function orden(Request $peticion, int $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $direccion = $peticion->toArray()['direccion'] ?? null;
+            if (!is_int($direccion)) {
+                throw new InvalidArgumentException('La dirección del movimiento no es válida.');
+            }
+            return $this->respuesta(['promociones' => $this->promociones->mover($id, $direccion, $usuario['id'])]);
+        } catch (JsonException) {
+            return $this->respuesta(['error' => 'La dirección del movimiento no es válida.'], 400);
+        } catch (InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], 422);
+        }
+    }
+
     #[Route('/api/admin/promociones/{id}/visibilidad', requirements: ['id' => '[1-9][0-9]{0,9}'], methods: ['PATCH'])]
     public function visibilidad(Request $peticion, int $id): JsonResponse
     {
