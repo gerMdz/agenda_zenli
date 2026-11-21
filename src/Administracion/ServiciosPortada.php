@@ -4,51 +4,39 @@ declare(strict_types=1);
 
 namespace App\Administracion;
 
+use App\Entity\ServicioPortada;
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\ParameterType;
+use Doctrine\ORM\EntityManagerInterface;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
-final readonly class ServiciosPortada
+final class ServiciosPortada
 {
-    public function __construct(private Connection $conexion)
+    private Connection $conexion;
+
+    public function __construct(private EntityManagerInterface $entidades)
     {
+        $this->conexion = $entidades->getConnection();
     }
 
     /** @return list<array{id: int, nombre: string, descripcion_corta: string, detalle: string, orden: int, visible: bool, imagen_version: ?string, actualizado_por: string, actualizado_en: string}> */
     public function listar(): array
     {
-        return $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT id, nombre, descripcion_corta, detalle, orden, visible, imagen_version, actualizado_por, actualizado_en,
-                   duracion_minima, profesionales_requeridos,
-                   (duracion_minima IS NOT NULL AND profesionales_requeridos IS NOT NULL) AS configuracion_completa
-            FROM servicios_portada
-            ORDER BY orden ASC, id ASC
-            SQL);
+        return array_map($this->fila(...), $this->consulta());
     }
 
     /** @return array{id: int, nombre: string, descripcion_corta: string, detalle: string, orden: int, visible: bool, imagen_version: ?string, actualizado_por: string, actualizado_en: string}|false */
     public function obtener(int $id)
     {
-        return $this->conexion->fetchAssociative(<<<'SQL'
-            SELECT id, nombre, descripcion_corta, detalle, orden, visible, imagen_version, actualizado_por, actualizado_en,
-                   duracion_minima, profesionales_requeridos,
-                   (duracion_minima IS NOT NULL AND profesionales_requeridos IS NOT NULL) AS configuracion_completa
-            FROM servicios_portada
-            WHERE id = ?
-            SQL, [$id]);
+        $servicio = $this->buscar($id);
+        return $servicio === null ? false : $this->fila($servicio);
     }
 
     /** @return list<array{id: int, nombre: string, descripcion_corta: string, detalle: string, orden: int, imagen_version: ?string}> */
     public function listarVisibles(): array
     {
-        return $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT id, nombre, descripcion_corta, detalle, orden, imagen_version, duracion_minima, profesionales_requeridos,
-                   (duracion_minima IS NOT NULL AND profesionales_requeridos IS NOT NULL) AS configuracion_completa
-            FROM servicios_portada
-            WHERE visible = true
-            ORDER BY orden ASC, id ASC
-            SQL);
+        return array_map(fn (ServicioPortada $servicio): array => $this->fila($servicio, true), $this->consulta(true));
     }
 
     public function imagen(int $id, string $version): array|false
@@ -77,9 +65,8 @@ final readonly class ServiciosPortada
             throw new InvalidArgumentException('La descripción corta debe tener entre 5 y 255 caracteres.');
         }
 
-        // Obtener el máximo orden para colocar el nuevo al final
-        $maxOrden = $this->conexion->fetchOne('SELECT COALESCE(MAX(orden), 0) FROM servicios_portada');
-        $nuevoOrden = (int)$maxOrden + 1;
+        $maxOrden = $this->entidades->createQuery('SELECT MAX(s.orden) FROM App\Entity\ServicioPortada s')->getSingleScalarResult();
+        $nuevoOrden = (int) $maxOrden + 1;
 
         $contenido = null;
         $tipo = null;
@@ -100,14 +87,21 @@ final readonly class ServiciosPortada
             $version = hash('sha256', $bytes);
         }
 
-        $sql = 'INSERT INTO servicios_portada (nombre, descripcion_corta, detalle, orden, visible, actualizado_por, actualizado_en) VALUES (?, ?, ?, ?, true, ?, statement_timestamp()) RETURNING id';
-
-        if ($archivo !== null) {
-            $sql = 'INSERT INTO servicios_portada (nombre, descripcion_corta, detalle, imagen, imagen_tipo, imagen_version, orden, visible, actualizado_por, actualizado_en) VALUES (?, ?, ?, decode(?, \'base64\'), ?, ?, ?, true, ?, statement_timestamp()) RETURNING id';
-            return $this->conexion->fetchOne($sql, [$nombre, $descripcionCorta, $detalle, $contenido, $tipo, $version, $nuevoOrden, $autor]);
-        }
-
-        return $this->conexion->fetchOne($sql, [$nombre, $descripcionCorta, $detalle, $nuevoOrden, $autor]);
+        return $this->conexion->transactional(function () use ($nombre, $descripcionCorta, $detalle, $nuevoOrden, $autor, $contenido, $tipo, $version): int {
+            $servicio = new ServicioPortada();
+            $servicio->nombre = $nombre;
+            $servicio->descripcionCorta = $descripcionCorta;
+            $servicio->detalle = $detalle;
+            $servicio->orden = $nuevoOrden;
+            $servicio->imagenVersion = $version;
+            $this->auditar($servicio, $autor);
+            $this->entidades->persist($servicio);
+            $this->entidades->flush();
+            if ($contenido !== null) {
+                $this->guardarImagen($servicio->id, $contenido, $tipo);
+            }
+            return $servicio->id;
+        });
     }
 
     public function actualizar(
@@ -119,8 +113,8 @@ final readonly class ServiciosPortada
         bool $eliminarImagen,
         string $autor,
     ): void {
-        $existente = $this->obtener($id);
-        if ($existente === false) {
+        $servicio = $this->buscar($id);
+        if ($servicio === null) {
             throw new InvalidArgumentException('El servicio no existe.');
         }
 
@@ -135,13 +129,12 @@ final readonly class ServiciosPortada
             throw new InvalidArgumentException('La descripción corta debe tener entre 5 y 255 caracteres.');
         }
 
-        $setClauses = ['nombre = ?', 'descripcion_corta = ?', 'detalle = ?', 'actualizado_por = ?', 'actualizado_en = statement_timestamp()'];
-        $params = [$nombre, $descripcionCorta, $detalle, $autor];
+        $contenido = null;
+        $tipo = null;
+        $version = null;
 
         if ($eliminarImagen) {
-            $setClauses[] = 'imagen = NULL';
-            $setClauses[] = 'imagen_tipo = NULL';
-            $setClauses[] = 'imagen_version = NULL';
+            $servicio->imagenVersion = null;
         } elseif ($archivo !== null) {
             if (!$archivo->isValid() || $archivo->getSize() > 4 * 1024 * 1024) {
                 throw new InvalidArgumentException('Elegí una sola imagen de hasta 4 MB.');
@@ -155,25 +148,30 @@ final readonly class ServiciosPortada
             $contenido = base64_encode($bytes);
             $tipo = $datos['mime'];
             $version = hash('sha256', $bytes);
-            $setClauses[] = 'imagen = decode(?, \'base64\')';
-            $setClauses[] = 'imagen_tipo = ?';
-            $setClauses[] = 'imagen_version = ?';
-            $params = array_merge($params, [$contenido, $tipo, $version]);
+            $servicio->imagenVersion = $version;
         }
 
-        $params[] = $id;
-        $setSql = implode(', ', $setClauses);
-        $this->conexion->executeStatement("UPDATE servicios_portada SET $setSql WHERE id = ?", $params);
+        $this->conexion->transactional(function () use ($servicio, $nombre, $descripcionCorta, $detalle, $autor, $eliminarImagen, $contenido, $tipo): void {
+            $servicio->nombre = $nombre;
+            $servicio->descripcionCorta = $descripcionCorta;
+            $servicio->detalle = $detalle;
+            $this->auditar($servicio, $autor);
+            $this->entidades->flush();
+            if ($eliminarImagen || $contenido !== null) {
+                $this->guardarImagen($servicio->id, $contenido, $tipo);
+            }
+        });
     }
 
     public function eliminar(int $id, string $autor): void
     {
-        $existente = $this->obtener($id);
-        if ($existente === false) {
+        $servicio = $this->buscar($id);
+        if ($servicio === null) {
             throw new InvalidArgumentException('El servicio no existe.');
         }
 
-        $this->conexion->executeStatement('DELETE FROM servicios_portada WHERE id = ?', [$id]);
+        $this->entidades->remove($servicio);
+        $this->entidades->flush();
     }
 
     public function mover(int $id, int $direccion, string $autor): array
@@ -184,8 +182,8 @@ final readonly class ServiciosPortada
 
         return $this->conexion->transactional(function (Connection $conexion) use ($id, $direccion, $autor): array {
             $conexion->executeStatement('LOCK TABLE servicios_portada IN SHARE ROW EXCLUSIVE MODE');
-            $lista = $this->listar();
-            $indice = array_search($id, array_map(static fn (array $servicio): int => (int) $servicio['id'], $lista), true);
+            $lista = $this->consulta();
+            $indice = array_search($id, array_map(static fn (ServicioPortada $servicio): int => $servicio->id, $lista), true);
             if ($indice === false) {
                 throw new InvalidArgumentException('El servicio no existe.');
             }
@@ -195,29 +193,25 @@ final readonly class ServiciosPortada
             }
             [$lista[$indice], $lista[$destino]] = [$lista[$destino], $lista[$indice]];
             foreach ($lista as $orden => $servicio) {
-                if ((int) $servicio['orden'] !== $orden || $orden === $indice || $orden === $destino) {
-                    $conexion->executeStatement(
-                        'UPDATE servicios_portada SET orden = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
-                        [$orden, $autor, $servicio['id']],
-                    );
+                if ($servicio->orden !== $orden || $orden === $indice || $orden === $destino) {
+                    $servicio->orden = $orden;
+                    $this->auditar($servicio, $autor);
                 }
             }
-
-            return $this->listar();
+            $this->entidades->flush();
+            return array_map($this->fila(...), $lista);
         });
     }
 
     public function cambiarVisibilidad(int $id, bool $visible, string $autor): void
     {
-        $existente = $this->obtener($id);
-        if ($existente === false) {
+        $servicio = $this->buscar($id);
+        if ($servicio === null) {
             throw new InvalidArgumentException('El servicio no existe.');
         }
-        $this->conexion->executeStatement(
-            'UPDATE servicios_portada SET visible = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
-            [$visible, $autor, $id],
-            [ParameterType::BOOLEAN, ParameterType::STRING, ParameterType::INTEGER],
-        );
+        $servicio->visible = $visible;
+        $this->auditar($servicio, $autor);
+        $this->entidades->flush();
     }
 
     public function configurar(int $id, ?int $duracionMinima, ?int $profesionalesRequeridos, string $autor): void
@@ -226,12 +220,59 @@ final readonly class ServiciosPortada
             || ($profesionalesRequeridos !== null && ($profesionalesRequeridos < 1 || $profesionalesRequeridos > 2147483647))) {
             throw new InvalidArgumentException('La duración y la cantidad de profesionales deben ser enteros positivos o null.');
         }
-        $actualizados = $this->conexion->executeStatement(
-            'UPDATE servicios_portada SET duracion_minima = ?, profesionales_requeridos = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
-            [$duracionMinima, $profesionalesRequeridos, $autor, $id],
-        );
-        if ($actualizados === 0) {
+        $servicio = $this->buscar($id);
+        if ($servicio === null) {
             throw new InvalidArgumentException('El servicio no existe.');
         }
+        $servicio->duracionMinima = $duracionMinima;
+        $servicio->profesionalesRequeridos = $profesionalesRequeridos;
+        $this->auditar($servicio, $autor);
+        $this->entidades->flush();
+    }
+
+    private function consulta(bool $visibles = false): array
+    {
+        $query = $this->entidades->createQuery('SELECT s FROM App\Entity\ServicioPortada s'.($visibles ? ' WHERE s.visible = true' : '').' ORDER BY s.orden ASC, s.id ASC');
+        $query->setHint(\Doctrine\ORM\Query::HINT_REFRESH, true);
+        return $query->getResult();
+    }
+
+    private function buscar(int $id): ?ServicioPortada
+    {
+        $servicio = $this->entidades->find(ServicioPortada::class, $id);
+        if ($servicio !== null) {
+            $this->entidades->refresh($servicio);
+        }
+        return $servicio;
+    }
+
+    private function fila(ServicioPortada $servicio, bool $publica = false): array
+    {
+        $fila = [
+            'id' => $servicio->id, 'nombre' => $servicio->nombre,
+            'descripcion_corta' => $servicio->descripcionCorta, 'detalle' => $servicio->detalle,
+            'orden' => $servicio->orden, 'imagen_version' => $servicio->imagenVersion,
+            'duracion_minima' => $servicio->duracionMinima,
+            'profesionales_requeridos' => $servicio->profesionalesRequeridos,
+            'configuracion_completa' => $servicio->duracionMinima !== null && $servicio->profesionalesRequeridos !== null,
+        ];
+        if (!$publica) {
+            $fila += [
+                'visible' => $servicio->visible, 'actualizado_por' => $servicio->actualizadoPor,
+                'actualizado_en' => $servicio->actualizadoEn,
+            ];
+        }
+        return $fila;
+    }
+
+    private function auditar(ServicioPortada $servicio, string $autor): void
+    {
+        $servicio->actualizadoPor = $autor;
+        $servicio->actualizadoEn = (new DateTimeImmutable())->format('Y-m-d H:i:s.uP');
+    }
+
+    private function guardarImagen(int $id, ?string $contenido, ?string $tipo): void
+    {
+        $this->conexion->executeStatement("UPDATE servicios_portada SET imagen = decode(?, 'base64'), imagen_tipo = ? WHERE id = ?", [$contenido, $tipo, $id]);
     }
 }

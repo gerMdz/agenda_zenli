@@ -12,6 +12,7 @@
 - Restricciones de clientes: advertencia, revisión manual y bloqueo; registrar motivo y autor, controlar acceso a información sensible. La autoridad exacta para bloquear es propuesta pendiente de confirmación.
 - Masaje en pareja: **dos tratamientos consecutivos**, no simultáneos. No se ha confirmado si los realiza una o dos profesionales; no habilitar en reservas públicas.
 - Tecnología preferida: Symfony, Doctrine, PostgreSQL, Vue 3, PrimeVue. Sin microservicios ni Kubernetes en primera versión.
+- Los ABM se migran gradualmente a Doctrine ORM; las consultas y bloqueos específicos de PostgreSQL se conservan cuando son necesarios para la integridad y concurrencia.
 - Estética aproximada de marca: verde profundo, dorado y marfil, basada en imágenes aportadas; colores no oficiales.
 
 ## Implementación de la disponibilidad

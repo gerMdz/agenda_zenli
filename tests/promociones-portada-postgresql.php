@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Administracion\PromocionesPortada;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
 use DoctrineMigrations\Version20261120000100;
 use DoctrineMigrations\Version20261120000500;
 use DoctrineMigrations\Version20261121000200;
@@ -12,6 +14,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/../src/Entity/PromocionPortada.php';
 require __DIR__.'/../src/Administracion/PromocionesPortada.php';
 require __DIR__.'/../migrations/Version20261120000100.php';
 require __DIR__.'/../migrations/Version20261120000500.php';
@@ -41,7 +44,9 @@ foreach ($migracion->getSql() as $consulta) {
 $ordenInicial = $conexion->fetchFirstColumn('SELECT nombre FROM promociones_portada ORDER BY orden, id');
 if ($ordenInicial !== ['Eliminada', 'Oculta', 'Antigua']) throw new RuntimeException('La migración debe preservar el orden previo.');
 $conexion->executeStatement('DELETE FROM promociones_portada');
-$promociones = new PromocionesPortada($conexion);
+$configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
+$configuracion->enableNativeLazyObjects(true);
+$promociones = new PromocionesPortada(new EntityManager($conexion, $configuracion));
 $verificar = static function (bool $condicion, string $mensaje): void {
     if (!$condicion) throw new RuntimeException($mensaje);
 };
@@ -54,6 +59,10 @@ $bytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4
 file_put_contents($rutaImagen, $bytes);
 $archivo = new UploadedFile($rutaImagen, 'imagen.png', 'image/png', null, true);
 $datos = ['nombre' => 'Promoción', 'descripcion' => 'Descripción de prueba'];
+$promociones->guardar(null, ['nombre' => 'Con imagen', 'descripcion' => 'Descripción de prueba'], 'admin', $archivo);
+$idConImagen = (int) $promociones->listar()[1]['id'];
+$verificar(base64_decode($promociones->imagen($idConImagen, hash('sha256', $bytes))['contenido']) === $bytes, 'Debe crear promociones con imagen y conservar sus bytes.');
+$promociones->eliminar($idConImagen, 'admin');
 $promociones->guardar($id, $datos, 'admin', $archivo);
 $version = hash('sha256', $bytes);
 $verificar($promociones->listar()[0]['imagen_version'] === $version && $promociones->imagen($id, $version, true) === false, 'La imagen oculta solo debe estar disponible en administración.');
@@ -99,7 +108,7 @@ $verificar($promociones->listar()[0]['imagen_version'] === null && $promociones-
 $promociones->visibilidad($id, false, 'admin');
 $verificar($promociones->listar(true) === [], 'Debe ocultar la promoción.');
 $promociones->eliminar($id, 'admin');
-$verificar($promociones->listar() === [] && (int) $conexion->fetchOne('SELECT count(*) FROM promociones_portada WHERE eliminado AND NOT visible') === 1, 'Debe conservar el registro eliminado sin publicarlo.');
+$verificar($promociones->listar() === [] && (int) $conexion->fetchOne('SELECT count(*) FROM promociones_portada WHERE eliminado AND NOT visible') === 2, 'Debe conservar el registro eliminado sin publicarlo.');
 try {
     $promociones->visibilidad($id, true, 'admin');
     throw new RuntimeException('No debe publicar una promoción eliminada.');
@@ -168,7 +177,7 @@ $otraConexion->executeStatement("SET lock_timeout = '100ms'");
 $conexion->beginTransaction();
 $conexion->executeStatement('LOCK TABLE promociones_portada IN SHARE ROW EXCLUSIVE MODE');
 try {
-    (new PromocionesPortada($otraConexion))->mover($ids[1], 1, 'otra');
+    (new PromocionesPortada(new EntityManager($otraConexion, $configuracion)))->mover($ids[1], 1, 'otra');
     throw new RuntimeException('Un movimiento concurrente debe esperar el bloqueo.');
 } catch (Doctrine\DBAL\Exception\DriverException $error) {
     $verificar($error->getSQLState() === '55P03', 'Debe fallar por espera de bloqueo.');
@@ -176,6 +185,6 @@ try {
     $conexion->rollBack();
 }
 $verificar(array_column($promociones->listar(), 'nombre') === ['Segunda', 'Tercera', 'Cuarta'], 'Un movimiento bloqueado no debe dejar cambios parciales.');
-(new PromocionesPortada($otraConexion))->mover($ids[1], 1, 'otra');
+(new PromocionesPortada(new EntityManager($otraConexion, $configuracion)))->mover($ids[1], 1, 'otra');
 $verificar(array_column($promociones->listar(), 'nombre') === ['Tercera', 'Segunda', 'Cuarta'], 'Debe poder mover tras liberarse el bloqueo.');
 fwrite(STDOUT, "Promociones de portada verificadas.\n");

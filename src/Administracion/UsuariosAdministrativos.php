@@ -4,35 +4,26 @@ declare(strict_types=1);
 
 namespace App\Administracion;
 
-use Doctrine\DBAL\Connection;
+use App\Repository\UsuariosAdministrativosRepository;
 use InvalidArgumentException;
 
 final readonly class UsuariosAdministrativos
 {
     public const ROL = 'ROLE_ADMIN';
 
-    public function __construct(private Connection $conexion)
+    public function __construct(private UsuariosAdministrativosRepository $repositorio)
     {
     }
 
     public function listar(): array
     {
-        return $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT u.id::text AS id, u.email, u.activo, p.nombre AS profesional
-            FROM usuarios u LEFT JOIN profesionales p ON p.usuario_id = u.id AND p.activa
-            WHERE jsonb_exists(u.roles, 'ROLE_ADMIN')
-            ORDER BY u.email
-            SQL);
+        return $this->repositorio->listar();
     }
 
     public function crear(string $email, string $clave): void
     {
         $email = self::normalizarEmail($email);
-        $this->conexion->insert('usuarios', [
-            'email' => $email,
-            'password_hash' => self::hashClave($clave),
-            'roles' => json_encode([self::ROL], JSON_THROW_ON_ERROR),
-        ]);
+        $this->repositorio->crear($email, self::hashClave($clave));
     }
 
     public function actualizar(string $id, bool $activo, string $clave, string $autor, string $huella): bool
@@ -42,21 +33,7 @@ final readonly class UsuariosAdministrativos
         }
         $hash = $clave === '' ? null : self::hashClave($clave);
 
-        return $this->conexion->transactional(static function (Connection $conexion) use ($id, $activo, $hash, $autor, $huella): bool {
-            // Serializa los cambios de acceso para que dos administradores no puedan desactivarse entre sí.
-            $conexion->executeStatement('LOCK TABLE usuarios IN SHARE ROW EXCLUSIVE MODE');
-            $hashActual = $conexion->fetchOne(<<<'SQL'
-                SELECT password_hash FROM usuarios WHERE id = ? AND activo AND jsonb_exists(roles, 'ROLE_ADMIN')
-                SQL, [$autor]);
-            if (!is_string($hashActual) || !hash_equals($huella, hash('sha256', $hashActual))) {
-                return false;
-            }
-
-            return $conexion->executeStatement(<<<'SQL'
-                UPDATE usuarios SET activo = ?, password_hash = COALESCE(?, password_hash)
-                WHERE id::text = ? AND jsonb_exists(roles, 'ROLE_ADMIN')
-                SQL, [$activo ? 'true' : 'false', $hash, $id]) !== 0;
-        });
+        return $this->repositorio->actualizar($id, $activo, $hash, $autor, $huella);
     }
 
     public static function normalizarEmail(string $email): string

@@ -26,7 +26,8 @@ Las ocupaciones incluyen exclusiones GiST por profesional o recurso para impedir
 
 ## Aspectos que requieren revisión antes de ejecutar
 
-- Las migraciones siguen siendo un borrador. La prueba de agenda ejecutó su SQL mediante Doctrine DBAL en PostgreSQL 14 e hizo una prueba de concurrencia y exclusión GiST. Queda pendiente validar PostgreSQL 17, el ciclo completo de migraciones y el mapeo ORM.
+- Las migraciones siguen siendo un borrador. La prueba de agenda ejecutó su SQL mediante Doctrine DBAL en PostgreSQL 14 e hizo una prueba de concurrencia y exclusión GiST. Queda pendiente validar PostgreSQL 17 y el ciclo completo de migraciones.
+- El mapeo ORM es parcial: no representa todas las tablas ni todas las columnas. No usar `doctrine:schema:update` ni generar migraciones automáticamente desde este mapeo; podrían proponerse cambios destructivos sobre datos y restricciones existentes.
 - No hay en el borrador una definición de tipos de recursos y compatibilidades complejas; se usa un solo recurso físico.
 - Verificar consistencia entre `reserva_sesiones`, `reserva_participantes`, `reservas` y `ocupaciones_*`.
 - Verificar reglas de sesiones consecutivas, duración total y asignación de profesionales.

@@ -6,10 +6,18 @@ use App\Administracion\ServiciosPortada;
 use App\Administracion\ConfiguracionPortada;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
 use DoctrineMigrations\Version20261119000300;
 use Psr\Log\NullLogger;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
+spl_autoload_register(static function (string $clase): void {
+    if (str_starts_with($clase, 'App\\')) {
+        require __DIR__.'/../src/'.str_replace('\\', '/', substr($clase, 4)).'.php';
+    }
+}, true, true);
 require __DIR__.'/../src/Administracion/ServiciosPortada.php';
 require __DIR__.'/../src/Administracion/ConfiguracionPortada.php';
 require __DIR__.'/../migrations/Version20261119000300.php';
@@ -43,7 +51,10 @@ $migracion->up(new Schema());
 foreach ($migracion->getSql() as $consulta) {
     $conexion->executeStatement($consulta->getStatement(), $consulta->getParameters(), $consulta->getTypes());
 }
-$servicios = new ServiciosPortada($conexion);
+$configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
+$configuracion->enableNativeLazyObjects(true);
+$entidades = new EntityManager($conexion, $configuracion);
+$servicios = new ServiciosPortada($entidades);
 $nombres = static fn (array $filas): array => array_values(array_filter(array_column($filas, 'nombre'), static fn (string $nombre): bool => in_array($nombre, ['A', 'B', 'C'], true)));
 $verificar = static function (bool $condicion, string $mensaje): void {
     if (!$condicion) throw new RuntimeException($mensaje);
@@ -94,9 +105,45 @@ try {
 $verificar($servicios->obtener($id)['duracion_minima'] === null, 'La configuración inválida no debe modificar datos.');
 fwrite(STDOUT, "Configuración y catálogo de servicios verificados.\n");
 
+$conexion->executeStatement('UPDATE servicios_portada SET nombre = ? WHERE id = ?', ['Cambio externo', $id]);
+$verificar($servicios->obtener($id)['nombre'] === 'Cambio externo', 'Debe leer cambios externos aun con la entidad cargada.');
+$otroServicio = new ServiciosPortada($entidades);
+$otroServicio->cambiarVisibilidad($id, false, 'otro');
+$verificar(!$servicios->obtener($id)['visible'], 'Dos servicios con el mismo gestor deben compartir el estado actualizado.');
+$servicios->cambiarVisibilidad($id, true, 'admin');
+$otraConexion = DriverManager::getConnection(['driver' => 'pdo_pgsql', 'host' => $socket, 'user' => 'zenli_pruebas', 'dbname' => 'postgres']);
+$otraConexion->executeStatement("SET lock_timeout = '100ms'");
+$conexion->beginTransaction();
+$conexion->executeStatement('LOCK TABLE servicios_portada IN SHARE ROW EXCLUSIVE MODE');
+try {
+    (new ServiciosPortada(new EntityManager($otraConexion, $configuracion)))->mover($id, 1, 'otro');
+    throw new RuntimeException('Un movimiento concurrente debe esperar el bloqueo.');
+} catch (Doctrine\DBAL\Exception\DriverException $error) {
+    $verificar($error->getSQLState() === '55P03', 'Debe fallar por espera de bloqueo.');
+} finally {
+    $conexion->rollBack();
+}
+$rutaImagen = $socket.'/imagen-servicio.png';
+$bytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aXcAAAAASUVORK5CYII=');
+file_put_contents($rutaImagen, $bytes);
+$archivo = new UploadedFile($rutaImagen, 'imagen.png', 'image/png', null, true);
+$imagenId = $servicios->crear('Con imagen', 'Descripción válida', '', $archivo, 'admin');
+$version = hash('sha256', $bytes);
+$verificar(base64_decode($servicios->imagen($imagenId, $version)['contenido']) === $bytes, 'Debe conservar los bytes al crear.');
+$servicios->actualizar($imagenId, 'Con imagen editada', 'Descripción válida', '', null, false, 'admin');
+$verificar(base64_decode($servicios->imagen($imagenId, $version)['contenido']) === $bytes, 'Editar texto debe conservar la imagen.');
+file_put_contents($rutaImagen, $bytes.'nueva');
+clearstatcache(true, $rutaImagen);
+$servicios->actualizar($imagenId, 'Con imagen editada', 'Descripción válida', '', $archivo, false, 'admin');
+$nuevaVersion = hash('sha256', $bytes.'nueva');
+$verificar($servicios->imagen($imagenId, $version) === false && base64_decode($servicios->imagen($imagenId, $nuevaVersion)['contenido']) === $bytes.'nueva', 'Debe reemplazar la imagen.');
+$servicios->actualizar($imagenId, 'Con imagen editada', 'Descripción válida', '', null, true, 'admin');
+$verificar($servicios->imagen($imagenId, $nuevaVersion) === false && $servicios->obtener($imagenId)['imagen_version'] === null, 'Debe eliminar la imagen y su versión.');
+fwrite(STDOUT, "Imágenes y lectura actualizada verificadas.\n");
+
 $conexion->executeStatement('CREATE TABLE usuarios (id BIGINT PRIMARY KEY)');
 $conexion->executeStatement('INSERT INTO usuarios VALUES (1)');
-foreach (['Version20261119000100', 'Version20261119000200', 'Version20261119000400', 'Version20261119000500'] as $nombre) {
+foreach (['Version20261119000100', 'Version20261119000200', 'Version20261119000400', 'Version20261119000500', 'Version20261120000300'] as $nombre) {
     require __DIR__.'/../migrations/'.$nombre.'.php';
     $clase = 'DoctrineMigrations\\'.$nombre;
     $migracion = new $clase($conexion, new NullLogger());
@@ -108,7 +155,7 @@ foreach (['Version20261119000100', 'Version20261119000200', 'Version202611190004
         $conexion->executeStatement("INSERT INTO configuracion_portada (id, telefono, actualizado_por) VALUES (1, '+5492616356192', 1)");
     }
 }
-$portada = new ConfiguracionPortada($conexion);
+$portada = new ConfiguracionPortada(new App\Repository\ConfiguracionPortadaRepository($entidades));
 $verificar($portada->consultar()['direccion'] === ConfiguracionPortada::DIRECCION_INICIAL && $portada->consultar()['horarios'] === ConfiguracionPortada::HORARIOS_INICIALES, 'La migración debe conservar los textos publicados para registros existentes.');
 $portada->guardar('+5492616356192', null, false, '1', null, null, '  Calle nueva  ', "Lunes\nMartes");
 $datos = $portada->consultar();
@@ -133,7 +180,7 @@ foreach (['SesionAdministrativa', 'UsuariosAdministrativos'] as $clase) {
     require __DIR__.'/../src/Administracion/'.$clase.'.php';
 }
 require __DIR__.'/../src/Controller/AdministracionController.php';
-$controller = new App\Controller\AdministracionController(new App\Administracion\SesionAdministrativa($conexion), $portada, $servicios, new App\Administracion\UsuariosAdministrativos($conexion));
+$controller = new App\Controller\AdministracionController(new App\Administracion\SesionAdministrativa($conexion), $portada, $servicios, new App\Administracion\UsuariosAdministrativos(new App\Repository\UsuariosAdministrativosRepository($entidades)));
 $sesion = new Symfony\Component\HttpFoundation\Session\Session(new Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage());
 $sesion->set('admin_id', '1');
 $sesion->set('admin_credencial', hash('sha256', $hash));

@@ -27,6 +27,8 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 
 ## Integración de agenda
 
+- Completar la migración de los ABM restantes a Doctrine ORM, preservando permisos, auditoría, ocupaciones y concurrencia; el mapeo actual es parcial y no debe usarse para generar cambios automáticos de esquema.
+
 - Validar en navegador la preparación posterior y probar la concurrencia específica entre su edición y las reservas públicas.
 - Resolver el paso entre inicios que usará la consulta pública y cómo se configurará.
 - Implementar el flujo de reservas pendientes, incluida la expiración y liberación transaccional de sus ocupaciones. Mientras exista una ocupación, el cálculo la considera ocupada.

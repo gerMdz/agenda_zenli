@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Administracion;
 
-use Doctrine\DBAL\Connection;
+use App\Repository\ConfiguracionPortadaRepository;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
@@ -15,13 +15,13 @@ final readonly class ConfiguracionPortada
     public const HORARIOS_INICIALES = "Lun, mié y vie · 10:00 a 20:00\nMar, jue y sáb · 11:00 a 19:00";
     public const SECCIONES = ['servicios', 'promociones', 'ubicacion', 'horarios', 'consultas'];
 
-    public function __construct(private Connection $conexion)
+    public function __construct(private ConfiguracionPortadaRepository $repositorio)
     {
     }
 
     public function consultar(): array
     {
-        $fila = $this->conexion->fetchAssociative('SELECT telefono, imagen_version, instagram, facebook, direccion, horarios, solo_imagen::int AS solo_imagen, servicios_visible::int, promociones_visible::int, ubicacion_visible::int, horarios_visible::int, consultas_visible::int FROM configuracion_portada WHERE id = 1');
+        $fila = $this->repositorio->consultar();
 
         return [
             'telefono' => $fila['telefono'] ?? self::TELEFONO_INICIAL,
@@ -40,35 +40,17 @@ final readonly class ConfiguracionPortada
         if (!in_array($seccion, self::SECCIONES, true)) {
             throw new InvalidArgumentException('Elegí una sección válida.');
         }
-        $columna = $seccion.'_visible';
-        $this->conexion->executeStatement(<<<SQL
-            INSERT INTO configuracion_portada (id, telefono, actualizado_por, $columna)
-            VALUES (1, ?, ?, ?)
-            ON CONFLICT (id) DO UPDATE SET
-                $columna = excluded.$columna,
-                actualizado_por = excluded.actualizado_por,
-                actualizado_en = statement_timestamp()
-            SQL, [self::TELEFONO_INICIAL, $autor, $visible ? 'true' : 'false']);
+        $this->repositorio->actualizar([$seccion.'Visible' => $visible], $autor);
     }
 
     public function imagen(string $version): array|false
     {
-        return $this->conexion->fetchAssociative(
-            "SELECT encode(imagen, 'base64') AS contenido, imagen_tipo FROM configuracion_portada WHERE id = 1 AND imagen_version = ?",
-            [$version],
-        );
+        return $this->repositorio->imagen($version);
     }
 
     public function cambiarModo(bool $soloImagen, string $autor): void
     {
-        $this->conexion->executeStatement(<<<'SQL'
-            INSERT INTO configuracion_portada (id, telefono, actualizado_por, solo_imagen)
-            VALUES (1, ?, ?, ?)
-            ON CONFLICT (id) DO UPDATE SET
-                solo_imagen = excluded.solo_imagen,
-                actualizado_por = excluded.actualizado_por,
-                actualizado_en = statement_timestamp()
-            SQL, [self::TELEFONO_INICIAL, $autor, $soloImagen ? 'true' : 'false']);
+        $this->repositorio->actualizar(['soloImagen' => $soloImagen], $autor);
     }
 
     public function guardar(
@@ -113,36 +95,20 @@ final readonly class ConfiguracionPortada
             $version = hash('sha256', $bytes);
         }
 
-        $sql = <<<'SQL'
-            INSERT INTO configuracion_portada (id, telefono, imagen, imagen_tipo, imagen_version, actualizado_por, instagram, facebook, direccion, horarios)
-            VALUES (1, ?, decode(?, 'base64'), ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (id) DO UPDATE SET
-                telefono = excluded.telefono,
-                actualizado_por = excluded.actualizado_por,
-                actualizado_en = statement_timestamp()
-            SQL;
-        if ($archivo !== null || $restaurar) {
-            $sql .= ', imagen = excluded.imagen, imagen_tipo = excluded.imagen_tipo, imagen_version = excluded.imagen_version';
-        }
+        $campos = ['telefono' => $telefono];
         if ($instagram !== null) {
-            $sql .= ', instagram = excluded.instagram';
+            $campos['instagram'] = $enlaceInstagram;
         }
         if ($facebook !== null) {
-            $sql .= ', facebook = excluded.facebook';
+            $campos['facebook'] = $enlaceFacebook;
         }
         if ($direccion !== null) {
-            $sql .= ', direccion = excluded.direccion';
+            $campos['direccion'] = trim($direccion);
         }
         if ($horarios !== null) {
-            $sql .= ', horarios = excluded.horarios';
+            $campos['horarios'] = trim($horarios);
         }
-
-
-        $this->conexion->executeStatement($sql, [
-            $telefono, $contenido, $tipo, $version, $autor, $enlaceInstagram, $enlaceFacebook,
-            $direccion === null ? self::DIRECCION_INICIAL : trim($direccion),
-            $horarios === null ? self::HORARIOS_INICIALES : trim($horarios),
-        ]);
+        $this->repositorio->actualizar($campos, $autor, $archivo !== null || $restaurar ? [$contenido, $tipo, $version] : null);
     }
 
     /** @param list<string> $dominios */

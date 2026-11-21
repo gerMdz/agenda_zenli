@@ -12,5 +12,8 @@ services:
     App\Administracion\:
         resource: ../src/Administracion/
 
+    App\Repository\:
+        resource: ../src/Repository/
+
     App\Command\:
         resource: ../src/Command/

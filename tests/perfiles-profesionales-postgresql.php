@@ -6,10 +6,13 @@ use App\Administracion\AgendaAdministrativa;
 use App\Administracion\ComunicacionAgenda;
 use App\Administracion\HorariosProfesionales;
 use App\Administracion\PerfilesProfesionales;
+use App\Administracion\RepositorioPerfilesProfesionales;
 use App\Administracion\SesionAdministrativa;
 use App\Controller\AgendaAdministrativaController;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
 use DoctrineMigrations\Version20261118000100;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
@@ -46,7 +49,10 @@ $conexion->executeStatement("INSERT INTO profesionales (usuario_id, nombre) VALU
 $sesion = new SesionAdministrativa($conexion);
 $horarios = new HorariosProfesionales($conexion);
 $comunicacion = new ComunicacionAgenda($conexion);
-$controller = new AgendaAdministrativaController($sesion, new AgendaAdministrativa($conexion, $horarios), $comunicacion, $horarios, new PerfilesProfesionales($conexion));
+$configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
+$configuracion->enableNativeLazyObjects(true);
+$entidades = new EntityManager($conexion, $configuracion);
+$controller = new AgendaAdministrativaController($sesion, new AgendaAdministrativa($conexion, $horarios), $comunicacion, $horarios, new PerfilesProfesionales(new RepositorioPerfilesProfesionales($entidades)));
 $peticion = static function (?string $usuario, string $contenido, bool $token = true, string $metodo = 'POST', string $ruta = '/api/admin/agenda/profesionales') use ($hash): Request {
     $request = Request::create($ruta, $metodo, [], [], [], ['CONTENT_TYPE' => 'application/json'], $contenido);
     $session = new Session(new MockArraySessionStorage());
@@ -95,6 +101,7 @@ foreach (['{}', '{', '{"nombre":"   "}', '{"nombre":123}'] as $invalido) {
     $verificar($controller->modificarProfesional($peticion('101', $invalido, true, 'PUT', $ruta), $id)->getStatusCode() === 422, 'Debe rechazar nombre inválido.');
 }
 $verificar($controller->modificarProfesional($peticion('101', '{"activa":1}', true, 'PUT', $ruta.'/estado'), $id)->getStatusCode() === 422, 'El estado debe ser booleano.');
+$verificar($controller->modificarProfesional($peticion('101', '{"activa":false}', true, 'PUT', '/api/admin/agenda/profesionales/99999/estado'), '99999')->getStatusCode() === 404, 'Debe rechazar baja de perfiles inexistentes.');
 $verificar($controller->modificarProfesional($peticion('101', '{"nombre":"Nadie"}', true, 'PUT', '/api/admin/agenda/profesionales/99999'), '99999')->getStatusCode() === 404, 'Debe rechazar perfiles inexistentes.');
 $verificar($controller->modificarProfesional($peticion('101', '{"nombre":"  María Nueva  "}', true, 'PUT', $ruta), $id)->getStatusCode() === 200, 'Debe editar el nombre.');
 $conexion->executeStatement("INSERT INTO tratamientos (id, codigo, nombre) VALUES (1, 'T', 'Tratamiento')");
@@ -114,4 +121,8 @@ $verificar($encontrado['nombre'] === 'María Nueva' && $encontrado['activa'] ===
 $verificar((int) $conexion->fetchOne('SELECT count(*) FROM reserva_sesiones WHERE profesional_id = ?', [$id]) === 1, 'Debe conservar el historial.');
 $verificar((bool) $conexion->fetchOne('SELECT u.activo FROM usuarios u JOIN profesionales p ON p.usuario_id = u.id WHERE p.id = ?', [$id]), 'La cuenta debe seguir activa.');
 $verificar($estado(true)->getStatusCode() === 200, 'Debe reactivar el perfil.');
+$conexion->executeStatement("UPDATE usuarios SET roles = '[\"ROLE_ADMIN\"]' WHERE email = 'nueva@example.com'");
+$listado = json_decode($controller->crearProfesional($peticion('101', '', true, 'GET'))->getContent(), true, 512, JSON_THROW_ON_ERROR)['profesionales'];
+$encontrado = array_values(array_filter($listado, fn ($item) => $item['id'] === $id))[0];
+$verificar($encontrado['activa'] === true && $encontrado['admin'] === true, 'El listado debe reflejar la reactivación y cambios externos de roles.');
 fwrite(STDOUT, "Alta, edición y estado de perfiles profesionales verificados.\n");

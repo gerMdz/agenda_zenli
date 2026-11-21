@@ -4,29 +4,49 @@ declare(strict_types=1);
 
 namespace App\Administracion;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\ParameterType;
+use App\Entity\PromocionPortada;
+use DateTimeImmutable;
+use Doctrine\ORM\EntityManagerInterface;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 final readonly class PromocionesPortada
 {
-    public function __construct(private Connection $conexion)
+    public function __construct(private EntityManagerInterface $entidades)
     {
     }
 
     public function listar(bool $publicas = false): array
     {
-        $columnas = $publicas ? 'id, nombre, descripcion, imagen_version, orden' : 'id, nombre, descripcion, imagen_version, orden, visible, actualizado_por, actualizado_en';
-        $filtro = $publicas ? ' AND visible = true' : '';
-
-        return $this->conexion->fetchAllAssociative("SELECT $columnas FROM promociones_portada WHERE eliminado = false$filtro ORDER BY orden, id");
+        $columnas = 'p.id AS id, p.nombre AS nombre, p.descripcion AS descripcion, p.imagenVersion AS imagen_version, p.orden AS orden';
+        if (!$publicas) {
+            $columnas .= ', p.visible AS visible, p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en';
+        }
+        $dql = "SELECT $columnas FROM App\\Entity\\PromocionPortada p WHERE p.eliminado = false";
+        if ($publicas) {
+            $dql .= ' AND p.visible = true';
+        }
+        $filas = $this->entidades->createQuery($dql.' ORDER BY p.orden, p.id')->getArrayResult();
+        foreach ($filas as &$fila) {
+            if (isset($fila['actualizado_en']) && $fila['actualizado_en'] instanceof \DateTimeInterface) {
+                $fila['actualizado_en'] = $fila['actualizado_en']->format('Y-m-d H:i:s.uP');
+            }
+        }
+        return $filas;
     }
 
     public function imagen(int $id, string $version, bool $publica = false): array|false
     {
-        $filtro = $publica ? ' AND visible = true' : '';
-        return $this->conexion->fetchAssociative("SELECT encode(imagen, 'base64') AS contenido, imagen_tipo FROM promociones_portada WHERE id = ? AND imagen_version = ? AND eliminado = false$filtro", [$id, $version]);
+        $dql = 'SELECT p.imagen AS imagen, p.imagenTipo AS imagen_tipo FROM App\Entity\PromocionPortada p WHERE p.id = :id AND p.imagenVersion = :version AND p.eliminado = false';
+        if ($publica) {
+            $dql .= ' AND p.visible = true';
+        }
+        $fila = $this->entidades->createQuery($dql)->setParameter('id', $id)->setParameter('version', $version)->getOneOrNullResult();
+        if ($fila === null) {
+            return false;
+        }
+        $bytes = is_resource($fila['imagen']) ? stream_get_contents($fila['imagen']) : $fila['imagen'];
+        return ['contenido' => base64_encode($bytes), 'imagen_tipo' => $fila['imagen_tipo']];
     }
 
     public function guardar(?int $id, array $datos, string $autor, ?UploadedFile $archivo = null, bool $eliminarImagen = false): void
@@ -55,17 +75,33 @@ final readonly class PromocionesPortada
                 throw new InvalidArgumentException('Subí una imagen JPG, PNG o WebP de hasta 6000 píxeles por lado.');
             }
             $bytes = $archivo->getContent();
-            $imagen = [base64_encode($bytes), $info['mime'], hash('sha256', $bytes)];
+            $imagen = [$bytes, $info['mime'], hash('sha256', $bytes)];
         }
         if ($id === null) {
-            $this->conexion->transactional(function (Connection $conexion) use ($nombre, $descripcion, $autor, $imagen): void {
-                $conexion->executeStatement('LOCK TABLE promociones_portada IN SHARE ROW EXCLUSIVE MODE');
-                $conexion->executeStatement("INSERT INTO promociones_portada (nombre, descripcion, actualizado_por, imagen, imagen_tipo, imagen_version, orden) VALUES (?, ?, ?, decode(?, 'base64'), ?, ?, (SELECT COALESCE(MAX(orden), -1) + 1 FROM promociones_portada WHERE eliminado = false))", [$nombre, $descripcion, $autor, ...($imagen ?? [null, null, null])]);
+            $this->entidades->getConnection()->transactional(function () use ($nombre, $descripcion, $autor, $imagen): void {
+                $this->entidades->getConnection()->executeStatement('LOCK TABLE promociones_portada IN SHARE ROW EXCLUSIVE MODE');
+                $maximo = $this->entidades->createQuery('SELECT MAX(p.orden) FROM App\Entity\PromocionPortada p WHERE p.eliminado = false')->getSingleScalarResult();
+                $promocion = new PromocionPortada();
+                $promocion->nombre = $nombre;
+                $promocion->descripcion = $descripcion;
+                $promocion->actualizadoPor = $autor;
+                $promocion->actualizadoEn = new DateTimeImmutable();
+                $promocion->orden = $maximo === null ? 0 : (int) $maximo + 1;
+                if ($imagen !== null) {
+                    [$promocion->imagen, $promocion->imagenTipo, $promocion->imagenVersion] = $imagen;
+                }
+                $this->entidades->persist($promocion);
+                $this->entidades->flush();
             });
             return;
         }
-        $setImagen = $eliminarImagen ? ', imagen = NULL, imagen_tipo = NULL, imagen_version = NULL' : ($imagen !== null ? ", imagen = decode(?, 'base64'), imagen_tipo = ?, imagen_version = ?" : '');
-        $afectadas = $this->conexion->executeStatement("UPDATE promociones_portada SET nombre = ?, descripcion = ?, actualizado_por = ?, actualizado_en = statement_timestamp()$setImagen WHERE id = ? AND eliminado = false", [$nombre, $descripcion, $autor, ...($imagen ?? []), $id]);
+        $setImagen = ($eliminarImagen || $imagen !== null) ? ', p.imagen = :imagen, p.imagenTipo = :tipo, p.imagenVersion = :version' : '';
+        $consulta = $this->entidades->createQuery("UPDATE App\\Entity\\PromocionPortada p SET p.nombre = :nombre, p.descripcion = :descripcion, p.actualizadoPor = :autor, p.actualizadoEn = :fecha$setImagen WHERE p.id = :id AND p.eliminado = false")
+            ->setParameter('nombre', $nombre)->setParameter('descripcion', $descripcion)->setParameter('autor', $autor)->setParameter('fecha', new DateTimeImmutable())->setParameter('id', $id);
+        if ($eliminarImagen || $imagen !== null) {
+            $consulta->setParameter('imagen', $imagen[0] ?? null, 'blob')->setParameter('tipo', $imagen[1] ?? null)->setParameter('version', $imagen[2] ?? null);
+        }
+        $afectadas = $consulta->execute();
         if ($afectadas !== 1) {
             throw new InvalidArgumentException('La promoción no existe.');
         }
@@ -73,7 +109,8 @@ final readonly class PromocionesPortada
 
     public function visibilidad(int $id, bool $visible, string $autor): void
     {
-        $afectadas = $this->conexion->executeStatement('UPDATE promociones_portada SET visible = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ? AND eliminado = false', [$visible, $autor, $id], [ParameterType::BOOLEAN, ParameterType::STRING, ParameterType::INTEGER]);
+        $afectadas = $this->entidades->createQuery('UPDATE App\Entity\PromocionPortada p SET p.visible = :visible, p.actualizadoPor = :autor, p.actualizadoEn = :fecha WHERE p.id = :id AND p.eliminado = false')
+            ->setParameter('visible', $visible)->setParameter('autor', $autor)->setParameter('fecha', new DateTimeImmutable())->setParameter('id', $id)->execute();
         if ($afectadas !== 1) {
             throw new InvalidArgumentException('La promoción no existe.');
         }
@@ -85,8 +122,8 @@ final readonly class PromocionesPortada
             throw new InvalidArgumentException('La dirección del movimiento no es válida.');
         }
 
-        return $this->conexion->transactional(function (Connection $conexion) use ($id, $direccion, $autor): array {
-            $conexion->executeStatement('LOCK TABLE promociones_portada IN SHARE ROW EXCLUSIVE MODE');
+        return $this->entidades->getConnection()->transactional(function () use ($id, $direccion, $autor): array {
+            $this->entidades->getConnection()->executeStatement('LOCK TABLE promociones_portada IN SHARE ROW EXCLUSIVE MODE');
             $lista = $this->listar();
             $indice = array_search($id, array_map(static fn (array $promocion): int => (int) $promocion['id'], $lista), true);
             if ($indice === false) {
@@ -99,7 +136,8 @@ final readonly class PromocionesPortada
             [$lista[$indice], $lista[$destino]] = [$lista[$destino], $lista[$indice]];
             foreach ($lista as $orden => $promocion) {
                 if ((int) $promocion['orden'] !== $orden || $orden === $indice || $orden === $destino) {
-                    $conexion->executeStatement('UPDATE promociones_portada SET orden = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?', [$orden, $autor, $promocion['id']]);
+                    $this->entidades->createQuery('UPDATE App\Entity\PromocionPortada p SET p.orden = :orden, p.actualizadoPor = :autor, p.actualizadoEn = :fecha WHERE p.id = :id')
+                        ->setParameter('orden', $orden)->setParameter('autor', $autor)->setParameter('fecha', new DateTimeImmutable())->setParameter('id', $promocion['id'])->execute();
                 }
             }
             return $this->listar();
@@ -108,7 +146,8 @@ final readonly class PromocionesPortada
 
     public function eliminar(int $id, string $autor): void
     {
-        $afectadas = $this->conexion->executeStatement('UPDATE promociones_portada SET eliminado = true, visible = false, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ? AND eliminado = false', [$autor, $id]);
+        $afectadas = $this->entidades->createQuery('UPDATE App\Entity\PromocionPortada p SET p.eliminado = true, p.visible = false, p.actualizadoPor = :autor, p.actualizadoEn = :fecha WHERE p.id = :id AND p.eliminado = false')
+            ->setParameter('autor', $autor)->setParameter('fecha', new DateTimeImmutable())->setParameter('id', $id)->execute();
         if ($afectadas !== 1) {
             throw new InvalidArgumentException('La promoción no existe.');
         }

@@ -5,3 +5,9 @@ doctrine:
     orm:
         auto_mapping: false
         enable_native_lazy_objects: true
+        mappings:
+            App:
+                type: attribute
+                dir: '%kernel.project_dir%/src/Entity'
+                prefix: 'App\Entity'
+                is_bundle: false
