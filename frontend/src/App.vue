@@ -113,7 +113,7 @@ onMounted(async () => {
           <article v-for="servicio in servicios" :key="servicio.id">
             <div class="foto-servicio">
               <img v-if="servicio.imagen_version" :src="`/api/servicios/${servicio.id}/imagen/${servicio.imagen_version}`" :alt="servicio.nombre" loading="lazy">
-              <div v-else class="foto-placeholder" aria-hidden="true"><span class="simbolo-masaje">✿</span></div>
+              <img v-else :src="imagen" alt="" loading="lazy" @error="imagen = portadaOriginal">
             </div>
             <div class="tratamiento-texto">
               <h3>{{ servicio.nombre }}</h3>
@@ -238,8 +238,6 @@ nav a:hover { text-decoration: underline; color: var(--oro); }
 .tratamientos article { box-sizing: border-box; width: calc((100% - 3rem) / 4); overflow: hidden; border: 1px solid var(--borde); border-radius: 1rem; background: #fffaf0; text-align: center; box-shadow: 0 4px 12px #38281209; display: flex; flex-direction: column; }
 .foto-servicio { position: relative; overflow: hidden; aspect-ratio: 1.6; background: #163426; }
 .foto-servicio img { width: 100%; height: 100%; object-fit: cover; }
-.foto-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #163426, #092b20); }
-.simbolo-masaje { font-size: 3rem; color: #e9bf6855; }
 .tratamiento-texto { padding: 1rem .75rem 1.15rem; display: flex; flex-direction: column; gap: .5rem; flex: 1; }
 .tratamiento-texto h3 { margin: 0; font: bold 1.18rem Georgia, serif; }
 .tratamiento-texto p { margin: 0; font-size: .9rem; color: #344238; }
