@@ -211,13 +211,32 @@ $turno = [
 ];
 $interna->guardarPreparacion(['modo' => 'general', 'minutos' => 10]);
 $horarios->agregarBloqueo('104', ['fecha' => '2099-07-10', 'todo_el_dia' => true], '101');
+$horarios->agregarBloqueo('104', ['fecha' => '2099-07-11', 'hora_inicio' => '10:00', 'hora_fin' => '11:00'], '101');
+verificar((int) $conexion->fetchOne("SELECT count(*) FROM bloqueos WHERE profesional_id = 104 AND gestion_horarios AND recurso_id IS NULL AND inicio >= '2099-07-10 00:00-03' AND inicio < '2099-07-12 00:00-03'") === 2, 'Los bloqueos personales no deben asociarse a una sala.');
+verificar($interna->consultar('2099-07-11', '105')['bloqueos'] === [], 'El bloqueo por hora no debe exponerse a otra profesional.');
+$porHora = array_replace($turno, ['profesionales' => ['105'], 'inicio' => '2099-07-11T10:00']);
+$porHoraId = $interna->cargar($porHora, '101');
+$interna->cancelar($porHoraId, '101', null, 1);
+try {
+    $interna->cargar(array_replace($porHora, ['profesionales' => ['104']]), '101');
+    throw new RuntimeException('El bloqueo por hora permitió agendar a la profesional bloqueada.');
+} catch (TurnoNoDisponible $error) {
+    verificar(str_contains($error->getMessage(), 'profesional'), 'El bloqueo por hora debe identificar a la profesional.');
+}
+$contiguo = $interna->cargar(array_replace($porHora, ['profesionales' => ['104'], 'inicio' => '2099-07-11T11:10']), '101');
+$interna->cancelar($contiguo, '101', null, 1);
+try {
+    $interna->cargar(array_replace($porHora, ['profesionales' => ['104'], 'inicio' => '2099-07-11T11:00']), '101');
+    throw new RuntimeException('La preparación no detectó el bloqueo anterior.');
+} catch (TurnoNoDisponible) {
+}
 $aislado = array_replace($turno, ['profesionales' => ['105'], 'inicio' => '2099-07-10T10:00']);
 $aisladoId = $interna->cargar($aislado, '101');
 try {
     $interna->cargar(array_replace($aislado, ['espacio' => '103']), '101');
     throw new RuntimeException('La ocupación de la profesional no fue detectada.');
 } catch (TurnoNoDisponible $error) {
-    verificar(str_contains($error->getMessage(), 'profesional') && !str_contains($error->getMessage(), 'espacio'), 'El conflicto debe identificar a la profesional.');
+    verificar(str_contains($error->getMessage(), 'profesional') && !str_contains($error->getMessage(), 'espacio'), 'El conflicto debe identificar a la profesional: '.$error->getMessage());
 }
 try {
     $interna->cargar(array_replace($aislado, ['profesionales' => []]), '101');

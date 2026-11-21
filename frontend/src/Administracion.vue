@@ -989,7 +989,7 @@ onBeforeUnmount(() => {
               <button v-if="diaHorario" type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('semanal')">+ Agregar otra franja</button>
               <template v-if="!diaHorario">
               <h3>Excepciones por fecha</h3>
-              <small>El horario especial reemplaza las franjas de ese día. Un horario no disponible impide agendar durante ese período, incluso en modo manual.</small>
+              <small>El horario especial reemplaza las franjas de ese día. Un horario no disponible impide asignar a esta profesional durante ese período, incluso en modo manual; no bloquea el espacio.</small>
               <div class="acciones">
                 <button type="button" class="secundario" :disabled="ocupado" @click="agregarExcepcion('especial')">+ Horario especial</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="agregarExcepcion('bloqueo')">+ Horario no disponible</button>

@@ -377,7 +377,7 @@ onMounted(() => ejecutar(async () => {
                 :class="{ secundario: vista !== opcion.id }" :disabled="ocupado" @click="cambiarVista(opcion.id)">{{ opcion.nombre }}</button>
             </div>
             <div class="acciones">
-              <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">+ Horario no disponible</button>
+              <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">+ Horario no disponible de profesional</button>
               <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno">+ Nuevo turno</button>
             </div>
           </div>
@@ -406,7 +406,7 @@ onMounted(() => ejecutar(async () => {
               <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
               <span v-if="vista === 'semana'" class="resumen-dia">
                 <small v-for="turno in dia.turnos.slice(0, 3)" :key="turno.id">
-                  {{ turno.todo_el_dia ? 'Todo el día' : reloj.format(new Date(turno.inicio)) }} · {{ turno.bloqueado ? 'Horario no disponible' : turno.servicio }}{{ !turno.bloqueado && turno.equipo_incompleto ? ' ⚠ Sin equipo completo' : '' }}
+                  {{ turno.todo_el_dia ? 'Todo el día' : reloj.format(new Date(turno.inicio)) }} · {{ turno.bloqueado ? `No disponible · ${turno.profesionales}` : turno.servicio }}{{ !turno.bloqueado && turno.equipo_incompleto ? ' ⚠ Sin equipo completo' : '' }}
                 </small>
               </span>
             </button>
@@ -417,7 +417,7 @@ onMounted(() => ejecutar(async () => {
             <li v-for="turno in turnosDia" :key="turno.id" :class="{ propio: !turno.bloqueado && esPropio(turno), bloqueado: turno.bloqueado }">
               <strong>{{ horarioVisible(turno) }}</strong>
               <div class="detalle-turno">
-                <span v-if="turno.bloqueado" class="marca-bloqueo">Horario no disponible</span>
+                <span v-if="turno.bloqueado" class="marca-bloqueo">Profesional no disponible</span>
                 <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
                 <small><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
                 <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
@@ -435,10 +435,11 @@ onMounted(() => ejecutar(async () => {
 
         <dialog ref="dialogoBloqueo" aria-labelledby="titulo-bloqueo" @close="modoBloqueo = false" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
-            <h2 id="titulo-bloqueo">Horario no disponible</h2>
+            <h2 id="titulo-bloqueo">Horario no disponible de una profesional</h2>
             <button type="button" class="secundario" :disabled="ocupado" @click="dialogoBloqueo.close()">Cerrar</button>
           </div>
           <p v-if="error && modoBloqueo" role="alert">{{ error }}</p>
+          <p>Este horario solo afecta a la profesional elegida; no reserva ni bloquea el espacio.</p>
           <form @submit.prevent="guardarBloqueo">
             <label>Profesional
               <select v-model="bloqueoNuevo.profesional" required>
