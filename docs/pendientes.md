@@ -25,6 +25,7 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 
 ## Integración de agenda
 
+- Implementar y probar la confirmación de turnos internos sin tiempo suficiente de preparación, preservando la integridad y la auditoría de las ocupaciones.
 - Resolver el paso entre inicios que usará la consulta pública y cómo se configurará.
 - Implementar el flujo de reservas pendientes, incluida la expiración y liberación transaccional de sus ocupaciones. Mientras exista una ocupación, el cálculo la considera ocupada.
 - Aplicar el bloqueo del espacio en las futuras escrituras de horarios y bloqueos, y verificar la concurrencia de esas operaciones con las confirmaciones. Las exclusiones GiST protegen las ocupaciones entre sí, pero no cubren las otras tablas.
