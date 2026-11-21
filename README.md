@@ -63,10 +63,10 @@ Usá `compose.prod.yaml` como archivo independiente. La configuración de produc
 2. Configurá `DATABASE_URL` como `postgresql://zenli:CONTRASEÑA@database:5432/zenli?charset=utf8`, usando el valor hexadecimal de `POSTGRES_PASSWORD` en lugar de `CONTRASEÑA`.
 3. Configurá el proxy HTTPS del VPS para enviar el tráfico del dominio a `http://127.0.0.1:8080`. Si ese puerto está ocupado, cambiá `ZENLI_HTTP_PORT` en `.env.production` y ajustá el destino del proxy.
 
-El proxy HTTPS debe reenviar el encabezado `Host` original. Nginx usa ese dominio para armar la URL pública de la miniatura de la portada al compartirla por WhatsApp y otras redes.
+El proxy HTTPS debe reenviar el encabezado `Host` original y agregar la IP del cliente en `X-Forwarded-For` (en nginx, `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Los límites de intentos de acceso usan esa IP; sin ella, los intentos fallidos de cualquier persona bloquean el ingreso de todas las cuentas. Nginx usa ese dominio para armar la URL pública de la miniatura de la portada al compartirla por WhatsApp y otras redes.
 
 En el VPS, ejecutá `./bin/desplegar` para publicar la rama actual. El script actualiza el código con avance rápido de Git, comprueba que PostgreSQL esté listo, respalda la base, construye las imágenes, aplica las migraciones pendientes y verifica las rutas de salud, portada y administración. Si falla una migración, se detiene antes de reemplazar los contenedores web. Requiere Bash, `flock`, Git, curl y Docker Compose.
 
 El despliegue guarda los respaldos en `~/zenli-backups`, o en el directorio indicado por `ZENLI_BACKUP_DIR`. Después de verificar el respaldo nuevo con `pg_restore --list`, conserva ese archivo y los dos más recientes generados por el script. Podés probar su restauración en una base de prueba vacía.
 
-Los archivos `composer.lock` y `frontend/package-lock.json` deben incorporarse al repositorio para fijar versiones. Hasta entonces, el build resuelve las dependencias con `composer install` y `npm install`. Con sus lockfiles presentes, Composer usa las versiones registradas y el frontend usa `npm ci`.
+`composer.lock` y `frontend/package-lock.json` fijan las versiones: el build instala exactamente las registradas, con `composer install` y `npm ci`. Para actualizar dependencias, ejecutá `composer update` y `composer audit` y versioná el lockfile resultante.

@@ -29,7 +29,7 @@ class PromocionPortada
     #[ORM\Column(name: 'actualizado_por', length: 100)]
     public string $actualizadoPor;
 
-    #[ORM\Column(name: 'actualizado_en', type: 'datetimetz_immutable')]
+    #[ORM\Column(name: 'actualizado_en', type: 'instante')]
     public DateTimeImmutable $actualizadoEn;
 
     #[ORM\Column(type: 'blob', nullable: true)]

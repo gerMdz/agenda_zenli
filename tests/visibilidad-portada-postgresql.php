@@ -13,6 +13,7 @@ use Psr\Log\NullLogger;
 
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
 require __DIR__.'/../src/Administracion/ConfiguracionPortada.php';
+require __DIR__.'/../src/Doctrine/InstanteType.php';
 require __DIR__.'/../src/Entity/ConfiguracionPortada.php';
 require __DIR__.'/../src/Repository/ConfiguracionPortadaRepository.php';
 require __DIR__.'/../migrations/Version20261120000300.php';
@@ -32,6 +33,7 @@ foreach ($migracion->getSql() as $consulta) {
 $verificar = static function (bool $condicion, string $mensaje): void {
     if (!$condicion) throw new RuntimeException($mensaje);
 };
+App\Doctrine\InstanteType::registrar();
 $configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
 $configuracion->enableNativeLazyObjects(true);
 $entidades = new EntityManager($conexion, $configuracion);

@@ -52,6 +52,6 @@ class ConfiguracionPortada
     #[ORM\Column(name: 'actualizado_por', type: 'bigint')]
     public string $actualizadoPor;
 
-    #[ORM\Column(name: 'actualizado_en', type: 'datetimetz_immutable')]
+    #[ORM\Column(name: 'actualizado_en', type: 'instante')]
     public \DateTimeImmutable $actualizadoEn;
 }

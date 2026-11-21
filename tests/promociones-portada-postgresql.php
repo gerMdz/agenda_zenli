@@ -14,6 +14,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/../src/Doctrine/InstanteType.php';
 require __DIR__.'/../src/Entity/PromocionPortada.php';
 require __DIR__.'/../src/Administracion/PromocionesPortada.php';
 require __DIR__.'/../migrations/Version20261120000100.php';
@@ -43,13 +44,17 @@ foreach ($migracion->getSql() as $consulta) {
 }
 $ordenInicial = $conexion->fetchFirstColumn('SELECT nombre FROM promociones_portada ORDER BY orden, id');
 if ($ordenInicial !== ['Eliminada', 'Oculta', 'Antigua']) throw new RuntimeException('La migración debe preservar el orden previo.');
-$conexion->executeStatement('DELETE FROM promociones_portada');
+App\Doctrine\InstanteType::registrar();
 $configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
 $configuracion->enableNativeLazyObjects(true);
 $promociones = new PromocionesPortada(new EntityManager($conexion, $configuracion));
 $verificar = static function (bool $condicion, string $mensaje): void {
     if (!$condicion) throw new RuntimeException($mensaje);
 };
+// Regresión: DEFAULT now() guarda microsegundos y el listado de administración devolvía 500.
+$verificar(preg_match('/\.\d{1,6}[+-]/', (string) $conexion->fetchOne('SELECT actualizado_en FROM promociones_portada LIMIT 1')) === 1, 'La prueba requiere un instante con microsegundos.');
+$verificar(count($promociones->listar()) === 2, 'Debe listar promociones con instantes con microsegundos.');
+$conexion->executeStatement('DELETE FROM promociones_portada');
 $promociones->guardar(null, ['nombre' => 'Promoción', 'descripcion' => 'Descripción de prueba'], 'admin');
 $lista = $promociones->listar();
 $id = (int) $lista[0]['id'];
