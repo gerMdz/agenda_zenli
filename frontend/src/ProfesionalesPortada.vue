@@ -16,9 +16,9 @@ onMounted(async () => {
 <template>
   <section v-if="profesionales.length" class="profesionales-portada" aria-labelledby="titulo-profesionales">
     <div class="contenido">
-      <p class="etiqueta">Zenli</p>
+      <span class="loto" aria-hidden="true"><i></i></span>
       <h2 id="titulo-profesionales">Nuestro equipo</h2>
-      <div class="adorno" aria-hidden="true">✿</div>
+      <div class="adorno" aria-hidden="true"></div>
       <ul :class="{ 'con-imagenes': mostrarImagenes }">
         <li v-for="profesional in profesionales" :key="profesional.id">
           <img v-if="mostrarImagenes" :src="`/api/profesionales-portada/${profesional.id}/imagen/${profesional.imagen_version}`" alt="">
@@ -32,7 +32,11 @@ onMounted(async () => {
 <style scoped>
 .profesionales-portada { padding: clamp(3rem, 6vw, 5rem) 1.5rem; border-block: 1px solid #e3ca91; background: #f8efdc; text-align: center; }
 .contenido { max-width: 75rem; margin-inline: auto; }
-.etiqueta { margin: 0 0 .45rem; color: #806024; font-size: .73rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
+.loto { width: 2.2rem; height: 1.2rem; display: inline-block; position: relative; margin-bottom: .45rem; color: #a57c35; }
+.loto::before, .loto::after, .loto i { content: ''; position: absolute; bottom: .1rem; left: 50%; width: .78rem; height: .78rem; border: 1.25px solid currentColor; border-radius: 85% 0 85% 0; }
+.loto i { transform: translateX(-50%) rotate(-45deg); bottom: .26rem; }
+.loto::before { transform: translateX(-105%) rotate(-78deg); }
+.loto::after { transform: translateX(4%) rotate(-12deg); }
 h2 { margin: 0; color: #15372a; font: 500 clamp(2rem, 4vw, 2.8rem)/1.15 Georgia, serif; }
 .adorno { display: flex; align-items: center; justify-content: center; gap: .7rem; margin: .8rem auto 1.8rem; color: #a57c35; font-size: 1rem; }
 .adorno::before, .adorno::after { content: ''; width: 2.5rem; height: 1px; background: #d7bd85; }
