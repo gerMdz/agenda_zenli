@@ -47,6 +47,18 @@ final readonly class PresentacionProfesionalesController
         return $this->respuesta($this->presentacion->configuracion());
     }
 
+    #[Route('/api/admin/profesionales-portada/{id}/orden', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PATCH'])]
+    public function orden(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            return $this->respuesta($this->presentacion->mover($id, $peticion->toArray()['direccion'] ?? null, $usuario['id']));
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del movimiento.' : $error->getMessage()], 422);
+        }
+    }
+
     #[Route('/api/admin/profesionales-portada/{id}/imagen', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['POST'])]
     public function guardarImagen(Request $peticion, string $id): JsonResponse
     {

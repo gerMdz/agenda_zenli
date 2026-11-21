@@ -6,6 +6,9 @@ const promociones = ref([])
 const editando = ref(null)
 const nombre = ref('')
 const descripcion = ref('')
+const archivo = ref(null)
+const eliminarImagen = ref(false)
+const versionFormulario = ref(0)
 const abierto = ref(false)
 const dialogo = ref(null)
 const ocupado = ref(false)
@@ -14,8 +17,8 @@ const error = ref('')
 async function solicitar(ruta, method = 'GET', datos) {
   const headers = { Accept: 'application/json' }
   if (method !== 'GET') headers['X-Zenli-CSRF'] = props.csrf
-  if (datos) headers['Content-Type'] = 'application/json'
-  const respuesta = await fetch(ruta, { method, headers, body: datos ? JSON.stringify(datos) : undefined })
+  if (datos && !(datos instanceof FormData)) headers['Content-Type'] = 'application/json'
+  const respuesta = await fetch(ruta, { method, headers, body: datos instanceof FormData ? datos : datos ? JSON.stringify(datos) : undefined })
   const contenido = await respuesta.json().catch(() => ({}))
   if (!respuesta.ok) throw new Error(contenido.error || 'No se pudo completar la operación.')
   promociones.value = contenido.promociones
@@ -32,6 +35,9 @@ function editar(promocion = null) {
   editando.value = promocion
   nombre.value = promocion?.nombre ?? ''
   descripcion.value = promocion?.descripcion ?? ''
+  archivo.value = null
+  eliminarImagen.value = false
+  versionFormulario.value++
   error.value = ''
   abierto.value = true
   dialogo.value.showModal()
@@ -40,7 +46,12 @@ function editar(promocion = null) {
 function guardar() {
   return ejecutar(async () => {
     const ruta = editando.value ? `/api/admin/promociones/${editando.value.id}` : '/api/admin/promociones'
-    await solicitar(ruta, editando.value ? 'PUT' : 'POST', { nombre: nombre.value, descripcion: descripcion.value })
+    const datos = new FormData()
+    datos.append('nombre', nombre.value)
+    datos.append('descripcion', descripcion.value)
+    if (archivo.value) datos.append('imagen', archivo.value)
+    if (eliminarImagen.value) datos.append('eliminar_imagen', '1')
+    await solicitar(ruta, 'POST', datos)
     dialogo.value.close()
   })
 }
@@ -80,6 +91,11 @@ onMounted(() => ejecutar(() => solicitar('/api/admin/promociones')))
       <input id="promocion-nombre" v-model="nombre" minlength="2" maxlength="100" :disabled="ocupado" required>
       <label for="promocion-descripcion">Descripción</label>
       <textarea id="promocion-descripcion" v-model="descripcion" minlength="5" maxlength="5000" rows="4" :disabled="ocupado" required></textarea>
+      <img v-if="editando?.imagen_version && !eliminarImagen" class="imagen-promocion" :src="`/api/admin/promociones/${editando.id}/imagen/${editando.imagen_version}`" alt="Imagen actual de la promoción">
+      <label for="promocion-imagen">Imagen opcional</label>
+      <input :key="versionFormulario" id="promocion-imagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado || eliminarImagen" @change="archivo = $event.target.files[0] ?? null">
+      <small>JPG, PNG o WebP, hasta 4 MB y 6000 píxeles por lado.</small>
+      <label v-if="editando?.imagen_version"><input v-model="eliminarImagen" type="checkbox" :disabled="ocupado || !!archivo"> Eliminar imagen actual</label>
       <small>Las promociones nuevas se crean ocultas.</small>
       <div class="acciones"><button :disabled="ocupado">Guardar</button><button type="button" class="secundario" :disabled="ocupado" @click="dialogo.close()">Cancelar</button></div>
     </form>
@@ -108,6 +124,8 @@ form { display: grid; gap: .55rem; margin-top: 1.4rem; }
 label { font-weight: 650; font-size: .88rem; }
 input, textarea { box-sizing: border-box; min-width: 0; width: 100%; padding: .62rem .7rem; border: 1px solid #aaab98; border-radius: .4rem; background: #fffdf7; color: #15372a; font: inherit; }
 textarea { resize: vertical; }
+input[type=checkbox] { width: auto; }
+.imagen-promocion { max-width: 100%; max-height: 12rem; object-fit: contain; }
 button { width: fit-content; padding: .56rem .85rem; border: 1px solid #214d3a; border-radius: .4rem; background: #214d3a; color: #fffdfa; cursor: pointer; font: inherit; font-weight: 650; font-size: .89rem; }
 button.secundario { background: #fff9ec; color: #214d3a; }
 button.peligro { background: #75271f; border-color: #75271f; }

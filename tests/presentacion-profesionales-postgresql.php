@@ -8,6 +8,7 @@ use App\Controller\PresentacionProfesionalesController;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
 use DoctrineMigrations\Version20261120000200;
+use DoctrineMigrations\Version20261120000400;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,6 +18,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
 require __DIR__.'/../migrations/Version20261120000200.php';
+require __DIR__.'/../migrations/Version20261120000400.php';
 require __DIR__.'/../src/Administracion/PresentacionProfesionales.php';
 require __DIR__.'/../src/Administracion/SesionAdministrativa.php';
 require __DIR__.'/../src/Controller/PresentacionProfesionalesController.php';
@@ -34,8 +36,25 @@ $db->executeStatement("INSERT INTO profesionales VALUES (1, 'Nataly', true, 2), 
 $migracion = new Version20261120000200($db, new NullLogger());
 $migracion->up(new Schema());
 foreach ($migracion->getSql() as $sql) $db->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());
+$migracion = new Version20261120000400($db, new NullLogger());
+$migracion->up(new Schema());
+foreach ($migracion->getSql() as $sql) $db->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());
 $verificar = static function (bool $valor, string $mensaje): void { if (!$valor) throw new RuntimeException($mensaje); };
 $servicio = new PresentacionProfesionales($db);
+$ids = static fn (array $lista): array => array_column($lista, 'id');
+$verificar($ids($servicio->configuracion()['profesionales']) === ['3', '2', '1'], 'Orden inicial por nombre.');
+$servicio->mover('1', -1, '1');
+$verificar($ids($servicio->configuracion()['profesionales']) === ['3', '1', '2'], 'Movimiento persistido incluyendo inactivos.');
+$verificar((string) $db->fetchOne('SELECT actualizado_por FROM presentacion_profesionales_config WHERE id = 1') === '1', 'Movimiento registra autor.');
+$servicio->cambiarModo('nombres', '1');
+$verificar($ids($servicio->publicos()) === ['1', '2'], 'Orden público filtra inactivos.');
+$servicio->cambiarModo('ocultos', '1');
+foreach ([['3', -1], ['2', 1], ['999', 1], ['1', 0]] as [$id, $direccion]) {
+    try { $servicio->mover($id, $direccion, '1'); throw new RuntimeException('Movimiento inválido aceptado.'); } catch (InvalidArgumentException) {}
+}
+$db->executeStatement("INSERT INTO profesionales VALUES (4, 'Ana', true, NULL, NULL)");
+$verificar($ids($servicio->configuracion()['profesionales']) === ['3', '1', '2', '4'], 'Perfil nuevo al final.');
+$db->executeStatement('DELETE FROM profesionales WHERE id = 4');
 $verificar($servicio->configuracion()['modo'] === 'ocultos' && $servicio->publicos() === [], 'Inicialmente ocultos.');
 $archivo = new UploadedFile(__DIR__.'/../frontend/src/image/favicon.svg', 'archivo.svg', null, null, true);
 try { $servicio->guardarImagen('1', $archivo, false, '1'); throw new RuntimeException('Debe rechazar SVG.'); } catch (InvalidArgumentException) {}
@@ -68,4 +87,17 @@ $sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $
 try { $controller->modo($peticion); throw new RuntimeException('Escritura sin CSRF aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Debe requerir CSRF.'); }
 $peticion->headers->set('X-Zenli-CSRF', 'token');
 $verificar($controller->modo($peticion)->getStatusCode() === 200, 'Administración puede cambiar modo.');
+$orden = Request::create('/api/admin/profesionales-portada/1/orden', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"direccion":1}');
+$orden->setSession($sesion);
+$sesion->remove('admin_id');
+try { $controller->orden($orden, '1'); throw new RuntimeException('Orden anónimo aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Orden requiere sesión.'); }
+$sesion->set('admin_id', '2'); $sesion->set('admin_credencial', hash('sha256', $hash));
+try { $controller->orden($orden, '1'); throw new RuntimeException('Orden profesional aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Orden requiere administración.'); }
+$sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $hash));
+try { $controller->orden($orden, '1'); throw new RuntimeException('Orden sin CSRF aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Orden requiere CSRF.'); }
+$orden->headers->set('X-Zenli-CSRF', 'token');
+$verificar($controller->orden($orden, '1')->getStatusCode() === 200, 'Administración puede ordenar.');
+$orden = Request::create('/api/admin/profesionales-portada/1/orden', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"direccion":"1"}');
+$orden->setSession($sesion); $orden->headers->set('X-Zenli-CSRF', 'token');
+$verificar($controller->orden($orden, '1')->getStatusCode() === 422, 'Dirección debe ser entera.');
 fwrite(STDOUT, "Presentación, privacidad y permisos verificados.\n");

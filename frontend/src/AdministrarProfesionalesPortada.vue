@@ -31,6 +31,13 @@ function cambiarModo(evento) {
   })
 }
 
+function mover(id, direccion) {
+  solicitar(`/api/admin/profesionales-portada/${id}/orden`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-Zenli-CSRF': props.csrf },
+    body: JSON.stringify({ direccion }),
+  })
+}
+
 function imagen(id, archivo, eliminar = false) {
   const datos = new FormData()
   if (archivo) datos.append('imagen', archivo)
@@ -68,10 +75,14 @@ onMounted(() => solicitar('/api/admin/profesionales-portada'))
         <small id="ayuda-modo-profesionales">Solo se muestran profesionales activas. Si falta alguna imagen, se muestran solo nombres hasta completar todas.</small>
       </div>
       <ul class="lista-profesionales">
-        <li v-for="profesional in configuracion.profesionales" :key="profesional.id">
+        <li v-for="(profesional, index) in configuracion.profesionales" :key="profesional.id">
           <div class="profesional-detalle">
             <strong>{{ profesional.nombre }} <span v-if="!profesional.activa">(inactiva)</span></strong>
             <span class="badge" :class="{ 'sin-imagen': !profesional.imagen_version }">{{ profesional.imagen_version ? 'con imagen' : 'sin imagen' }}</span>
+          </div>
+          <div class="orden-controles">
+            <button type="button" :disabled="ocupado || index === 0" :aria-label="`Subir a ${profesional.nombre}`" @click="mover(profesional.id, -1)">Subir</button>
+            <button type="button" :disabled="ocupado || index === configuracion.profesionales.length - 1" :aria-label="`Bajar a ${profesional.nombre}`" @click="mover(profesional.id, 1)">Bajar</button>
           </div>
           <div class="imagen-profesional">
             <img v-if="profesional.imagen_version" :src="`/api/admin/profesionales-portada/${profesional.id}/imagen/${profesional.imagen_version}`" :alt="`Imagen de ${profesional.nombre}`">
@@ -106,6 +117,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .lista-profesionales { margin: .75rem 0; padding: 0; list-style: none; }
 .lista-profesionales li { padding: .8rem 0; border-bottom: 1px solid #e4dac3; font-size: .88rem; }
 .profesional-detalle { min-width: 0; overflow-wrap: anywhere; }
+.orden-controles { display: flex; gap: .5rem; margin-top: .6rem; }
 .badge { display: inline-block; margin-left: .3rem; padding: .1rem .4rem; border-radius: .3rem; background: #e4efdf; color: #194832; font-size: .7rem; }
 .badge.sin-imagen { background: #f9e3df; color: #75271f; }
 .imagen-profesional { display: flex; align-items: flex-start; gap: 1rem; margin-top: .6rem; }

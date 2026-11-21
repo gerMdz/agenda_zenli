@@ -18,7 +18,7 @@ final readonly class PresentacionProfesionales
     {
         return [
             'modo' => $this->conexion->fetchOne('SELECT modo FROM presentacion_profesionales_config WHERE id = 1') ?: 'ocultos',
-            'profesionales' => $this->conexion->fetchAllAssociative('SELECT p.id::text, p.nombre, p.activa, i.imagen_version FROM profesionales p LEFT JOIN presentacion_profesionales_imagenes i ON i.profesional_id = p.id ORDER BY p.nombre, p.id'),
+            'profesionales' => $this->conexion->fetchAllAssociative('SELECT p.id::text, p.nombre, p.activa, i.imagen_version FROM profesionales p LEFT JOIN presentacion_profesionales_imagenes i ON i.profesional_id = p.id ORDER BY p.orden_portada NULLS LAST, p.nombre, p.id'),
         ];
     }
 
@@ -30,8 +30,34 @@ final readonly class PresentacionProfesionales
             FROM presentacion_profesionales_config c CROSS JOIN profesionales p
             LEFT JOIN presentacion_profesionales_imagenes i ON i.profesional_id = p.id
             WHERE c.id = 1 AND c.modo IN ('nombres', 'imagenes') AND p.activa
-            ORDER BY p.nombre, p.id
+            ORDER BY p.orden_portada NULLS LAST, p.nombre, p.id
             SQL);
+    }
+
+    public function mover(string $id, mixed $direccion, string $autor): array
+    {
+        if (!is_int($direccion) || !in_array($direccion, [-1, 1], true)) {
+            throw new InvalidArgumentException('La dirección del movimiento no es válida.');
+        }
+
+        return $this->conexion->transactional(function (Connection $conexion) use ($id, $direccion, $autor): array {
+            $conexion->executeStatement('LOCK TABLE profesionales IN SHARE ROW EXCLUSIVE MODE');
+            $lista = $this->configuracion()['profesionales'];
+            $indice = array_search($id, array_column($lista, 'id'), true);
+            if ($indice === false) {
+                throw new InvalidArgumentException('La profesional no existe.');
+            }
+            $destino = $indice + $direccion;
+            if ($destino < 0 || $destino >= count($lista)) {
+                throw new InvalidArgumentException('La profesional no se puede mover en esa dirección.');
+            }
+            [$lista[$indice], $lista[$destino]] = [$lista[$destino], $lista[$indice]];
+            foreach ($lista as $orden => $profesional) {
+                $conexion->executeStatement('UPDATE profesionales SET orden_portada = ? WHERE id = ?', [$orden, $profesional['id']]);
+            }
+            $conexion->executeStatement('UPDATE presentacion_profesionales_config SET actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = 1', [$autor]);
+            return $this->configuracion();
+        });
     }
 
     public function imagen(string $id, string $version, bool $publica): array|false

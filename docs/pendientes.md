@@ -21,6 +21,7 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 - Completar duración mínima, cantidad de profesionales y preparación de los servicios que se quieran agendar; revisar los tratamientos importados antes de mostrarlos.
 - Confirmar la autorización de cada profesional antes de publicar su nombre o imagen; definir cómo se registra y revoca el consentimiento. Completar todas las imágenes para mostrarlas en conjunto.
 - Validar la migración de visibilidad de portada y sus controles en PostgreSQL y navegador antes del despliegue.
+- Verificar visualmente en navegador el orden de profesionales y las imágenes de promociones.
 
 ## Integración de agenda
 

@@ -7,6 +7,7 @@ namespace App\Administracion;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 final readonly class PromocionesPortada
 {
@@ -16,13 +17,19 @@ final readonly class PromocionesPortada
 
     public function listar(bool $publicas = false): array
     {
-        $columnas = $publicas ? 'id, nombre, descripcion' : 'id, nombre, descripcion, visible, actualizado_por, actualizado_en';
+        $columnas = $publicas ? 'id, nombre, descripcion, imagen_version' : 'id, nombre, descripcion, imagen_version, visible, actualizado_por, actualizado_en';
         $filtro = $publicas ? ' AND visible = true' : '';
 
         return $this->conexion->fetchAllAssociative("SELECT $columnas FROM promociones_portada WHERE eliminado = false$filtro ORDER BY id DESC");
     }
 
-    public function guardar(?int $id, array $datos, string $autor): void
+    public function imagen(int $id, string $version, bool $publica = false): array|false
+    {
+        $filtro = $publica ? ' AND visible = true' : '';
+        return $this->conexion->fetchAssociative("SELECT encode(imagen, 'base64') AS contenido, imagen_tipo FROM promociones_portada WHERE id = ? AND imagen_version = ? AND eliminado = false$filtro", [$id, $version]);
+    }
+
+    public function guardar(?int $id, array $datos, string $autor, ?UploadedFile $archivo = null, bool $eliminarImagen = false): void
     {
         $nombre = $datos['nombre'] ?? null;
         $descripcion = $datos['descripcion'] ?? null;
@@ -34,11 +41,28 @@ final readonly class PromocionesPortada
         if (mb_strlen($nombre) < 2 || mb_strlen($nombre) > 100 || mb_strlen($descripcion) < 5 || mb_strlen($descripcion) > 5000) {
             throw new InvalidArgumentException('El nombre debe tener entre 2 y 100 caracteres y la descripción entre 5 y 5000.');
         }
+        if ($archivo !== null && $eliminarImagen) {
+            throw new InvalidArgumentException('Elegí reemplazar o eliminar la imagen, no ambas opciones.');
+        }
+        $imagen = null;
+        if ($archivo !== null) {
+            if (!$archivo->isValid() || $archivo->getSize() === false || $archivo->getSize() < 1 || $archivo->getSize() > 4 * 1024 * 1024) {
+                throw new InvalidArgumentException('Elegí una sola imagen de hasta 4 MB.');
+            }
+            $info = @getimagesize($archivo->getPathname());
+            if ($info === false || !in_array($info['mime'], ['image/jpeg', 'image/png', 'image/webp'], true)
+                || $info[0] < 1 || $info[1] < 1 || $info[0] > 6000 || $info[1] > 6000) {
+                throw new InvalidArgumentException('Subí una imagen JPG, PNG o WebP de hasta 6000 píxeles por lado.');
+            }
+            $bytes = $archivo->getContent();
+            $imagen = [base64_encode($bytes), $info['mime'], hash('sha256', $bytes)];
+        }
         if ($id === null) {
-            $this->conexion->executeStatement('INSERT INTO promociones_portada (nombre, descripcion, actualizado_por) VALUES (?, ?, ?)', [$nombre, $descripcion, $autor]);
+            $this->conexion->executeStatement("INSERT INTO promociones_portada (nombre, descripcion, actualizado_por, imagen, imagen_tipo, imagen_version) VALUES (?, ?, ?, decode(?, 'base64'), ?, ?)", [$nombre, $descripcion, $autor, ...($imagen ?? [null, null, null])]);
             return;
         }
-        $afectadas = $this->conexion->executeStatement('UPDATE promociones_portada SET nombre = ?, descripcion = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ? AND eliminado = false', [$nombre, $descripcion, $autor, $id]);
+        $setImagen = $eliminarImagen ? ', imagen = NULL, imagen_tipo = NULL, imagen_version = NULL' : ($imagen !== null ? ", imagen = decode(?, 'base64'), imagen_tipo = ?, imagen_version = ?" : '');
+        $afectadas = $this->conexion->executeStatement("UPDATE promociones_portada SET nombre = ?, descripcion = ?, actualizado_por = ?, actualizado_en = statement_timestamp()$setImagen WHERE id = ? AND eliminado = false", [$nombre, $descripcion, $autor, ...($imagen ?? []), $id]);
         if ($afectadas !== 1) {
             throw new InvalidArgumentException('La promoción no existe.');
         }

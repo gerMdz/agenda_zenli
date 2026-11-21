@@ -138,6 +138,7 @@ onMounted(async () => {
         <div class="titulo-seccion"><span class="loto" aria-hidden="true"><i></i></span><h2 id="titulo-promociones">Promociones</h2></div>
         <div class="tratamientos">
           <article v-for="promocion in promociones" :key="promocion.id">
+            <div v-if="promocion.imagen_version" class="foto-servicio"><img :src="`/api/promociones/${promocion.id}/imagen/${promocion.imagen_version}`" :alt="promocion.nombre" loading="lazy"></div>
             <div class="tratamiento-texto"><h3>{{ promocion.nombre }}</h3><p class="descripcion-promocion">{{ promocion.descripcion }}</p></div>
           </article>
         </div>
