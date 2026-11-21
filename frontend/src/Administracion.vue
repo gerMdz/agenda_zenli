@@ -486,7 +486,7 @@ async function crearServicio() {
   }
 }
 
-function iniciarEdicion(servicio) {
+async function iniciarEdicion(servicio) {
   servicioEditando.value = servicio
   editNombre.value = servicio.nombre
   editDescCorta.value = servicio.descripcion_corta
@@ -499,6 +499,8 @@ function iniciarEdicion(servicio) {
   servicioImagenTemporal.value = null
   editarError.value = ''
   error.value = ''
+  await nextTick()
+  document.getElementById('edit-nombre')?.focus()
 }
 
 function cancelarEdicion() {
@@ -539,7 +541,7 @@ async function guardarEdicion() {
     datos.set('detalle', editDetalle.value)
     if (editArchivo.value) datos.set('imagen', editArchivo.value)
     if (editEliminarImagen.value) datos.set('eliminar_imagen', '1')
-    const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'PATCH', datos })
+    const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}`, { method: 'POST', datos })
     servicios.value = resultado.servicios
     cancelarEdicion()
     mensaje.value = 'Servicio actualizado.'

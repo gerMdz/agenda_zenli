@@ -124,3 +124,35 @@ try {
 }
 $verificar($portada->consultar()['direccion'] === '', 'Un dato inválido no debe modificar la configuración.');
 fwrite(STDOUT, "Configuración pública verificada.\n");
+
+$conexion->executeStatement("ALTER TABLE usuarios ADD email TEXT, ADD password_hash TEXT, ADD roles JSONB, ADD activo BOOLEAN DEFAULT true");
+$conexion->executeStatement("CREATE TABLE profesionales (id BIGINT, usuario_id BIGINT, activa BOOLEAN)");
+$hash = password_hash('clave de prueba', PASSWORD_DEFAULT);
+$conexion->executeStatement("UPDATE usuarios SET email = 'admin@example.test', password_hash = ?, roles = '[\"ROLE_ADMIN\"]' WHERE id = 1", [$hash]);
+foreach (['SesionAdministrativa', 'UsuariosAdministrativos'] as $clase) {
+    require __DIR__.'/../src/Administracion/'.$clase.'.php';
+}
+require __DIR__.'/../src/Controller/AdministracionController.php';
+$controller = new App\Controller\AdministracionController(new App\Administracion\SesionAdministrativa($conexion), $portada, $servicios, new App\Administracion\UsuariosAdministrativos($conexion));
+$sesion = new Symfony\Component\HttpFoundation\Session\Session(new Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage());
+$sesion->set('admin_id', '1');
+$sesion->set('admin_credencial', hash('sha256', $hash));
+$sesion->set('admin_csrf', 'token');
+$peticion = Symfony\Component\HttpFoundation\Request::create('/api/admin/servicios/'.$otraPareja.'/visible', 'PATCH', server: ['HTTP_X_ZENLI_CSRF' => 'token', 'CONTENT_TYPE' => 'application/json'], content: '{"visible":false}');
+$peticion->setSession($sesion);
+$verificar($controller->cambiarVisibilidadServicio($peticion, (string) $otraPareja)->getStatusCode() === 200 && !$servicios->obtener($otraPareja)['visible'], 'Debe ocultar mediante JSON.');
+$peticion = Symfony\Component\HttpFoundation\Request::create('/api/admin/servicios/'.$otraPareja.'/visible', 'PATCH', server: ['HTTP_X_ZENLI_CSRF' => 'token', 'CONTENT_TYPE' => 'application/json'], content: '{"visible":true}');
+$peticion->setSession($sesion);
+$verificar($controller->cambiarVisibilidadServicio($peticion, (string) $otraPareja)->getStatusCode() === 200 && $servicios->obtener($otraPareja)['visible'], 'Debe mostrar mediante JSON.');
+foreach (['{}', '{"visible":"false"}', '{'] as $contenidoInvalido) {
+    $peticion = Symfony\Component\HttpFoundation\Request::create('/api/admin/servicios/'.$otraPareja.'/visible', 'PATCH', server: ['HTTP_X_ZENLI_CSRF' => 'token', 'CONTENT_TYPE' => 'application/json'], content: $contenidoInvalido);
+    $peticion->setSession($sesion);
+    $verificar(in_array($controller->cambiarVisibilidadServicio($peticion, (string) $otraPareja)->getStatusCode(), [400, 422], true), 'Debe rechazar visibilidad inválida.');
+    $verificar((bool) $servicios->obtener($otraPareja)['visible'], 'Una solicitud inválida no debe cambiar la visibilidad.');
+}
+$ruta = (new ReflectionMethod($controller, 'actualizarServicio'))->getAttributes(Symfony\Component\Routing\Attribute\Route::class)[0]->newInstance();
+$verificar(in_array('POST', $ruta->getMethods(), true), 'La edición con archivos debe aceptar POST multipart.');
+$peticion = Symfony\Component\HttpFoundation\Request::create('/api/admin/servicios/'.$otraPareja, 'POST', ['nombre' => 'Servicio editado', 'descripcion_corta' => 'Descripción editada', 'detalle' => 'Detalle'], server: ['HTTP_X_ZENLI_CSRF' => 'token']);
+$peticion->setSession($sesion);
+$verificar($controller->actualizarServicio($peticion, (string) $otraPareja)->getStatusCode() === 200 && $servicios->obtener($otraPareja)['nombre'] === 'Servicio editado', 'Debe editar un servicio mediante formulario.');
+fwrite(STDOUT, "Visibilidad y edición del controlador verificadas.\n");

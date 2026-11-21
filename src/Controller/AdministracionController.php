@@ -201,7 +201,7 @@ final readonly class AdministracionController
         return $this->respuesta(['servicios' => $this->servicios->listar(), 'creado' => $id], 201);
     }
 
-    #[Route('/servicios/{id}', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
+    #[Route('/servicios/{id}', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['POST', 'PATCH'])]
     public function actualizarServicio(Request $peticion, string $id): JsonResponse
     {
         $usuario = $this->sesion->exigir($peticion);
@@ -293,8 +293,14 @@ final readonly class AdministracionController
         $this->sesion->verificarToken($peticion);
 
         try {
-            $visible = $peticion->request->getBoolean('visible');
+            $datos = $peticion->toArray();
+            $visible = $datos['visible'] ?? null;
+            if (!is_bool($visible)) {
+                throw new InvalidArgumentException('Elegí una visibilidad válida.');
+            }
             $this->servicios->cambiarVisibilidad((int)$id, $visible, $usuario['id']);
+        } catch (JsonException) {
+            return $this->error('Elegí una visibilidad válida.', 400);
         } catch (InvalidArgumentException $error) {
             return $this->error($error->getMessage(), 422);
         }
