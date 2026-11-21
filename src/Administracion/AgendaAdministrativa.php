@@ -243,7 +243,7 @@ final readonly class AgendaAdministrativa
                         throw new InvalidArgumentException('Seleccioná profesionales activas.');
                     }
                     if (!$this->horarios->permite($profesional, $desde, $fin)) {
-                        throw new TurnoNoDisponible('Una profesional asignada no está disponible durante el turno o su preparación; revisá sus horarios y bloqueos.');
+                        throw new TurnoNoDisponible('Una profesional asignada no está disponible durante el turno; revisá sus horarios y bloqueos.');
                     }
                     $inicioProfesional = $desde->format(DATE_ATOM);
                     foreach ($anterior['ocupaciones_profesionales'] ?? [] as $ocupacionAnteriorProfesional) {

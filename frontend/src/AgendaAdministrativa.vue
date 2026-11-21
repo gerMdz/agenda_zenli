@@ -28,6 +28,10 @@ const dialogoBloqueo = ref(null)
 const modoBloqueo = ref(false)
 const dialogoMensaje = ref(null)
 const mensajeAbierto = ref(false)
+const dialogoPreparacion = ref(null)
+const preparacionEditada = ref(null)
+const inicioPreparacion = ref('')
+const finPreparacion = ref('')
 const bloqueoNuevo = ref({ profesional: '', fecha: '', todo_el_dia: false, hora_inicio: '', hora_fin: '' })
 const nombreDia = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
 const tituloMes = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -80,7 +84,11 @@ const turnosVisibles = computed(() => {
     equipo: [bloqueo.profesional_id],
     bloqueado: true,
   }))
-  return [...(datos.value?.turnos ?? []), ...bloqueos]
+  const preparaciones = (datos.value?.preparaciones ?? []).map(item => ({
+    ...item, id: `preparacion-${item.id}`, preparacionId: item.id,
+    esPreparacion: true, equipo: datos.value?.turnos.find(turno => turno.id === item.turno_id)?.equipo ?? [], servicio: 'Preparación del espacio',
+  }))
+  return [...(datos.value?.turnos ?? []), ...bloqueos, ...preparaciones]
     .filter(turno => !soloMios.value || esPropio(turno))
     .sort((a, b) => new Date(a.inicio) - new Date(b.inicio))
 })
@@ -105,9 +113,10 @@ const dias = computed(() => {
     const clave = claveDia(dia)
     const turnos = turnosEnDia(clave)
     const bloqueos = turnos.filter(turno => turno.bloqueado).length
+    const preparaciones = turnos.filter(turno => turno.esPreparacion).length
     resultado.push({
       clave, numero: dia.getUTCDate(), nombre: nombreDia.format(dia), turnos, bloqueos,
-      citas: turnos.length - bloqueos, propios: turnos.filter(turno => !turno.bloqueado && esPropio(turno)).length,
+      citas: turnos.length - bloqueos - preparaciones, propios: turnos.filter(turno => !turno.bloqueado && !turno.esPreparacion && esPropio(turno)).length,
     })
   }
   return resultado
@@ -312,6 +321,40 @@ function cancelarTurno(turno) {
   })
 }
 
+function fechaHoraLocal(valor) {
+  const fechaHora = new Date(valor)
+  return `${calendario.format(fechaHora)}T${reloj.format(fechaHora)}`
+}
+
+function editarPreparacion(item) {
+  error.value = ''
+  preparacionEditada.value = item
+  inicioPreparacion.value = fechaHoraLocal(item.inicio)
+  finPreparacion.value = fechaHoraLocal(item.fin)
+  dialogoPreparacion.value.showModal()
+}
+
+function guardarPreparacion() {
+  return ejecutar(async () => {
+    const item = preparacionEditada.value
+    await api(`/api/admin/agenda/preparaciones/${item.preparacionId}`, 'PUT', {
+      inicio: inicioPreparacion.value, fin: finPreparacion.value, revision: Number(item.revision),
+    })
+    dialogoPreparacion.value.close()
+    await cargarDia()
+    aviso.value = 'Preparación actualizada.'
+  })
+}
+
+function eliminarPreparacion(item) {
+  if (!window.confirm('¿Eliminar esta preparación del espacio?')) return
+  return ejecutar(async () => {
+    await api(`/api/admin/agenda/preparaciones/${item.preparacionId}`, 'DELETE', { revision: Number(item.revision) })
+    await cargarDia()
+    aviso.value = 'Preparación eliminada.'
+  })
+}
+
 function enviarMensaje() {
   return ejecutar(async () => {
     bandeja.value = await api('/api/admin/agenda/mensajes', 'POST', { destinatario: destinatario.value, texto: texto.value })
@@ -365,7 +408,7 @@ onMounted(() => ejecutar(async () => {
     <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda">
     <main id="turnos">
       <h1>{{ seccionAgenda === 'mensajes' ? 'Mensajes privados' : 'Agenda interna' }}</h1>
-      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto" role="alert">{{ error }}</p>
+      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
       <p v-if="!datos && ocupado" role="status">Cargando agenda…</p>
 
@@ -418,20 +461,39 @@ onMounted(() => ejecutar(async () => {
               <strong>{{ horarioVisible(turno) }}</strong>
               <div class="detalle-turno">
                 <span v-if="turno.bloqueado" class="marca-bloqueo">Profesional no disponible</span>
+                <span v-else-if="turno.esPreparacion">Preparación del espacio</span>
                 <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
-                <small><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
+                <small v-if="turno.esPreparacion">{{ turno.espacio }}</small>
+                <small v-else><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
                 <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
-                <small v-if="!turno.bloqueado">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
+                <small v-if="!turno.bloqueado && !turno.esPreparacion">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
               </div>
               <a v-if="turno.bloqueado && usuario.admin" class="enlace-accion" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar horario no disponible</a>
+              <div v-else-if="turno.esPreparacion && turno.editable" class="acciones">
+                <button type="button" :disabled="ocupado" @click="editarPreparacion(turno)">Editar</button>
+                <button type="button" class="secundario" :disabled="ocupado" @click="eliminarPreparacion(turno)">Eliminar</button>
+              </div>
               <div v-else-if="turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
               </div>
-              <small v-else-if="!turno.bloqueado">Turno compartido · lo administra el equipo de administración</small>
+              <small v-else-if="!turno.bloqueado && !turno.esPreparacion">Turno compartido · lo administra el equipo de administración</small>
             </li>
           </ul>
         </section>
+
+        <dialog ref="dialogoPreparacion" aria-labelledby="titulo-preparacion" @close="preparacionEditada = null" @cancel="ocupado && $event.preventDefault()">
+          <div class="barra">
+            <h2 id="titulo-preparacion">Editar preparación del espacio</h2>
+            <button type="button" class="secundario" :disabled="ocupado" @click="dialogoPreparacion.close()">Cerrar</button>
+          </div>
+          <p v-if="error && preparacionEditada" role="alert">{{ error }}</p>
+          <form @submit.prevent="guardarPreparacion">
+            <label>Desde <input v-model="inicioPreparacion" type="datetime-local" required></label>
+            <label>Hasta <input v-model="finPreparacion" type="datetime-local" required></label>
+            <button :disabled="ocupado">Guardar cambios</button>
+          </form>
+        </dialog>
 
         <dialog ref="dialogoBloqueo" aria-labelledby="titulo-bloqueo" @close="modoBloqueo = false" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
@@ -473,7 +535,7 @@ onMounted(() => ejecutar(async () => {
                 </select>
               </label>
               <p v-if="servicio && preparacion == null"><template v-if="usuario.admin">Definí la preparación de este servicio en <a href="/admin#configuracion-agenda">Administración</a>.</template><template v-else>Pedile a administración que configure la preparación de este servicio.</template></p>
-              <p v-else-if="servicio">Preparación antes del turno: {{ preparacion }} min.</p>
+              <p v-else-if="servicio">Preparación del espacio después del turno: {{ preparacion }} min.</p>
               <label>Fecha del turno <input v-model="fechaTurno" type="date" required></label>
               <label>Nombre del cliente <input v-model="cliente" maxlength="150" required></label>
               <label class="opcion"><input v-model="senaPagada" type="checkbox"> Seña pagada</label>
