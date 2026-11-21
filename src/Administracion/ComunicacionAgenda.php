@@ -4,34 +4,47 @@ declare(strict_types=1);
 
 namespace App\Administracion;
 
-use Doctrine\DBAL\Connection;
+use App\Entity\MensajeAgenda;
+use App\Entity\Profesional;
+use App\Entity\ProfesionalCuentaAdministrativa;
+use App\Entity\UsuarioAdministrativo;
+use App\Entity\UsuarioPerfil;
+use DateTimeInterface;
+use Doctrine\DBAL\LockMode;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use InvalidArgumentException;
 
 final readonly class ComunicacionAgenda
 {
-    private const CONTACTOS = <<<'SQL'
-        SELECT u.id::text, COALESCE(p.nombre, u.email) AS nombre
-        FROM usuarios u LEFT JOIN profesionales p ON p.usuario_id = u.id AND p.activa
-        WHERE u.activo AND (p.id IS NOT NULL OR jsonb_exists(u.roles, 'ROLE_ADMIN'))
-        SQL;
-
-    public function __construct(private Connection $conexion)
+    public function __construct(private EntityManagerInterface $entidades)
     {
     }
 
     public function consultar(string $usuario): array
     {
+        $mensajes = $this->entidades->createQuery(<<<'DQL'
+            SELECT m.id AS id, m.texto AS texto, m.creadoEn AS creado_en, IDENTITY(m.remitente) AS remitente,
+                   COALESCE(pr.nombre, r.email) AS nombre_remitente, COALESCE(pd.nombre, d.email) AS nombre_destinatario
+            FROM App\Entity\MensajeAgenda m JOIN m.remitente r JOIN m.destinatario d
+            LEFT JOIN App\Entity\ProfesionalCuentaAdministrativa pr WITH pr.usuario = r
+            LEFT JOIN App\Entity\ProfesionalCuentaAdministrativa pd WITH pd.usuario = d
+            WHERE m.remitente = :usuario OR m.destinatario = :usuario
+            ORDER BY m.id DESC
+            DQL)->setParameter('usuario', $usuario)->setMaxResults(100)->getArrayResult();
+
         return [
-            'contactos' => $this->conexion->fetchAllAssociative(self::CONTACTOS.' AND u.id <> ? ORDER BY nombre', [$usuario]),
-            'mensajes' => $this->conexion->fetchAllAssociative(<<<'SQL'
-                SELECT m.id::text, m.texto, m.creado_en, (m.remitente_id = ?)::int AS enviado,
-                       COALESCE(p.nombre, u.email) AS contacto
-                FROM mensajes_agenda m
-                JOIN usuarios u ON u.id = CASE WHEN m.remitente_id = ? THEN m.destinatario_id ELSE m.remitente_id END
-                LEFT JOIN profesionales p ON p.usuario_id = u.id
-                WHERE m.remitente_id = ? OR m.destinatario_id = ?
-                ORDER BY m.id DESC LIMIT 100
-                SQL, [$usuario, $usuario, $usuario, $usuario]),
+            'contactos' => array_values(array_filter($this->contactos(), static fn (array $c): bool => $c['id'] !== $usuario)),
+            'mensajes' => array_map(static function (array $m) use ($usuario): array {
+                $enviado = (string) $m['remitente'] === $usuario;
+
+                return [
+                    'id' => (string) $m['id'], 'texto' => $m['texto'],
+                    'creado_en' => $m['creado_en']->format(DateTimeInterface::ATOM),
+                    'enviado' => $enviado ? 1 : 0,
+                    'contacto' => $enviado ? $m['nombre_destinatario'] : $m['nombre_remitente'],
+                ];
+            }, $mensajes),
         ];
     }
 
@@ -42,13 +55,16 @@ final readonly class ComunicacionAgenda
             throw new InvalidArgumentException('Elegí un contacto y escribí un mensaje de hasta 2000 caracteres.');
         }
 
-        if ($this->conexion->fetchOne(self::CONTACTOS.' AND u.id = ?', [$destinatario]) === false) {
+        if (!in_array($destinatario, array_column($this->contactos(), 'id'), true)) {
             throw new InvalidArgumentException('El contacto ya no está disponible.');
         }
 
-        $this->conexion->insert('mensajes_agenda', [
-            'remitente_id' => $autor, 'destinatario_id' => $destinatario, 'texto' => trim($texto),
-        ]);
+        $mensaje = new MensajeAgenda();
+        $mensaje->remitente = $this->entidades->getReference(UsuarioAdministrativo::class, $autor);
+        $mensaje->destinatario = $this->entidades->getReference(UsuarioAdministrativo::class, $destinatario);
+        $mensaje->texto = trim($texto);
+        $this->entidades->persist($mensaje);
+        $this->entidades->flush();
     }
 
     public function vincularCuenta(
@@ -67,30 +83,62 @@ final readonly class ComunicacionAgenda
         }
         $hash = $cuentaExistente ? null : UsuariosAdministrativos::hashClave($clave);
 
-        $this->conexion->transactional(static function (Connection $conexion) use ($profesional, $email, $hash, $nombre, $admin): void {
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($profesional, $email, $hash, $nombre, $admin): void {
             if ($hash === null) {
-                $id = $conexion->fetchOne(<<<'SQL'
-                    SELECT id FROM usuarios WHERE email = ? AND activo AND jsonb_exists(roles, 'ROLE_ADMIN') FOR UPDATE
-                    SQL, [$email]);
-                if ($id === false) {
+                $usuario = $this->entidades->createQuery('SELECT u FROM App\Entity\UsuarioAdministrativo u WHERE u.email = :email AND u.activo = true')
+                    ->setParameter('email', $email)->setLockMode(LockMode::PESSIMISTIC_WRITE)
+                    ->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+                if ($usuario === null || !$usuario->esAdministrador()) {
                     throw new InvalidArgumentException('Elegí el correo de una cuenta administradora activa.');
                 }
             } else {
-                $roles = json_encode($admin ? [UsuariosAdministrativos::ROL] : [], JSON_THROW_ON_ERROR);
-                $id = $conexion->fetchOne('INSERT INTO usuarios (email, password_hash, roles) VALUES (?, ?, ?) RETURNING id', [$email, $hash, $roles]);
+                $usuario = new UsuarioAdministrativo();
+                $usuario->email = $email;
+                $usuario->passwordHash = $hash;
+                $usuario->roles = $admin ? [UsuariosAdministrativos::ROL] : [];
+                $this->entidades->persist($usuario);
+                // La profesional referencia la cuenta: debe existir antes de vincularla.
+                $this->entidades->flush();
             }
+            $cuenta = $this->entidades->getReference(UsuarioPerfil::class, $usuario->id);
             if ($profesional === null) {
-                $conexion->insert('profesionales', ['usuario_id' => $id, 'nombre' => trim($nombre)]);
+                $perfil = new Profesional(trim($nombre));
+                $perfil->vincularCuenta($cuenta);
+                $this->entidades->persist($perfil);
 
                 return;
             }
-            $cambiadas = $conexion->executeStatement(
-                'UPDATE profesionales SET usuario_id = ? WHERE id = ? AND activa AND usuario_id IS NULL',
-                [$id, $profesional],
-            );
-            if ($cambiadas !== 1) {
+            $perfil = $this->entidades->createQuery('SELECT p FROM App\Entity\Profesional p WHERE p.id = :id')
+                ->setParameter('id', $profesional)->setLockMode(LockMode::PESSIMISTIC_WRITE)
+                ->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+            if ($perfil === null || !$perfil->activa() || $perfil->usuario() !== null) {
                 throw new InvalidArgumentException('La profesional no está disponible o ya tiene una cuenta.');
             }
+            $perfil->vincularCuenta($cuenta);
         });
+    }
+
+    /**
+     * Cuentas activas con un perfil profesional activo o con permisos de administración.
+     *
+     * @return list<array{id: string, nombre: string}>
+     */
+    private function contactos(): array
+    {
+        $filas = $this->entidades->createQueryBuilder()
+            ->select('u.id AS id, COALESCE(p.nombre, u.email) AS nombre, p.id AS profesional, u.roles AS roles')
+            ->from(UsuarioAdministrativo::class, 'u')
+            ->leftJoin(ProfesionalCuentaAdministrativa::class, 'p', 'WITH', 'p.usuario = u AND p.activa = true')
+            ->where('u.activo = true')
+            ->orderBy('nombre')
+            ->getQuery()->getArrayResult();
+        $contactos = [];
+        foreach ($filas as $fila) {
+            if ($fila['profesional'] !== null || UsuarioAdministrativo::rolesAdministrativos($fila['roles'])) {
+                $contactos[] = ['id' => (string) $fila['id'], 'nombre' => $fila['nombre']];
+            }
+        }
+
+        return $contactos;
     }
 }

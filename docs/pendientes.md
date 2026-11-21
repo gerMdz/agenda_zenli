@@ -27,7 +27,10 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 
 ## Integración de agenda
 
-- Completar la migración de los ABM restantes a Doctrine ORM, preservando permisos, auditoría, ocupaciones y concurrencia; el mapeo actual es parcial y no debe usarse para generar cambios automáticos de esquema.
+- La lectura y escritura de las imágenes de servicios y de la portada sigue en SQL nativo (`bytea`). Doctrine no carga columnas en forma diferida: mapearlas en `ServicioPortada` cargaría todas las imágenes en cada listado. Decidir si se usa una entidad separada para la imagen, como en presentación de profesionales.
+- Varias entidades parciales comparten tabla (`profesionales`: 4; `usuarios`: 2). Se leen con `HINT_REFRESH`, pero conviene unificarlas antes de que una misma petición modifique la misma fila desde dos entidades.
+- `PromocionPortada` y `ConfiguracionPortada` siguen con `datetimetz_immutable`, que falla si una fila tiene microsegundos (por ejemplo, insertada con `now()`). Evaluar pasarlas a `instante`.
+- Si se agregan procesos de larga duración (Messenger, workers), reiniciar el EntityManager después de un `flush` fallido.
 
 - Validar en navegador la preparación posterior y probar la concurrencia específica entre su edición y las reservas públicas.
 - Resolver el paso entre inicios que usará la consulta pública y cómo se configurará.

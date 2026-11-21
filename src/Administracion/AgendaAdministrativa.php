@@ -5,10 +5,23 @@ declare(strict_types=1);
 namespace App\Administracion;
 
 use App\Agenda\TurnoNoDisponible;
+use App\Entity\Espacio;
+use App\Entity\EventoTurnoAdministrativo;
+use App\Entity\OcupacionProfesional;
+use App\Entity\OcupacionRecurso;
+use App\Entity\PoliticaReserva;
+use App\Entity\PreparacionAgenda;
+use App\Entity\Profesional;
+use App\Entity\ServicioPortada;
+use App\Entity\TurnoAdministrativo;
+use App\Entity\UsuarioAdministrativo;
 use DateTimeImmutable;
+use DateTimeInterface;
 use DateTimeZone;
-use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\DBAL\LockMode;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -16,9 +29,11 @@ final readonly class AgendaAdministrativa
 {
     private const POLITICA = 'preparacion_agenda_admin';
     private const ZONA = 'America/Argentina/Mendoza';
+    private const INSTANTE = TransaccionEntidades::INSTANTE;
+    private const AUDITORIA = 'Y-m-d H:i:s.uP';
 
     public function __construct(
-        private Connection $conexion,
+        private EntityManagerInterface $entidades,
         private HorariosProfesionales $horarios,
     )
     {
@@ -31,78 +46,82 @@ final readonly class AgendaAdministrativa
         if ($ultimo < $dia || $ultimo > $dia->modify('+30 days')) {
             throw new InvalidArgumentException('El período debe tener entre 1 y 31 días.');
         }
-        $intervalo = [$ultimo->modify('+1 day')->format(DATE_ATOM), $dia->format(DATE_ATOM)];
-        $turnos = $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT t.id::text, t.servicio_nombre AS servicio, t.cliente_nombre AS cliente, t.inicio, t.fin,
-                   t.revision, t.servicio_id::text, r.id::text AS espacio_id, r.nombre AS espacio,
-                   COALESCE(json_agg(p.id::text ORDER BY p.id) FILTER (WHERE p.id IS NOT NULL), '[]'::json)::text AS equipo,
-                   (extract(epoch FROM t.fin - t.inicio) / 60)::int AS duracion,
-                   COALESCE(string_agg(p.nombre, ', ' ORDER BY p.nombre), '') AS profesionales,
-                   t.profesionales_requeridos, t.sena_pagada::int AS sena_pagada,
-                   t.sena_importe_centavos::text AS sena_importe_centavos
-            FROM turnos_administrativos t
-            JOIN ocupaciones_recursos ore ON ore.turno_admin_id = t.id
-            JOIN recursos r ON r.id = ore.recurso_id
-            LEFT JOIN ocupaciones_profesionales op ON op.turno_admin_id = t.id
-            LEFT JOIN profesionales p ON p.id = op.profesional_id
-            WHERE t.inicio < ? AND t.fin > ? AND t.cancelado_en IS NULL
-              AND (CAST(? AS bigint) IS NULL OR EXISTS (
-                  SELECT 1 FROM ocupaciones_profesionales propia
-                  WHERE propia.turno_admin_id = t.id AND propia.profesional_id = ?
-              ))
-            GROUP BY t.id, r.id
+        $periodo = ['hasta' => $ultimo->modify('+1 day'), 'desde' => $dia];
+        $propio = $propia === null ? '' : <<<'DQL'
+             AND EXISTS (SELECT propia.id FROM App\Entity\OcupacionProfesional propia WHERE propia.turno = t AND propia.profesional = :propia)
+            DQL;
+
+        $filas = $this->consulta(<<<DQL
+            SELECT t.id AS id, t.servicioNombre AS servicio, t.clienteNombre AS cliente, t.inicio AS inicio, t.fin AS fin,
+                   t.revision AS revision, t.servicioId AS servicio_id, e.id AS espacio_id, e.nombre AS espacio,
+                   t.profesionalesRequeridos AS profesionales_requeridos, t.senaPagada AS sena_pagada,
+                   t.senaImporteCentavos AS sena_importe_centavos
+            FROM App\\Entity\\OcupacionRecurso o JOIN o.turno t JOIN o.espacio e
+            WHERE t.inicio < :hasta AND t.fin > :desde AND t.canceladoEn IS NULL $propio
             ORDER BY t.inicio, t.id
-            SQL, [...$intervalo, $propia, $propia]);
-        foreach ($turnos as &$turno) {
-            $turno['inicio'] = (new DateTimeImmutable($turno['inicio']))->format(DATE_ATOM);
-            $turno['fin'] = (new DateTimeImmutable($turno['fin']))->format(DATE_ATOM);
-            $turno['equipo'] = json_decode($turno['equipo'], true, flags: JSON_THROW_ON_ERROR);
-            $turno['profesionales_requeridos'] = $turno['profesionales_requeridos'] === null ? null : (int) $turno['profesionales_requeridos'];
-            $turno['equipo_incompleto'] = $turno['profesionales_requeridos'] === null || count($turno['equipo']) < $turno['profesionales_requeridos'];
-            $turno['sena_pagada'] = (bool) $turno['sena_pagada'];
-            $turno['editable'] = $propia === null || $turno['equipo'] === [$propia];
+            DQL, $periodo, $propia);
+        $equipos = $this->equipos(array_column($filas, 'id'));
+        $turnos = [];
+        foreach ($filas as $fila) {
+            $equipo = $equipos[$fila['id']]['ids'] ?? [];
+            $requeridos = $fila['profesionales_requeridos'];
+            $turnos[] = [
+                'id' => (string) $fila['id'], 'servicio' => $fila['servicio'], 'cliente' => $fila['cliente'],
+                'inicio' => $fila['inicio']->format(DATE_ATOM), 'fin' => $fila['fin']->format(DATE_ATOM),
+                'revision' => $fila['revision'], 'servicio_id' => self::texto($fila['servicio_id']),
+                'espacio_id' => (string) $fila['espacio_id'], 'espacio' => $fila['espacio'], 'equipo' => $equipo,
+                'duracion' => (int) round(($fila['fin']->getTimestamp() - $fila['inicio']->getTimestamp()) / 60),
+                'profesionales' => implode(', ', $equipos[$fila['id']]['nombres'] ?? []),
+                'profesionales_requeridos' => $requeridos, 'sena_pagada' => $fila['sena_pagada'],
+                'sena_importe_centavos' => self::texto($fila['sena_importe_centavos']),
+                'equipo_incompleto' => $requeridos === null || count($equipo) < $requeridos,
+                'editable' => $propia === null || $equipo === [$propia],
+            ];
         }
-        unset($turno);
 
-        $bloqueos = $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT b.id::text, b.inicio, b.fin, p.id::text AS profesional_id, p.nombre AS profesionales,
-                   (((b.inicio AT TIME ZONE 'America/Argentina/Mendoza')::time = TIME '00:00')
-                    AND ((b.fin AT TIME ZONE 'America/Argentina/Mendoza')::time = TIME '00:00'))::int AS todo_el_dia
-            FROM bloqueos b JOIN profesionales p ON p.id = b.profesional_id
-            WHERE b.gestion_horarios AND b.inicio < ? AND b.fin > ?
-              AND (CAST(? AS bigint) IS NULL OR p.id = ?)
-            ORDER BY b.inicio, b.id
-            SQL, [...$intervalo, $propia, $propia]);
-        foreach ($bloqueos as &$bloqueo) {
-            $bloqueo['inicio'] = (new DateTimeImmutable($bloqueo['inicio']))->format(DATE_ATOM);
-            $bloqueo['fin'] = (new DateTimeImmutable($bloqueo['fin']))->format(DATE_ATOM);
-            $bloqueo['todo_el_dia'] = (bool) $bloqueo['todo_el_dia'];
-        }
-        unset($bloqueo);
+        $zona = new DateTimeZone(self::ZONA);
+        $medianoche = static fn (DateTimeImmutable $instante): bool => $instante->setTimezone($zona)->format('H:i:s.u') === '00:00:00.000000';
+        $bloqueos = array_map(static fn (array $b): array => [
+            'id' => (string) $b['id'], 'inicio' => $b['inicio']->format(DATE_ATOM), 'fin' => $b['fin']->format(DATE_ATOM),
+            'profesional_id' => (string) $b['profesional_id'], 'profesionales' => $b['profesionales'],
+            'todo_el_dia' => $medianoche($b['inicio']) && $medianoche($b['fin']),
+        ], $this->consulta(<<<'DQL'
+            SELECT b.id AS id, b.inicio AS inicio, b.fin AS fin, p.id AS profesional_id, p.nombre AS profesionales
+            FROM App\Entity\Bloqueo b JOIN b.profesional p
+            WHERE b.gestionHorarios = true AND b.inicio < :hasta AND b.fin > :desde
+            DQL.($propia === null ? '' : ' AND p.id = :propia').' ORDER BY b.inicio, b.id', $periodo, $propia));
 
-        $preparaciones = $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT pa.id::text, pa.turno_id::text, r.id::text AS espacio_id, r.nombre AS espacio,
-                   o.inicio, o.fin, pa.revision,
-                   (CAST(? AS bigint) IS NULL OR (SELECT count(*) FROM ocupaciones_profesionales op WHERE op.turno_admin_id = t.id) = 1)::int AS editable
-            FROM preparaciones_agenda pa
-            JOIN turnos_administrativos t ON t.id = pa.turno_id
-            JOIN ocupaciones_recursos o ON o.preparacion_id = pa.id
-            JOIN recursos r ON r.id = o.recurso_id
-            WHERE NOT pa.eliminada AND t.cancelado_en IS NULL AND o.inicio < ? AND o.fin > ?
-              AND (CAST(? AS bigint) IS NULL OR EXISTS (SELECT 1 FROM ocupaciones_profesionales op WHERE op.turno_admin_id = t.id AND op.profesional_id = ?))
+        $filas = $this->consulta(<<<DQL
+            SELECT pa.id AS id, t.id AS turno_id, e.id AS espacio_id, e.nombre AS espacio, o.inicio AS inicio, o.fin AS fin,
+                   pa.revision AS revision
+            FROM App\\Entity\\OcupacionRecurso o JOIN o.preparacion pa JOIN pa.turno t JOIN o.espacio e
+            WHERE pa.eliminada = false AND t.canceladoEn IS NULL AND o.inicio < :hasta AND o.fin > :desde $propio
             ORDER BY o.inicio, pa.id
-            SQL, [$propia, ...$intervalo, $propia, $propia]);
-        foreach ($preparaciones as &$item) {
-            $item['inicio'] = (new DateTimeImmutable($item['inicio']))->format(DATE_ATOM);
-            $item['fin'] = (new DateTimeImmutable($item['fin']))->format(DATE_ATOM);
-            $item['revision'] = (int) $item['revision'];
-            $item['editable'] = (bool) $item['editable'];
-        }
-        unset($item);
+            DQL, $periodo, $propia);
+        $equiposPreparacion = $propia === null ? [] : $this->equipos(array_column($filas, 'turno_id'));
+        $preparaciones = array_map(static fn (array $p): array => [
+            'id' => (string) $p['id'], 'turno_id' => (string) $p['turno_id'], 'espacio_id' => (string) $p['espacio_id'],
+            'espacio' => $p['espacio'], 'inicio' => $p['inicio']->format(DATE_ATOM), 'fin' => $p['fin']->format(DATE_ATOM),
+            'revision' => $p['revision'],
+            'editable' => $propia === null || count($equiposPreparacion[$p['turno_id']]['ids'] ?? []) === 1,
+        ], $filas);
+
+        $servicios = $this->entidades->createQuery(<<<'DQL'
+            SELECT s.id AS id, s.nombre AS nombre, s.duracionMinima AS duracion_minima, s.profesionalesRequeridos AS profesionales_requeridos
+            FROM App\Entity\ServicioPortada s ORDER BY s.orden, s.nombre
+            DQL)->getArrayResult();
+        $profesionales = $this->consulta(
+            'SELECT p.id AS id, p.nombre AS nombre, IDENTITY(p.usuario) AS usuario FROM App\Entity\Profesional p WHERE p.activa = true'
+            .($propia === null ? '' : ' AND p.id = :propia').' ORDER BY p.nombre',
+            [],
+            $propia,
+        );
 
         return [
-            'servicios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre, duracion_minima, profesionales_requeridos FROM servicios_portada ORDER BY orden, nombre'),
-            'profesionales' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre, (usuario_id IS NOT NULL)::int AS tiene_cuenta FROM profesionales WHERE activa AND (CAST(? AS bigint) IS NULL OR id = ?) ORDER BY nombre', [$propia, $propia]),
+            'servicios' => array_map(static fn (array $s): array => ['id' => (string) $s['id']] + $s, $servicios),
+            'profesionales' => array_map(static fn (array $p): array => [
+                'id' => (string) $p['id'], 'nombre' => $p['nombre'], 'tiene_cuenta' => $p['usuario'] === null ? 0 : 1,
+            ], $profesionales),
             'espacios' => $this->espacios(),
             'preparacion' => $this->preparacion(),
             'preparaciones' => $preparaciones,
@@ -113,13 +132,17 @@ final readonly class AgendaAdministrativa
 
     public function configuracion(): array
     {
+        $profesionales = $this->entidades->createQuery(<<<'DQL'
+            SELECT p.id AS id, p.nombre AS nombre, IDENTITY(p.usuario) AS usuario, u.roles AS roles
+            FROM App\Entity\Profesional p LEFT JOIN p.usuario u
+            WHERE p.activa = true ORDER BY p.nombre
+            DQL)->getArrayResult();
+
         return [
-            'profesionales' => $this->conexion->fetchAllAssociative(<<<'SQL'
-                SELECT p.id::text, p.nombre, (p.usuario_id IS NOT NULL)::int AS tiene_cuenta,
-                       COALESCE(jsonb_exists(u.roles, 'ROLE_ADMIN'), false)::int AS admin
-                FROM profesionales p LEFT JOIN usuarios u ON u.id = p.usuario_id
-                WHERE p.activa ORDER BY p.nombre
-                SQL),
+            'profesionales' => array_map(static fn (array $p): array => [
+                'id' => (string) $p['id'], 'nombre' => $p['nombre'], 'tiene_cuenta' => $p['usuario'] === null ? 0 : 1,
+                'admin' => $p['roles'] !== null && UsuarioAdministrativo::rolesAdministrativos($p['roles']) ? 1 : 0,
+            ], $profesionales),
             'espacios' => $this->espacios(),
             'preparacion' => $this->preparacion(),
         ];
@@ -127,7 +150,11 @@ final readonly class AgendaAdministrativa
 
     private function espacios(): array
     {
-        return $this->conexion->fetchAllAssociative('SELECT id::text, nombre, detalle FROM recursos WHERE activo ORDER BY nombre, id');
+        return array_map(
+            static fn (array $e): array => ['id' => (string) $e['id']] + $e,
+            $this->entidades->createQuery('SELECT e.id AS id, e.nombre AS nombre, e.detalle AS detalle FROM App\Entity\Espacio e WHERE e.activo = true ORDER BY e.nombre, e.id')
+                ->getArrayResult(),
+        );
     }
 
     public function guardarEspacio(array $datos, ?string $id): void
@@ -138,15 +165,18 @@ final readonly class AgendaAdministrativa
             || !is_string($detalle) || preg_match('/\A[^\x00]{0,1000}\z/u', trim($detalle)) !== 1) {
             throw new InvalidArgumentException('Ingresá un nombre y un detalle de hasta 1000 caracteres.');
         }
-        $campos = ['nombre' => trim($nombre), 'detalle' => trim($detalle)];
         if ($id === null) {
-            $this->conexion->insert('recursos', $campos + ['codigo' => 'ESP_'.bin2hex(random_bytes(12))]);
-
-            return;
+            $espacio = new Espacio();
+            $espacio->codigo = 'ESP_'.bin2hex(random_bytes(12));
+            $this->entidades->persist($espacio);
+        } else {
+            $espacio = $this->entidades->createQuery('SELECT e FROM App\Entity\Espacio e WHERE e.id = :id')
+                ->setParameter('id', self::id($id))->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult()
+                ?? throw new HttpException(404, 'El espacio ya no está disponible.');
         }
-        if ($this->conexion->update('recursos', $campos, ['id' => self::id($id)]) === 0) {
-            throw new HttpException(404, 'El espacio ya no está disponible.');
-        }
+        $espacio->nombre = trim($nombre);
+        $espacio->detalle = trim($detalle);
+        $this->entidades->flush();
     }
 
     public function guardarPreparacion(array $datos): void
@@ -155,7 +185,7 @@ final readonly class AgendaAdministrativa
             $politica = ['modo' => 'general', 'minutos' => self::minutos($datos['minutos'] ?? null, 0)];
         } elseif (($datos['modo'] ?? null) === 'por_servicio' && is_array($datos['servicios'] ?? null)) {
             $servicios = [];
-            foreach ($this->conexion->fetchFirstColumn('SELECT id FROM servicios_portada') as $id) {
+            foreach ($this->entidades->createQuery('SELECT s.id FROM App\Entity\ServicioPortada s')->getSingleColumnResult() as $id) {
                 $valor = $datos['servicios'][$id] ?? null;
                 if ($valor !== null) {
                     $servicios[$id] = self::minutos($valor, 0);
@@ -166,10 +196,19 @@ final readonly class AgendaAdministrativa
             throw new InvalidArgumentException('Elegí cómo se define la preparación.');
         }
 
-        $this->conexion->executeStatement(<<<'SQL'
-            INSERT INTO politicas_reservas (clave, valor) VALUES (?, ?)
-            ON CONFLICT (clave) DO UPDATE SET valor = excluded.valor, actualizado_en = now()
-            SQL, [self::POLITICA, json_encode($politica, JSON_THROW_ON_ERROR)]);
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($politica): void {
+            // Reemplaza al ON CONFLICT: dos primeras configuraciones simultáneas no pueden duplicar la clave.
+            $this->entidades->getConnection()->executeStatement('LOCK TABLE politicas_reservas IN SHARE ROW EXCLUSIVE MODE');
+            $registro = $this->entidades->createQuery('SELECT p FROM App\Entity\PoliticaReserva p WHERE p.clave = :clave')
+                ->setParameter('clave', self::POLITICA)->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+            if ($registro === null) {
+                $registro = new PoliticaReserva();
+                $registro->clave = self::POLITICA;
+                $this->entidades->persist($registro);
+            }
+            $registro->valor = $politica;
+            $registro->actualizadoEn = new DateTimeImmutable();
+        });
     }
 
     public function cargar(array $datos, string $autor, ?string $propia = null, ?string $editar = null): string
@@ -199,114 +238,127 @@ final readonly class AgendaAdministrativa
             throw new InvalidArgumentException('Ingresá una seña válida en centavos.');
         }
 
-        try {
-            return $this->conexion->transactional(function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe): string {
-                $anterior = $editar === null ? null : $this->bloquearEditable($editar, $propia, $revision);
-                if ($this->conexion->fetchOne('SELECT id FROM recursos WHERE id = ? AND activo FOR UPDATE', [$espacio]) === false) {
-                    throw new InvalidArgumentException('Elegí un espacio activo.');
-                }
-                $configuracion = $this->conexion->fetchAssociative('SELECT nombre, duracion_minima, profesionales_requeridos FROM servicios_portada WHERE id = ? FOR SHARE', [$servicio]);
-                if ($configuracion === false) {
-                    throw new InvalidArgumentException('Elegí un servicio del catálogo.');
-                }
-                if ((int) $configuracion['duracion_minima'] < 1 || (int) $configuracion['profesionales_requeridos'] < 1) {
-                    throw new InvalidArgumentException('El servicio no tiene duración mínima y profesionales requeridos configurados.');
-                }
-                $politica = $this->preparacion();
-                $minutos = ($politica['modo'] ?? null) === 'general' ? $politica['minutos'] : ($politica['servicios'][$servicio] ?? null);
-                if ($minutos === null) {
-                    throw new InvalidArgumentException('Configurá el tiempo de preparación de este servicio.');
-                }
-
-                $desde = $inicio;
-                $fin = $inicio->modify("+$duracion minutes");
-                $ocupacion = [$desde->format(DATE_ATOM), $fin->format(DATE_ATOM)];
-                $this->verificarLibre('recursos', 'recurso_id', $espacio, $ocupacion, $editar);
-                if ($editar === null && $minutos > 0) {
-                    $this->verificarLibre('recursos', 'recurso_id', $espacio, [$fin->format(DATE_ATOM), $fin->modify("+$minutos minutes")->format(DATE_ATOM)], null);
-                }
-                if ($editar !== null) {
-                    $prep = $this->conexion->fetchAssociative('SELECT o.recurso_id, o.inicio FROM preparaciones_agenda p JOIN ocupaciones_recursos o ON o.preparacion_id = p.id WHERE p.turno_id = ?', [$editar]);
-                    if ($prep !== false && ((string) $prep['recurso_id'] !== $espacio || new DateTimeImmutable($prep['inicio']) < $fin)) {
-                        throw new TurnoNoDisponible('La preparación existente no es compatible con el turno. Modificala primero.');
-                    }
-                    $ocupacionAnterior = $anterior['espacios'][0] ?? null;
-                    if ($ocupacionAnterior !== null && new DateTimeImmutable($ocupacionAnterior['inicio']) < new DateTimeImmutable($anterior['inicio'])) {
-                        if ((string) $ocupacionAnterior['recurso_id'] !== $espacio || $inicio != new DateTimeImmutable($anterior['inicio'])) {
-                            throw new TurnoNoDisponible('El turno tiene preparación histórica; no se puede desplazar automáticamente.');
-                        }
-                        $ocupacion[0] = (new DateTimeImmutable($ocupacionAnterior['inicio']))->format(DATE_ATOM);
-                    }
-                }
-                foreach ($equipo as $profesional) {
-                    if ($this->conexion->fetchOne('SELECT id FROM profesionales WHERE id = ? AND activa', [$profesional]) === false) {
-                        throw new InvalidArgumentException('Seleccioná profesionales activas.');
-                    }
-                    if (!$this->horarios->permite($profesional, $desde, $fin)) {
-                        throw new TurnoNoDisponible('Una profesional asignada no está disponible durante el turno; revisá sus horarios y bloqueos.');
-                    }
-                    $inicioProfesional = $desde->format(DATE_ATOM);
-                    foreach ($anterior['ocupaciones_profesionales'] ?? [] as $ocupacionAnteriorProfesional) {
-                        if ((string) $ocupacionAnteriorProfesional['profesional_id'] === $profesional && new DateTimeImmutable($ocupacionAnteriorProfesional['inicio']) < $inicio) {
-                            if ($inicio != new DateTimeImmutable($anterior['inicio'])) {
-                                throw new TurnoNoDisponible('El turno tiene ocupaciones históricas; no se pueden desplazar automáticamente.');
-                            }
-                            $inicioProfesional = (new DateTimeImmutable($ocupacionAnteriorProfesional['inicio']))->format(DATE_ATOM);
-                        }
-                    }
-                    $iniciosProfesionales[$profesional] = $inicioProfesional;
-                    $this->verificarLibre('profesionales', 'profesional_id', $profesional, [$inicioProfesional, $fin->format(DATE_ATOM)], $editar);
-                }
-
-                $pagada = array_key_exists('sena_pagada', $datos) ? $pagada : ($anterior === null ? false : (bool) $anterior['sena_pagada']);
-                $importe = array_key_exists('sena_importe_centavos', $datos) ? $importe : ($anterior['sena_importe_centavos'] ?? null);
-                $campos = [$servicio, $configuracion['nombre'], trim($cliente), $inicio->format(DATE_ATOM), $ocupacion[1], (int) $configuracion['profesionales_requeridos'], $pagada ? 1 : 0, $importe];
-                if ($editar === null) {
-                    $id = $this->conexion->fetchOne(<<<'SQL'
-                        INSERT INTO turnos_administrativos (servicio_id, servicio_nombre, cliente_nombre, inicio, fin, profesionales_requeridos, sena_pagada, sena_importe_centavos, creado_por)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id::text
-                        SQL, [...$campos, $autor]);
-                } else {
-                    $id = $editar;
-                    $this->registrarEvento($id, $autor, 'EDITADO', $anterior);
-                    $this->liberar($id);
-                    $this->conexion->executeStatement(<<<'SQL'
-                        UPDATE turnos_administrativos
-                        SET servicio_id = ?, servicio_nombre = ?, cliente_nombre = ?, inicio = ?, fin = ?, profesionales_requeridos = ?, sena_pagada = ?, sena_importe_centavos = ?, revision = revision + 1
-                        WHERE id = ?
-                        SQL, [...$campos, $id]);
-                }
-                $datos = ['turno_admin_id' => $id, 'inicio' => $ocupacion[0], 'fin' => $ocupacion[1]];
-                $this->conexion->insert('ocupaciones_recursos', $datos + ['recurso_id' => $espacio]);
-                foreach ($equipo as $profesional) {
-                    $this->conexion->insert('ocupaciones_profesionales', ['turno_admin_id' => $id, 'inicio' => $iniciosProfesionales[$profesional], 'fin' => $ocupacion[1], 'profesional_id' => $profesional]);
-                }
-                if ($editar === null) {
-                    $preparacionId = $this->conexion->fetchOne('INSERT INTO preparaciones_agenda (turno_id, eliminada) VALUES (?, ?) RETURNING id', [$id, $minutos === 0 ? 1 : 0]);
-                    if ($minutos > 0) {
-                        $this->conexion->insert('ocupaciones_recursos', ['preparacion_id' => $preparacionId, 'recurso_id' => $espacio, 'inicio' => $fin->format(DATE_ATOM), 'fin' => $fin->modify("+$minutos minutes")->format(DATE_ATOM)]);
-                    }
-                }
-
-                return (string) $id;
-            });
-        } catch (DriverException $error) {
-            if (in_array($error->getSQLState(), ['23P01', '40P01'], true)) {
-                throw new TurnoNoDisponible('Hay una ocupación concurrente. Revisá el horario e intentá nuevamente.', previous: $error);
+        return $this->conConcurrencia(fn (): string => TransaccionEntidades::ejecutar($this->entidades, function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe): string {
+            $anterior = $editar === null ? null : $this->bloquearEditable($editar, $propia, $revision);
+            $recurso = $this->bloquearEspacio($espacio, true) ?? throw new InvalidArgumentException('Elegí un espacio activo.');
+            $configuracion = $this->entidades->createQuery('SELECT s FROM App\Entity\ServicioPortada s WHERE s.id = :id')
+                ->setParameter('id', $servicio)->setLockMode(LockMode::PESSIMISTIC_READ)
+                ->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+            if (!$configuracion instanceof ServicioPortada) {
+                throw new InvalidArgumentException('Elegí un servicio del catálogo.');
             }
-            throw $error;
-        }
+            if ((int) $configuracion->duracionMinima < 1 || (int) $configuracion->profesionalesRequeridos < 1) {
+                throw new InvalidArgumentException('El servicio no tiene duración mínima y profesionales requeridos configurados.');
+            }
+            $politica = $this->preparacion();
+            $minutos = ($politica['modo'] ?? null) === 'general' ? $politica['minutos'] : ($politica['servicios'][$servicio] ?? null);
+            if ($minutos === null) {
+                throw new InvalidArgumentException('Configurá el tiempo de preparación de este servicio.');
+            }
+
+            $fin = $inicio->modify("+$duracion minutes");
+            $inicioEspacio = $inicio;
+            $this->verificarLibre(true, $espacio, $inicio, $fin, $editar);
+            if ($editar === null && $minutos > 0) {
+                $this->verificarLibre(true, $espacio, $fin, $fin->modify("+$minutos minutes"), null);
+            }
+            if ($anterior !== null) {
+                $preparacion = $anterior['ocupacion_preparacion'];
+                if ($preparacion !== null && ((string) $preparacion->espacio->id !== $espacio || $preparacion->inicio < $fin)) {
+                    throw new TurnoNoDisponible('La preparación existente no es compatible con el turno. Modificala primero.');
+                }
+                $ocupacionAnterior = $anterior['espacios'][0] ?? null;
+                if ($ocupacionAnterior !== null && $ocupacionAnterior->inicio < $anterior['turno']->inicio) {
+                    if ((string) $ocupacionAnterior->espacio->id !== $espacio || $inicio != $anterior['turno']->inicio) {
+                        throw new TurnoNoDisponible('El turno tiene preparación histórica; no se puede desplazar automáticamente.');
+                    }
+                    $inicioEspacio = $ocupacionAnterior->inicio;
+                }
+            }
+            $iniciosProfesionales = [];
+            foreach ($equipo as $profesional) {
+                if ((int) $this->entidades->createQuery('SELECT COUNT(p.id) FROM App\Entity\Profesional p WHERE p.id = :id AND p.activa = true')
+                    ->setParameter('id', $profesional)->getSingleScalarResult() === 0) {
+                    throw new InvalidArgumentException('Seleccioná profesionales activas.');
+                }
+                if (!$this->horarios->permite($profesional, $inicio, $fin)) {
+                    throw new TurnoNoDisponible('Una profesional asignada no está disponible durante el turno; revisá sus horarios y bloqueos.');
+                }
+                $inicioProfesional = $inicio;
+                foreach ($anterior['ocupaciones_profesionales'] ?? [] as $ocupacionProfesional) {
+                    if ($ocupacionProfesional->profesional->id() === $profesional && $ocupacionProfesional->inicio < $inicio) {
+                        if ($inicio != $anterior['turno']->inicio) {
+                            throw new TurnoNoDisponible('El turno tiene ocupaciones históricas; no se pueden desplazar automáticamente.');
+                        }
+                        $inicioProfesional = $ocupacionProfesional->inicio;
+                    }
+                }
+                $iniciosProfesionales[$profesional] = $inicioProfesional;
+                $this->verificarLibre(false, $profesional, $inicioProfesional, $fin, $editar);
+            }
+
+            if ($anterior === null) {
+                $turno = new TurnoAdministrativo();
+                $turno->creadoPor = $autor;
+                $this->entidades->persist($turno);
+            } else {
+                $turno = $anterior['turno'];
+                $this->registrarEvento($turno, $autor, 'EDITADO', self::instantanea($anterior));
+                $this->liberar($anterior);
+                ++$turno->revision;
+            }
+            $turno->servicioId = (int) $servicio;
+            $turno->servicioNombre = $configuracion->nombre;
+            $turno->clienteNombre = trim($cliente);
+            $turno->inicio = $inicio;
+            $turno->fin = $fin;
+            $turno->profesionalesRequeridos = (int) $configuracion->profesionalesRequeridos;
+            $turno->senaPagada = array_key_exists('sena_pagada', $datos) ? $pagada : ($anterior !== null && $turno->senaPagada);
+            if (array_key_exists('sena_importe_centavos', $datos)) {
+                $turno->senaImporteCentavos = $importe;
+            }
+
+            $this->ocuparEspacio($recurso, $inicioEspacio, $fin, turno: $turno);
+            foreach ($equipo as $profesional) {
+                $ocupacion = new OcupacionProfesional();
+                $ocupacion->turno = $turno;
+                $ocupacion->profesional = $this->entidades->getReference(Profesional::class, $profesional);
+                $ocupacion->inicio = $iniciosProfesionales[$profesional];
+                $ocupacion->fin = $fin;
+                $this->entidades->persist($ocupacion);
+            }
+            if ($anterior === null) {
+                $preparacion = new PreparacionAgenda();
+                $preparacion->turno = $turno;
+                $preparacion->eliminada = $minutos === 0;
+                $this->entidades->persist($preparacion);
+                if ($minutos > 0) {
+                    $this->ocuparEspacio($recurso, $fin, $fin->modify("+$minutos minutes"), preparacion: $preparacion);
+                }
+            }
+            $this->entidades->flush();
+
+            return (string) $turno->id;
+        }));
     }
 
     public function cancelar(string $id, string $autor, ?string $propia, mixed $revision): void
     {
-        $this->conexion->transactional(function () use ($id, $autor, $propia, $revision): void {
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $autor, $propia, $revision): void {
             $anterior = $this->bloquearEditable($id, $propia, $revision);
-            $this->registrarEvento($id, $autor, 'CANCELADO', $anterior);
-            $this->conexion->executeStatement('DELETE FROM ocupaciones_recursos WHERE preparacion_id IN (SELECT id FROM preparaciones_agenda WHERE turno_id = ?)', [$id]);
-            $this->conexion->executeStatement('UPDATE preparaciones_agenda SET eliminada = TRUE, revision = revision + 1 WHERE turno_id = ? AND NOT eliminada', [$id]);
-            $this->liberar($id);
-            $this->conexion->executeStatement('UPDATE turnos_administrativos SET cancelado_en = now(), revision = revision + 1 WHERE id = ?', [$id]);
+            $turno = $anterior['turno'];
+            $this->registrarEvento($turno, $autor, 'CANCELADO', self::instantanea($anterior));
+            if ($anterior['ocupacion_preparacion'] !== null) {
+                $this->entidades->remove($anterior['ocupacion_preparacion']);
+            }
+            $preparacion = $anterior['preparacion'];
+            if ($preparacion !== null && !$preparacion->eliminada) {
+                $preparacion->eliminada = true;
+                ++$preparacion->revision;
+            }
+            $this->liberar($anterior);
+            $turno->canceladoEn = new DateTimeImmutable();
+            ++$turno->revision;
         });
     }
 
@@ -318,42 +370,248 @@ final readonly class AgendaAdministrativa
         if (!$eliminar && $fin <= $inicio) {
             throw new InvalidArgumentException('Ingresá un intervalo de preparación válido.');
         }
+        $this->conConcurrencia(fn () => TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $datos, $autor, $propia, $eliminar, $inicio, $fin): void {
+            $noDisponible = new HttpException(404, 'La preparación ya no está disponible.');
+            $turnoId = $this->entidades->createQuery('SELECT IDENTITY(p.turno) FROM App\Entity\PreparacionAgenda p WHERE p.id = :id')
+                ->setParameter('id', $id)->getOneOrNullResult(Query::HYDRATE_SINGLE_SCALAR) ?? throw $noDisponible;
+            $turno = $this->bloquearTurno((string) $turnoId) ?? throw $noDisponible;
+            $equipo = self::idsEquipo($this->ocupacionesProfesionales($turno));
+            if ($propia !== null && !in_array($propia, $equipo, true)) {
+                throw $noDisponible;
+            }
+            if ($propia !== null && $equipo !== [$propia]) {
+                throw new HttpException(403, 'Este turno solo puede modificarlo administración.');
+            }
+            $ocupacion = $this->entidades->createQuery(<<<'DQL'
+                SELECT o, p FROM App\Entity\OcupacionRecurso o JOIN o.preparacion p
+                WHERE p.id = :id AND p.eliminada = false
+                DQL)->setParameter('id', $id)->setLockMode(LockMode::PESSIMISTIC_WRITE)
+                ->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult() ?? throw $noDisponible;
+            $preparacion = $ocupacion->preparacion;
+            if (($datos['revision'] ?? null) !== $preparacion->revision) {
+                throw new TurnoNoDisponible('La preparación cambió. Volvé a cargar la agenda.');
+            }
+            $recurso = $this->bloquearEspacio((string) $ocupacion->espacio->id, false);
+            if (!$eliminar && $inicio < $turno->fin) {
+                throw new InvalidArgumentException('La preparación debe comenzar después del turno.');
+            }
+            $this->registrarEvento($turno, $autor, $eliminar ? 'PREP_ELIMINADA' : 'PREP_EDITADA', [
+                'id' => $preparacion->id, 'revision' => $preparacion->revision, 'recurso_id' => $recurso->id,
+                'inicio' => $ocupacion->inicio->format(self::AUDITORIA), 'fin' => $ocupacion->fin->format(self::AUDITORIA),
+            ]);
+            $this->entidades->remove($ocupacion);
+            $this->entidades->flush();
+            if (!$eliminar) {
+                $this->verificarLibre(true, (string) $recurso->id, $inicio, $fin, null);
+                $this->ocuparEspacio($recurso, $inicio, $fin, preparacion: $preparacion);
+            }
+            ++$preparacion->revision;
+            $preparacion->eliminada = $eliminar;
+        }));
+    }
+
+    /**
+     * Bloquea el turno y carga su estado actual. Las ocupaciones, la preparación y la auditoría
+     * se leen después del bloqueo para que coincidan con lo que se va a modificar.
+     *
+     * @return array{turno: TurnoAdministrativo, profesionales: list<string>, espacios: list<OcupacionRecurso>, ocupaciones_profesionales: list<OcupacionProfesional>, preparacion: ?PreparacionAgenda, ocupacion_preparacion: ?OcupacionRecurso}
+     */
+    private function bloquearEditable(string $id, ?string $propia, mixed $revision): array
+    {
+        self::id($id);
+        $turno = $this->bloquearTurno($id) ?? throw new HttpException(404, 'El turno ya no está disponible.');
+        $ocupacionesProfesionales = $this->ocupacionesProfesionales($turno);
+        $equipo = self::idsEquipo($ocupacionesProfesionales);
+        if ($propia !== null && !in_array($propia, $equipo, true)) {
+            throw new HttpException(404, 'El turno ya no está disponible.');
+        }
+        if ($propia !== null && $equipo !== [$propia]) {
+            throw new HttpException(403, 'Este turno solo puede modificarlo administración.');
+        }
+        if ($revision !== $turno->revision) {
+            throw new TurnoNoDisponible('El turno cambió. Volvé a cargar la agenda antes de modificarlo.');
+        }
+        $preparacion = $this->entidades->createQuery('SELECT p FROM App\Entity\PreparacionAgenda p WHERE p.turno = :turno')
+            ->setParameter('turno', $turno)->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+
+        return [
+            'turno' => $turno,
+            'profesionales' => $equipo,
+            'espacios' => $this->entidades->createQuery('SELECT o FROM App\Entity\OcupacionRecurso o WHERE o.turno = :turno ORDER BY o.id')
+                ->setParameter('turno', $turno)->setHint(Query::HINT_REFRESH, true)->getResult(),
+            'ocupaciones_profesionales' => $ocupacionesProfesionales,
+            'preparacion' => $preparacion,
+            'ocupacion_preparacion' => $preparacion === null ? null : $this->entidades->createQuery('SELECT o FROM App\Entity\OcupacionRecurso o WHERE o.preparacion = :preparacion')
+                ->setParameter('preparacion', $preparacion)->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult(),
+        ];
+    }
+
+    private function bloquearTurno(string $id): ?TurnoAdministrativo
+    {
+        return $this->entidades->createQuery('SELECT t FROM App\Entity\TurnoAdministrativo t WHERE t.id = :id AND t.canceladoEn IS NULL')
+            ->setParameter('id', $id)->setLockMode(LockMode::PESSIMISTIC_WRITE)
+            ->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+    }
+
+    /** Bloquea la fila del espacio: es el bloqueo que comparten turnos internos y reservas públicas. */
+    private function bloquearEspacio(string $id, bool $soloActivo): ?Espacio
+    {
+        return $this->entidades->createQuery('SELECT e FROM App\Entity\Espacio e WHERE e.id = :id'.($soloActivo ? ' AND e.activo = true' : ''))
+            ->setParameter('id', $id)->setLockMode(LockMode::PESSIMISTIC_WRITE)
+            ->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+    }
+
+    /** @return list<OcupacionProfesional> */
+    private function ocupacionesProfesionales(TurnoAdministrativo $turno): array
+    {
+        return $this->entidades->createQuery('SELECT o FROM App\Entity\OcupacionProfesional o WHERE o.turno = :turno ORDER BY o.id')
+            ->setParameter('turno', $turno)->setHint(Query::HINT_REFRESH, true)->getResult();
+    }
+
+    private function ocuparEspacio(Espacio $espacio, DateTimeImmutable $inicio, DateTimeImmutable $fin, ?TurnoAdministrativo $turno = null, ?PreparacionAgenda $preparacion = null): void
+    {
+        $ocupacion = new OcupacionRecurso();
+        $ocupacion->turno = $turno;
+        $ocupacion->preparacion = $preparacion;
+        $ocupacion->espacio = $espacio;
+        $ocupacion->inicio = $inicio;
+        $ocupacion->fin = $fin;
+        $this->entidades->persist($ocupacion);
+    }
+
+    private function registrarEvento(TurnoAdministrativo $turno, string $autor, string $tipo, array $anterior): void
+    {
+        $evento = new EventoTurnoAdministrativo();
+        $evento->turno = $turno;
+        $evento->autorId = $autor;
+        $evento->tipo = $tipo;
+        $evento->estadoAnterior = $anterior;
+        $this->entidades->persist($evento);
+    }
+
+    /** Elimina las ocupaciones propias del turno y confirma la eliminación antes de crear las nuevas. */
+    private function liberar(array $anterior): void
+    {
+        foreach ([...$anterior['espacios'], ...$anterior['ocupaciones_profesionales']] as $ocupacion) {
+            $this->entidades->remove($ocupacion);
+        }
+        $this->entidades->flush();
+    }
+
+    /** Estado anterior del turno para la auditoría, con las mismas claves que la fila de la tabla. */
+    private static function instantanea(array $anterior): array
+    {
+        $turno = $anterior['turno'];
+        $fecha = static fn (?DateTimeInterface $valor): ?string => $valor?->format(self::AUDITORIA);
+        $ocupacion = static fn (OcupacionRecurso $o): array => [
+            'recurso_id' => $o->espacio->id, 'inicio' => $fecha($o->inicio), 'fin' => $fecha($o->fin),
+        ];
+        $preparacion = $anterior['preparacion'];
+        $ocupacionPreparacion = $anterior['ocupacion_preparacion'];
+
+        return [
+            'id' => $turno->id, 'servicio_id' => $turno->servicioId, 'servicio_nombre' => $turno->servicioNombre,
+            'cliente_nombre' => $turno->clienteNombre, 'inicio' => $fecha($turno->inicio), 'fin' => $fecha($turno->fin),
+            'creado_por' => $turno->creadoPor, 'creado_en' => $fecha($turno->creadoEn), 'cancelado_en' => $fecha($turno->canceladoEn),
+            'revision' => $turno->revision, 'profesionales_requeridos' => $turno->profesionalesRequeridos,
+            'sena_pagada' => $turno->senaPagada, 'sena_importe_centavos' => $turno->senaImporteCentavos,
+            'profesionales' => $anterior['profesionales'],
+            'espacios' => array_map($ocupacion, $anterior['espacios']),
+            'ocupaciones_profesionales' => array_map(static fn (OcupacionProfesional $o): array => [
+                'profesional_id' => (int) $o->profesional->id(), 'inicio' => $fecha($o->inicio), 'fin' => $fecha($o->fin),
+            ], $anterior['ocupaciones_profesionales']),
+            'preparacion' => $preparacion === null ? null : [
+                'id' => $preparacion->id, 'revision' => $preparacion->revision, 'eliminada' => $preparacion->eliminada,
+            ] + ($ocupacionPreparacion === null
+                ? ['recurso_id' => null, 'inicio' => null, 'fin' => null]
+                : $ocupacion($ocupacionPreparacion)),
+        ];
+    }
+
+    private function verificarLibre(bool $espacio, string $id, DateTimeImmutable $desde, DateTimeImmutable $hasta, ?string $editar): void
+    {
+        [$ocupaciones, $campo] = $espacio ? [OcupacionRecurso::class, 'espacio'] : [OcupacionProfesional::class, 'profesional'];
+        // Las ocupaciones sin turno interno (reservas públicas y preparaciones) siempre cuentan.
+        $ocupado = $this->entidades->createQuery("SELECT o.id FROM $ocupaciones o WHERE o.$campo = :id AND o.fin > :desde AND o.inicio < :hasta AND (o.turno IS NULL OR o.turno <> :editar)")
+            ->setParameter('editar', $editar ?? '0');
+        $bloqueado = $this->entidades->createQuery("SELECT b.id FROM App\\Entity\\Bloqueo b WHERE b.$campo = :id AND b.fin > :desde AND b.inicio < :hasta");
+        foreach ([$ocupado, $bloqueado] as $consulta) {
+            $consulta->setParameter('id', $id)->setParameter('desde', $desde, self::INSTANTE)
+                ->setParameter('hasta', $hasta, self::INSTANTE)->setMaxResults(1);
+            if ($consulta->getOneOrNullResult() !== null) {
+                throw new TurnoNoDisponible($espacio
+                    ? 'El espacio tiene una ocupación o bloqueo en ese horario.'
+                    : 'Una profesional asignada tiene una ocupación o bloqueo en ese horario.');
+            }
+        }
+    }
+
+    private function preparacion(): ?array
+    {
+        // La hidratación escalar simple no aplica el tipo json; la de arrays sí.
+        return $this->entidades->createQuery('SELECT p.valor AS valor FROM App\Entity\PoliticaReserva p WHERE p.clave = :clave')
+            ->setParameter('clave', self::POLITICA)->getOneOrNullResult()['valor'] ?? null;
+    }
+
+    /**
+     * Profesionales de cada turno: ids en orden numérico y nombres en el orden de la base.
+     *
+     * @return array<string, array{ids: list<string>, nombres: list<string>}>
+     */
+    private function equipos(array $turnos): array
+    {
+        if ($turnos === []) {
+            return [];
+        }
+        $equipos = [];
+        foreach ($this->entidades->createQuery(<<<'DQL'
+            SELECT IDENTITY(o.turno) AS turno, p.id AS id, p.nombre AS nombre
+            FROM App\Entity\OcupacionProfesional o JOIN o.profesional p
+            WHERE o.turno IN (:turnos) ORDER BY p.nombre, p.id
+            DQL)->setParameter('turnos', array_values(array_unique($turnos)))->getArrayResult() as $fila) {
+            $equipos[$fila['turno']]['ids'][] = (string) $fila['id'];
+            $equipos[$fila['turno']]['nombres'][] = $fila['nombre'];
+        }
+        foreach ($equipos as &$equipo) {
+            usort($equipo['ids'], self::compararIds(...));
+        }
+
+        return $equipos;
+    }
+
+    /** @param list<OcupacionProfesional> $ocupaciones */
+    private static function idsEquipo(array $ocupaciones): array
+    {
+        $ids = array_map(static fn (OcupacionProfesional $o): string => $o->profesional->id(), $ocupaciones);
+        usort($ids, self::compararIds(...));
+
+        return $ids;
+    }
+
+    private static function compararIds(string $a, string $b): int
+    {
+        return strlen($a) <=> strlen($b) ?: strcmp($a, $b);
+    }
+
+    /** Ejecuta una consulta del período, con el filtro opcional de la profesional propia. */
+    private function consulta(string $dql, array $periodo, ?string $propia): array
+    {
+        $consulta = $this->entidades->createQuery($dql);
+        foreach ($periodo as $nombre => $instante) {
+            $consulta->setParameter($nombre, $instante, self::INSTANTE);
+        }
+        if ($propia !== null) {
+            $consulta->setParameter('propia', $propia);
+        }
+
+        return $consulta->getArrayResult();
+    }
+
+    /** Traduce los rechazos concurrentes de PostgreSQL (exclusión GiST o interbloqueo). */
+    private function conConcurrencia(callable $operacion): mixed
+    {
         try {
-            $this->conexion->transactional(function () use ($id, $datos, $autor, $propia, $eliminar, $inicio, $fin): void {
-                $turnoId = $this->conexion->fetchOne('SELECT turno_id::text FROM preparaciones_agenda WHERE id = ?', [$id]);
-                if ($turnoId === false) {
-                    throw new HttpException(404, 'La preparación ya no está disponible.');
-                }
-                $turno = $this->conexion->fetchAssociative('SELECT * FROM turnos_administrativos WHERE id = ? AND cancelado_en IS NULL FOR UPDATE', [$turnoId]);
-                if ($turno === false) {
-                    throw new HttpException(404, 'La preparación ya no está disponible.');
-                }
-                $equipo = $this->conexion->fetchFirstColumn('SELECT profesional_id::text FROM ocupaciones_profesionales WHERE turno_admin_id = ? ORDER BY profesional_id', [$turnoId]);
-                if ($propia !== null && !in_array($propia, $equipo, true)) {
-                    throw new HttpException(404, 'La preparación ya no está disponible.');
-                }
-                if ($propia !== null && $equipo !== [$propia]) {
-                    throw new HttpException(403, 'Este turno solo puede modificarlo administración.');
-                }
-                $anterior = $this->conexion->fetchAssociative('SELECT p.id, p.revision, o.recurso_id, o.inicio, o.fin FROM preparaciones_agenda p JOIN ocupaciones_recursos o ON o.preparacion_id = p.id WHERE p.id = ? AND NOT p.eliminada FOR UPDATE OF p, o', [$id]);
-                if ($anterior === false) {
-                    throw new HttpException(404, 'La preparación ya no está disponible.');
-                }
-                if (($datos['revision'] ?? null) !== (int) $anterior['revision']) {
-                    throw new TurnoNoDisponible('La preparación cambió. Volvé a cargar la agenda.');
-                }
-                $this->conexion->fetchOne('SELECT id FROM recursos WHERE id = ? FOR UPDATE', [$anterior['recurso_id']]);
-                if (!$eliminar && $inicio < new DateTimeImmutable($turno['fin'])) {
-                    throw new InvalidArgumentException('La preparación debe comenzar después del turno.');
-                }
-                $this->registrarEvento($turnoId, $autor, $eliminar ? 'PREP_ELIMINADA' : 'PREP_EDITADA', $anterior);
-                $this->conexion->delete('ocupaciones_recursos', ['preparacion_id' => $id]);
-                if (!$eliminar) {
-                    $this->verificarLibre('recursos', 'recurso_id', (string) $anterior['recurso_id'], [$inicio->format(DATE_ATOM), $fin->format(DATE_ATOM)], null);
-                    $this->conexion->insert('ocupaciones_recursos', ['preparacion_id' => $id, 'recurso_id' => $anterior['recurso_id'], 'inicio' => $inicio->format(DATE_ATOM), 'fin' => $fin->format(DATE_ATOM)]);
-                }
-                $this->conexion->executeStatement('UPDATE preparaciones_agenda SET revision = revision + 1, eliminada = ? WHERE id = ?', [$eliminar ? 1 : 0, $id]);
-            });
+            return $operacion();
         } catch (DriverException $error) {
             if (in_array($error->getSQLState(), ['23P01', '40P01'], true)) {
                 throw new TurnoNoDisponible('Hay una ocupación concurrente. Revisá el horario e intentá nuevamente.', previous: $error);
@@ -362,64 +620,9 @@ final readonly class AgendaAdministrativa
         }
     }
 
-    private function bloquearEditable(string $id, ?string $propia, mixed $revision): array
+    private static function texto(int|string|null $valor): ?string
     {
-        self::id($id);
-        $turno = $this->conexion->fetchAssociative('SELECT * FROM turnos_administrativos WHERE id = ? AND cancelado_en IS NULL FOR UPDATE', [$id]);
-        if ($turno === false) {
-            throw new HttpException(404, 'El turno ya no está disponible.');
-        }
-        $turno['profesionales'] = $this->conexion->fetchFirstColumn('SELECT profesional_id::text FROM ocupaciones_profesionales WHERE turno_admin_id = ? ORDER BY profesional_id', [$id]);
-        if ($propia !== null && !in_array($propia, $turno['profesionales'], true)) {
-            throw new HttpException(404, 'El turno ya no está disponible.');
-        }
-        if ($propia !== null && $turno['profesionales'] !== [$propia]) {
-            throw new HttpException(403, 'Este turno solo puede modificarlo administración.');
-        }
-        if ($revision !== (int) $turno['revision']) {
-            throw new TurnoNoDisponible('El turno cambió. Volvé a cargar la agenda antes de modificarlo.');
-        }
-        $turno['espacios'] = $this->conexion->fetchAllAssociative('SELECT recurso_id, inicio, fin FROM ocupaciones_recursos WHERE turno_admin_id = ?', [$id]);
-        $turno['ocupaciones_profesionales'] = $this->conexion->fetchAllAssociative('SELECT profesional_id, inicio, fin FROM ocupaciones_profesionales WHERE turno_admin_id = ?', [$id]);
-        $turno['preparacion'] = $this->conexion->fetchAssociative('SELECT p.id, p.revision, p.eliminada, o.recurso_id, o.inicio, o.fin FROM preparaciones_agenda p LEFT JOIN ocupaciones_recursos o ON o.preparacion_id = p.id WHERE p.turno_id = ?', [$id]) ?: null;
-
-        return $turno;
-    }
-
-    private function registrarEvento(string $id, string $autor, string $tipo, array $anterior): void
-    {
-        $this->conexion->insert('eventos_turnos_administrativos', [
-            'turno_id' => $id, 'autor_id' => $autor, 'tipo' => $tipo,
-            'estado_anterior' => json_encode($anterior, JSON_THROW_ON_ERROR),
-        ]);
-    }
-
-    private function liberar(string $id): void
-    {
-        $this->conexion->delete('ocupaciones_recursos', ['turno_admin_id' => $id]);
-        $this->conexion->delete('ocupaciones_profesionales', ['turno_admin_id' => $id]);
-    }
-
-    private function verificarLibre(string $tabla, string $columna, string $id, array $intervalo, ?string $editar): void
-    {
-        $ocupado = $this->conexion->fetchOne(<<<SQL
-            SELECT 1 FROM ocupaciones_$tabla WHERE $columna = ? AND fin > ? AND inicio < ? AND turno_admin_id IS DISTINCT FROM CAST(? AS bigint)
-            UNION ALL
-            SELECT 1 FROM bloqueos WHERE $columna = ? AND fin > ? AND inicio < ?
-            LIMIT 1
-            SQL, [$id, ...$intervalo, $editar ?? '0', $id, ...$intervalo]);
-        if ($ocupado !== false) {
-            throw new TurnoNoDisponible($tabla === 'recursos'
-                ? 'El espacio tiene una ocupación o bloqueo en ese horario.'
-                : 'Una profesional asignada tiene una ocupación o bloqueo en ese horario.');
-        }
-    }
-
-    private function preparacion(): ?array
-    {
-        $valor = $this->conexion->fetchOne('SELECT valor FROM politicas_reservas WHERE clave = ?', [self::POLITICA]);
-
-        return $valor === false ? null : json_decode($valor, true, flags: JSON_THROW_ON_ERROR);
+        return $valor === null ? null : (string) $valor;
     }
 
     private static function fecha(mixed $valor, string $formato): DateTimeImmutable

@@ -27,8 +27,14 @@ class UsuarioAdministrativo
 
     public function esAdministrador(): bool
     {
-        return array_is_list($this->roles)
-            ? in_array('ROLE_ADMIN', $this->roles, true)
-            : array_key_exists('ROLE_ADMIN', $this->roles);
+        return self::rolesAdministrativos($this->roles);
+    }
+
+    /** Equivale a `jsonb_exists(roles, 'ROLE_ADMIN')` para listas y objetos JSON. */
+    public static function rolesAdministrativos(array $roles): bool
+    {
+        return array_is_list($roles)
+            ? in_array('ROLE_ADMIN', $roles, true)
+            : array_key_exists('ROLE_ADMIN', $roles);
     }
 }

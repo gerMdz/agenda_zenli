@@ -47,12 +47,13 @@ $hash = password_hash('clave de prueba segura', PASSWORD_DEFAULT);
 $conexion->executeStatement("INSERT INTO usuarios (id, email, password_hash, roles) VALUES (101, 'admin@example.com', ?, '[\"ROLE_ADMIN\"]'), (102, 'profesional@example.com', ?, '[]')", [$hash, $hash]);
 $conexion->executeStatement("INSERT INTO profesionales (usuario_id, nombre) VALUES (102, 'Profesional')");
 $sesion = new SesionAdministrativa($conexion);
-$horarios = new HorariosProfesionales($conexion);
-$comunicacion = new ComunicacionAgenda($conexion);
+App\Doctrine\InstanteType::registrar();
 $configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
 $configuracion->enableNativeLazyObjects(true);
 $entidades = new EntityManager($conexion, $configuracion);
-$controller = new AgendaAdministrativaController($sesion, new AgendaAdministrativa($conexion, $horarios), $comunicacion, $horarios, new PerfilesProfesionales(new RepositorioPerfilesProfesionales($entidades)));
+$horarios = new HorariosProfesionales($entidades);
+$comunicacion = new ComunicacionAgenda($entidades);
+$controller = new AgendaAdministrativaController($sesion, new AgendaAdministrativa($entidades, $horarios), $comunicacion, $horarios, new PerfilesProfesionales(new RepositorioPerfilesProfesionales($entidades)));
 $peticion = static function (?string $usuario, string $contenido, bool $token = true, string $metodo = 'POST', string $ruta = '/api/admin/agenda/profesionales') use ($hash): Request {
     $request = Request::create($ruta, $metodo, [], [], [], ['CONTENT_TYPE' => 'application/json'], $contenido);
     $session = new Session(new MockArraySessionStorage());

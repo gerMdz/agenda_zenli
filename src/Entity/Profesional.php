@@ -32,4 +32,5 @@ class Profesional
     public function usuario(): ?UsuarioPerfil { return $this->usuario; }
     public function renombrar(string $nombre): void { $this->nombre = $nombre; }
     public function cambiarEstado(bool $activa): void { $this->activa = $activa; }
+    public function vincularCuenta(UsuarioPerfil $usuario): void { $this->usuario = $usuario; }
 }

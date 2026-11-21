@@ -13,6 +13,10 @@
 - Masaje en pareja: **dos tratamientos consecutivos**, no simultáneos. No se ha confirmado si los realiza una o dos profesionales; no habilitar en reservas públicas.
 - Tecnología preferida: Symfony, Doctrine, PostgreSQL, Vue 3, PrimeVue. Sin microservicios ni Kubernetes en primera versión.
 - Los ABM se migran gradualmente a Doctrine ORM; las consultas y bloqueos específicos de PostgreSQL se conservan cuando son necesarios para la integridad y concurrencia.
+- Los ABM de administración usan Doctrine ORM: portada, servicios, promociones, cuentas, perfiles, presentación de profesionales, espacios, preparación, horarios, bloqueos, turnos internos, preparaciones y mensajes. Se conservan en SQL nativo los `LOCK TABLE`, la comprobación de cobertura horaria con `range_agg`, la verificación de turnos existentes contra `reserva_sesiones`, el motor de reservas `AgendaPostgresql` y el inicio de sesión con límite de intentos. Los `FOR UPDATE` y `FOR SHARE` se expresan como bloqueos pesimistas del ORM y mantienen el orden anterior: turno, espacio y servicio.
+- Las transacciones del ORM usan `TransaccionEntidades`: confirman al terminar y, ante un error, revierten y descartan el estado en memoria. No se usa `wrapInTransaction()` porque cierra el EntityManager ante cualquier validación rechazada. Si falla un `flush`, Doctrine cierra el EntityManager; la petición termina con error y la siguiente comienza con uno nuevo.
+- Los instantes de las entidades nuevas usan el tipo `instante`, que conserva y lee microsegundos de `TIMESTAMPTZ`. `datetimetz_immutable` de DBAL falla con los valores asignados por `now()`.
+- La auditoría `estado_anterior` de los turnos conserva las mismas claves y valores; desde esta migración las fechas se registran como `2099-06-03 14:00:00.000000+00:00` en lugar del texto de PostgreSQL `2099-06-03 14:00:00+00`.
 - Estética aproximada de marca: verde profundo, dorado y marfil, basada en imágenes aportadas; colores no oficiales.
 
 ## Implementación de la disponibilidad

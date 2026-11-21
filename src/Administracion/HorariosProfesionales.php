@@ -5,9 +5,17 @@ declare(strict_types=1);
 namespace App\Administracion;
 
 use App\Agenda\TurnoNoDisponible;
+use App\Entity\Bloqueo;
+use App\Entity\FranjaHoraria;
+use App\Entity\HorarioEspecial;
+use App\Entity\Profesional;
+use App\Entity\ProfesionalHorarios;
 use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\LockMode;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -15,42 +23,54 @@ final readonly class HorariosProfesionales
 {
     private const ZONA = 'America/Argentina/Mendoza';
 
-    public function __construct(private Connection $conexion)
+    private Connection $conexion;
+
+    public function __construct(private EntityManagerInterface $entidades)
     {
+        // Solo para el bloqueo de agenda y las comprobaciones de cobertura propias de PostgreSQL.
+        $this->conexion = $entidades->getConnection();
     }
 
     public function consultar(string $id): array
     {
-        $perfil = $this->conexion->fetchAssociative(<<<'SQL'
-            SELECT p.horarios_revision AS revision,
-                   COALESCE(p.horario_por_franjas, EXISTS (
-                       SELECT 1 FROM horarios_profesionales h WHERE h.profesional_id = p.id
-                   ))::int AS por_franjas
-            FROM profesionales p WHERE p.id = ? AND p.activa
-            SQL, [$id]);
-        if ($perfil === false) {
+        $perfil = $this->entidades->createQuery(<<<'DQL'
+            SELECT p.horariosRevision AS revision, p.horarioPorFranjas AS por_franjas
+            FROM App\Entity\ProfesionalHorarios p WHERE p.id = :id AND p.activa = true
+            DQL)->setParameter('id', $id)->getOneOrNullResult();
+        if ($perfil === null) {
             throw new HttpException(404, 'La profesional no está disponible.');
         }
+        $franjas = $this->entidades->createQuery(<<<'DQL'
+            SELECT f.diaSemana AS dia_semana, f.horaInicio AS hora_inicio, f.horaFin AS hora_fin,
+                   f.vigenteDesde AS vigente_desde, f.vigenteHasta AS vigente_hasta
+            FROM App\Entity\FranjaHoraria f WHERE f.profesionalId = :id
+            ORDER BY f.vigenteDesde, f.diaSemana, f.horaInicio, f.id
+            DQL)->setParameter('id', $id)->getArrayResult();
+
+        $excepciones = array_map(static fn (array $e): array => ['tipo' => 'especial'] + $e, $this->entidades->createQuery(<<<'DQL'
+            SELECT e.fecha AS fecha, e.horaInicio AS hora_inicio, e.horaFin AS hora_fin
+            FROM App\Entity\HorarioEspecial e WHERE e.profesionalId = :id
+            DQL)->setParameter('id', $id)->getArrayResult());
+        $bloqueos = $this->entidades->createQuery(<<<'DQL'
+            SELECT b.inicio AS inicio, b.fin AS fin FROM App\Entity\Bloqueo b
+            WHERE b.profesional = :id AND b.gestionHorarios = true
+            DQL)->setParameter('id', $id)->getArrayResult();
+        $zona = new DateTimeZone(self::ZONA);
+        foreach ($bloqueos as $bloqueo) {
+            $fin = self::textoHora($bloqueo['fin']->setTimezone($zona));
+            $excepciones[] = [
+                'tipo' => 'bloqueo', 'fecha' => $bloqueo['inicio']->setTimezone($zona)->format('Y-m-d'),
+                'hora_inicio' => self::textoHora($bloqueo['inicio']->setTimezone($zona)),
+                'hora_fin' => $fin === '00:00:00' ? '24:00:00' : $fin,
+            ];
+        }
+        usort($excepciones, static fn (array $a, array $b): int => [$a['fecha'], $a['hora_inicio'], $a['tipo']] <=> [$b['fecha'], $b['hora_inicio'], $b['tipo']]);
 
         return [
-            'revision' => (int) $perfil['revision'],
-            'por_franjas' => (bool) $perfil['por_franjas'],
-            'franjas' => $this->conexion->fetchAllAssociative(<<<'SQL'
-                SELECT dia_semana::int, hora_inicio::text, hora_fin::text, vigente_desde, vigente_hasta
-                FROM horarios_profesionales WHERE profesional_id = ?
-                ORDER BY vigente_desde, dia_semana, hora_inicio, id
-                SQL, [$id]),
-            'excepciones' => $this->conexion->fetchAllAssociative(<<<'SQL'
-                SELECT 'especial' AS tipo, fecha::text, hora_inicio::text, hora_fin::text
-                FROM horarios_profesionales_especiales WHERE profesional_id = ?
-                UNION ALL
-                SELECT 'bloqueo', (inicio AT TIME ZONE 'America/Argentina/Mendoza')::date::text,
-                       (inicio AT TIME ZONE 'America/Argentina/Mendoza')::time::text,
-                       CASE WHEN (fin AT TIME ZONE 'America/Argentina/Mendoza')::time = TIME '00:00'
-                            THEN '24:00:00' ELSE (fin AT TIME ZONE 'America/Argentina/Mendoza')::time::text END
-                FROM bloqueos WHERE profesional_id = ? AND gestion_horarios
-                ORDER BY fecha, hora_inicio, tipo
-                SQL, [$id, $id]),
+            'revision' => $perfil['revision'],
+            'por_franjas' => $perfil['por_franjas'] ?? $franjas !== [],
+            'franjas' => $franjas,
+            'excepciones' => $excepciones,
         ];
     }
 
@@ -71,46 +91,81 @@ final readonly class HorariosProfesionales
             $excepciones = array_map(self::validarExcepcion(...), $datos['excepciones']);
         }
 
-        $this->conexion->transactional(function () use ($id, $modo, $revision, $franjas, $excepciones, $autor): void {
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $modo, $revision, $franjas, $excepciones, $autor): void {
             $this->bloquearCambiosAgenda();
             if ($this->consultar($id)['revision'] !== $revision) {
                 throw new TurnoNoDisponible('Los horarios cambiaron. Volvé a cargarlos antes de guardar.');
             }
-            $this->conexion->executeStatement(
-                'UPDATE profesionales SET horario_por_franjas = ?, horarios_revision = horarios_revision + 1 WHERE id = ?',
-                [$modo ? 'true' : 'false', $id],
-            );
-            $this->conexion->delete('horarios_profesionales', ['profesional_id' => $id]);
-            foreach ($franjas as $franja) {
-                $this->conexion->insert('horarios_profesionales', $franja + ['profesional_id' => $id]);
-            }
+            $perfil = $this->perfil($id);
+            $perfil->horarioPorFranjas = $modo;
+            ++$perfil->horariosRevision;
+
+            // Se reemplazan todas las filas; las eliminaciones se confirman antes de insertar las nuevas.
+            $anteriores = $this->entidades->createQuery('SELECT f FROM App\Entity\FranjaHoraria f WHERE f.profesionalId = :id')
+                ->setParameter('id', $id)->getResult();
             if ($excepciones !== null) {
-                $this->conexion->delete('horarios_profesionales_especiales', ['profesional_id' => $id]);
-                $this->conexion->executeStatement('DELETE FROM bloqueos WHERE profesional_id = ? AND gestion_horarios', [$id]);
-                foreach ($excepciones as $excepcion) {
-                    if ($excepcion['tipo'] === 'bloqueo') {
-                        $this->insertarBloqueo($id, $excepcion, $autor);
-                    } else {
-                        $this->conexion->executeStatement(<<<'SQL'
-                            INSERT INTO horarios_profesionales_especiales (profesional_id, fecha, hora_inicio, hora_fin)
-                            VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING
-                            SQL, [$id, $excepcion['fecha'], $excepcion['hora_inicio'], $excepcion['hora_fin']]);
-                    }
+                $anteriores = [...$anteriores, ...$this->entidades->createQuery('SELECT e FROM App\Entity\HorarioEspecial e WHERE e.profesionalId = :id')
+                    ->setParameter('id', $id)->getResult(), ...$this->bloqueosGestionados($id)];
+            }
+            foreach ($anteriores as $anterior) {
+                $this->entidades->remove($anterior);
+            }
+            $this->entidades->flush();
+
+            foreach ($franjas as $datosFranja) {
+                $franja = new FranjaHoraria();
+                $franja->profesionalId = $id;
+                $franja->diaSemana = $datosFranja['dia_semana'];
+                $franja->horaInicio = self::textoHora($datosFranja['hora_inicio']);
+                $franja->horaFin = self::textoHora($datosFranja['hora_fin']);
+                $franja->vigenteDesde = $datosFranja['vigente_desde'];
+                $franja->vigenteHasta = $datosFranja['vigente_hasta'];
+                $this->entidades->persist($franja);
+            }
+            $nuevas = [];
+            foreach ($excepciones ?? [] as $excepcion) {
+                if ($excepcion['tipo'] === 'bloqueo') {
+                    $fila = $this->nuevoBloqueo($id, $excepcion, $autor);
+                    $clave = 'bloqueo '.$fila->inicio->format('U.u').' '.$fila->fin->format('U.u');
+                } else {
+                    $fila = new HorarioEspecial();
+                    $fila->profesionalId = $id;
+                    $fila->fecha = $excepcion['fecha'];
+                    $fila->horaInicio = self::textoHora($excepcion['hora_inicio']);
+                    $fila->horaFin = self::textoHora($excepcion['hora_fin']);
+                    $clave = "especial $fila->fecha $fila->horaInicio $fila->horaFin";
+                }
+                // Las filas repetidas se omiten, como hacía ON CONFLICT DO NOTHING.
+                if (!isset($nuevas[$clave])) {
+                    $nuevas[$clave] = true;
+                    $this->entidades->persist($fila);
                 }
             }
+            $this->entidades->flush();
             $this->verificarTurnosExistentes($id);
         });
     }
 
     public function agregarBloqueo(string $id, array $datos, ?string $autor = null): void
     {
-        $bloqueo = self::validarExcepcion(['tipo' => 'bloqueo'] + $datos);
-        $this->conexion->transactional(function () use ($id, $bloqueo, $autor): void {
+        $datosBloqueo = self::validarExcepcion(['tipo' => 'bloqueo'] + $datos);
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $datosBloqueo, $autor): void {
             $this->bloquearCambiosAgenda();
             $this->consultar($id);
-            $this->insertarBloqueo($id, $bloqueo, $autor);
+            $bloqueo = $this->nuevoBloqueo($id, $datosBloqueo, $autor);
+            $existente = $this->entidades->createQuery(<<<'DQL'
+                SELECT COUNT(b.id) FROM App\Entity\Bloqueo b
+                WHERE b.profesional = :id AND b.gestionHorarios = true AND b.inicio = :inicio AND b.fin = :fin
+                DQL)->setParameter('id', $id)
+                ->setParameter('inicio', $bloqueo->inicio, TransaccionEntidades::INSTANTE)
+                ->setParameter('fin', $bloqueo->fin, TransaccionEntidades::INSTANTE)
+                ->getSingleScalarResult();
+            if ((int) $existente === 0) {
+                $this->entidades->persist($bloqueo);
+                $this->entidades->flush();
+            }
             $this->verificarTurnosExistentes($id);
-            $this->conexion->executeStatement('UPDATE profesionales SET horarios_revision = horarios_revision + 1 WHERE id = ?', [$id]);
+            ++$this->perfil($id)->horariosRevision;
         });
     }
 
@@ -120,16 +175,39 @@ final readonly class HorariosProfesionales
         $this->conexion->executeStatement('LOCK TABLE recursos IN EXCLUSIVE MODE');
     }
 
-    private function insertarBloqueo(string $id, array $bloqueo, ?string $autor): void
+    private function perfil(string $id): ProfesionalHorarios
     {
-        $inicio = $bloqueo['fecha'].' '.$bloqueo['hora_inicio'];
-        $fin = $bloqueo['fecha'].' '.$bloqueo['hora_fin'];
-        $this->conexion->executeStatement(<<<'SQL'
-            INSERT INTO bloqueos (profesional_id, inicio, fin, gestion_horarios, creado_por)
-            VALUES (?, CAST(? AS timestamp) AT TIME ZONE 'America/Argentina/Mendoza',
-                       CAST(? AS timestamp) AT TIME ZONE 'America/Argentina/Mendoza', true, ?)
-            ON CONFLICT (profesional_id, inicio, fin) WHERE gestion_horarios DO NOTHING
-            SQL, [$id, $inicio, $fin, $autor]);
+        return $this->entidades->createQuery('SELECT p FROM App\Entity\ProfesionalHorarios p WHERE p.id = :id')
+            ->setParameter('id', $id)->setLockMode(LockMode::PESSIMISTIC_WRITE)
+            ->setHint(Query::HINT_REFRESH, true)->getSingleResult();
+    }
+
+    /** @return list<Bloqueo> */
+    private function bloqueosGestionados(string $id): array
+    {
+        return $this->entidades->createQuery('SELECT b FROM App\Entity\Bloqueo b WHERE b.profesional = :id AND b.gestionHorarios = true')
+            ->setParameter('id', $id)->getResult();
+    }
+
+    private function nuevoBloqueo(string $id, array $datos, ?string $autor): Bloqueo
+    {
+        $zona = new DateTimeZone(self::ZONA);
+        $instante = static function (string $hora) use ($datos, $zona): DateTimeImmutable {
+            // 24:00 equivale a las 00:00 del día siguiente, igual que en PostgreSQL.
+            if (str_starts_with($hora, '24:')) {
+                return (new DateTimeImmutable($datos['fecha'], $zona))->modify('+1 day');
+            }
+
+            return DateTimeImmutable::createFromFormat('!Y-m-d H:i:s.u', $datos['fecha'].' '.$hora, $zona);
+        };
+        $bloqueo = new Bloqueo();
+        $bloqueo->profesional = $this->entidades->getReference(Profesional::class, $id);
+        $bloqueo->inicio = $instante($datos['hora_inicio']);
+        $bloqueo->fin = $instante($datos['hora_fin']);
+        $bloqueo->gestionHorarios = true;
+        $bloqueo->creadoPor = $autor;
+
+        return $bloqueo;
     }
 
     private function verificarTurnosExistentes(string $id): void
@@ -196,6 +274,16 @@ final readonly class HorariosProfesionales
             SQL, [$inicioLocal, $finLocal, $id]);
 
         return (int) $resultado === 1;
+    }
+
+    /** Representación de TIME que devuelve PostgreSQL: segundos completos y fracción sin ceros finales. */
+    private static function textoHora(string|DateTimeImmutable $hora): string
+    {
+        $hora = is_string($hora) ? $hora : $hora->format('H:i:s.u');
+        [$entera, $fraccion] = explode('.', $hora) + [1 => ''];
+        $fraccion = rtrim($fraccion, '0');
+
+        return $fraccion === '' ? $entera : "$entera.$fraccion";
     }
 
     private static function validarExcepcion(mixed $fila): array

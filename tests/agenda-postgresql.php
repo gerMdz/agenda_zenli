@@ -13,6 +13,8 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
 use DoctrineMigrations\Version20261118000100;
 use DoctrineMigrations\Version20261118000200;
 use Psr\Log\NullLogger;
@@ -49,6 +51,15 @@ function conectar(string $socket, string $nombre): Connection
     return $conexion;
 }
 
+function entidades(Connection $conexion): EntityManager
+{
+    App\Doctrine\InstanteType::registrar();
+    $configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
+    $configuracion->enableNativeLazyObjects(true);
+
+    return new EntityManager($conexion, $configuracion);
+}
+
 function verificar(bool $condicion, string $mensaje): void
 {
     if (!$condicion) {
@@ -60,7 +71,8 @@ $dia = new DateTimeImmutable('2099-06-03 10:10:00 America/Argentina/Mendoza');
 $diaSemana = (int) $dia->format('N');
 if (($argv[2] ?? null) === 'interna') {
     $conexion = conectar($socket, 'interna-competidor-'.getmypid());
-    $interna = new AgendaAdministrativa($conexion, new HorariosProfesionales($conexion));
+    $entidades = entidades($conexion);
+    $interna = new AgendaAdministrativa($entidades, new HorariosProfesionales($entidades));
     try {
         $interna->cargar(['servicio' => '101', 'espacio' => '103', 'profesionales' => [], 'inicio' => '2099-06-06T10:00', 'duracion' => 40, 'cliente' => 'Prueba'], '101');
         fwrite(STDOUT, "confirmada\n");
@@ -203,8 +215,9 @@ $conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripc
 $conexion->executeStatement("INSERT INTO usuarios (id, email, password_hash) VALUES (101, 'admin@example.test', 'prueba')");
 $conexion->executeStatement("INSERT INTO profesionales (id, nombre) VALUES (104, 'Prueba C'), (105, 'Prueba D')");
 $conexion->executeStatement("INSERT INTO recursos (id, codigo, nombre) VALUES (102, 'PRUEBA_2', 'Espacio dos'), (103, 'PRUEBA_3', 'Espacio tres')");
-$horarios = new HorariosProfesionales($conexion);
-$interna = new AgendaAdministrativa($conexion, $horarios);
+$entidades = entidades($conexion);
+$horarios = new HorariosProfesionales($entidades);
+$interna = new AgendaAdministrativa($entidades, $horarios);
 $turno = [
     'servicio' => '101', 'espacio' => '102', 'profesionales' => ['101', '102'],
     'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
@@ -429,7 +442,7 @@ verificar((int) $conexion->fetchOne('SELECT count(*) FROM eventos_turnos_adminis
 verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ?', [$id]) === 0, 'La cancelación libera a todo el equipo.');
 $interna->cargar($turno, '101');
 
-$comunicacion = new ComunicacionAgenda($conexion);
+$comunicacion = new ComunicacionAgenda($entidades);
 $comunicacion->vincularCuenta('101', 'profesional@example.test', 'Clave local de prueba 1');
 $comunicacion->vincularCuenta('102', 'otra@example.test', 'Clave local de prueba 2');
 $remitente = (string) $conexion->fetchOne('SELECT usuario_id FROM profesionales WHERE id = 101');

@@ -7,6 +7,8 @@ use App\Administracion\SesionAdministrativa;
 use App\Controller\PresentacionProfesionalesController;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
 use DoctrineMigrations\Version20261120000200;
 use DoctrineMigrations\Version20261120000400;
 use DoctrineMigrations\Version20261121000300;
@@ -21,9 +23,11 @@ require getenv('ZENLI_TEST_AUTOLOAD') ?: __DIR__.'/../vendor/autoload.php';
 require __DIR__.'/../migrations/Version20261120000200.php';
 require __DIR__.'/../migrations/Version20261120000400.php';
 require __DIR__.'/../migrations/Version20261121000300.php';
-require __DIR__.'/../src/Administracion/PresentacionProfesionales.php';
-require __DIR__.'/../src/Administracion/SesionAdministrativa.php';
-require __DIR__.'/../src/Controller/PresentacionProfesionalesController.php';
+spl_autoload_register(static function (string $clase): void {
+    if (str_starts_with($clase, 'App\\')) {
+        require __DIR__.'/../src/'.str_replace('\\', '/', substr($clase, 4)).'.php';
+    }
+});
 
 $socket = $argv[1] ?? '';
 if (!preg_match('~\A/tmp/zenli-agenda-pg\.[A-Za-z0-9]+\z~', $socket) || !is_file($socket.'/datos/PG_VERSION') || !file_exists($socket.'/.s.PGSQL.5432')) {
@@ -46,7 +50,10 @@ $migracion->up(new Schema());
 foreach ($migracion->getSql() as $sql) $db->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());
 $verificar = static function (bool $valor, string $mensaje): void { if (!$valor) throw new RuntimeException($mensaje); };
 $verificar((int) $db->fetchOne('SELECT count(*) FROM profesionales WHERE visible_portada') === 2, 'Solo los activos existentes conservan visibilidad.');
-$servicio = new PresentacionProfesionales($db);
+App\Doctrine\InstanteType::registrar();
+$configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
+$configuracion->enableNativeLazyObjects(true);
+$servicio = new PresentacionProfesionales(new EntityManager($db, $configuracion));
 $ids = static fn (array $lista): array => array_column($lista, 'id');
 $verificar($ids($servicio->configuracion()['profesionales']) === ['3', '2', '1'], 'Orden inicial por nombre.');
 $servicio->mover('1', -1, '1');

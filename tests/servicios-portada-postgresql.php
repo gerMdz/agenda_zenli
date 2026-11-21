@@ -198,7 +198,7 @@ foreach (['{}', '{"visible":"false"}', '{'] as $contenidoInvalido) {
     $verificar((bool) $servicios->obtener($otraPareja)['visible'], 'Una solicitud inválida no debe cambiar la visibilidad.');
 }
 $ruta = (new ReflectionMethod($controller, 'actualizarServicio'))->getAttributes(Symfony\Component\Routing\Attribute\Route::class)[0]->newInstance();
-$verificar(in_array('POST', $ruta->getMethods(), true), 'La edición con archivos debe aceptar POST multipart.');
+$verificar(in_array('POST', $ruta->methods, true), 'La edición con archivos debe aceptar POST multipart.');
 $peticion = Symfony\Component\HttpFoundation\Request::create('/api/admin/servicios/'.$otraPareja, 'POST', ['nombre' => 'Servicio editado', 'descripcion_corta' => 'Descripción editada', 'detalle' => 'Detalle'], server: ['HTTP_X_ZENLI_CSRF' => 'token']);
 $peticion->setSession($sesion);
 $verificar($controller->actualizarServicio($peticion, (string) $otraPareja)->getStatusCode() === 200 && $servicios->obtener($otraPareja)['nombre'] === 'Servicio editado', 'Debe editar un servicio mediante formulario.');
