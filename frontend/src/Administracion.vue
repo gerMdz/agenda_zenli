@@ -44,6 +44,8 @@ const altaClave = ref('')
 const altaProfesional = ref(false)
 const altaPerfil = ref('')
 const altaNombre = ref('')
+const dialogoCuenta = ref(null)
+const accionCuenta = ref('')
 const ajustesAgenda = ref(null)
 const modoPreparacion = ref('')
 const minutosPreparacion = ref('')
@@ -122,6 +124,7 @@ function aplicarSesion(sesion) {
   usuario.value = sesion.usuario
   csrf.value = sesion.csrf
   if (!sesion.usuario) {
+    cerrarDialogoCuenta()
     usuarios.value = []
     usuarioEditado.value = null
     editarClave.value = ''
@@ -296,11 +299,7 @@ function crearUsuario() {
     } else {
       usuarios.value = (await api('/api/admin/usuarios', { method: 'POST', datos })).usuarios
     }
-    altaEmail.value = ''
-    altaClave.value = ''
-    altaProfesional.value = false
-    altaPerfil.value = ''
-    altaNombre.value = ''
+    cerrarDialogoCuenta()
     mensaje.value = 'Cuenta administradora creada.'
   })
 }
@@ -430,10 +429,28 @@ function guardarEspacio() {
   })
 }
 
-function seleccionarUsuario(cuenta) {
+async function abrirDialogoCuenta(cuenta = null) {
+  error.value = ''
+  mensaje.value = ''
+  accionCuenta.value = cuenta ? 'editar' : 'crear'
   usuarioEditado.value = cuenta
-  editarActivo.value = cuenta.activo
+  editarActivo.value = cuenta?.activo ?? true
   editarClave.value = ''
+  await nextTick()
+  dialogoCuenta.value.showModal()
+}
+
+function cerrarDialogoCuenta() {
+  if (dialogoCuenta.value?.open) dialogoCuenta.value.close()
+  accionCuenta.value = ''
+  usuarioEditado.value = null
+  editarClave.value = ''
+  altaEmail.value = ''
+  altaClave.value = ''
+  altaProfesional.value = false
+  altaPerfil.value = ''
+  altaNombre.value = ''
+  error.value = ''
 }
 
 function guardarUsuario() {
@@ -445,8 +462,7 @@ function guardarUsuario() {
       datos: { activo: editarActivo.value, clave: editarClave.value },
     })
     usuarios.value = listado.usuarios
-    usuarioEditado.value = null
-    editarClave.value = ''
+    cerrarDialogoCuenta()
     if (renovarSesion) await cargarSesion()
     mensaje.value = renovarSesion ? 'Contraseña actualizada. Ingresá nuevamente.' : 'Cuenta actualizada.'
   })
@@ -664,7 +680,7 @@ onBeforeUnmount(() => {
       <h1 id="titulo-seccion-admin">{{ usuario?.admin ? seccionActiva.nombre : 'Administración de Zenli' }}</h1>
       <p v-if="usuario" class="cuenta-actual">{{ usuario.email }}</p>
       <p v-if="cargando" role="status">Cargando…</p>
-      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios') && !accionProfesional" class="error" role="alert">{{ error }}</p>
+      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios') && !accionProfesional && !accionCuenta" class="error" role="alert">{{ error }}</p>
       <p v-if="mensaje && (!usuario?.admin || seccionActiva.id !== 'servicios')" class="mensaje" role="status">{{ mensaje }}</p>
 
       <section v-if="!cargando && !usuario" class="panel inicio-sesion">
@@ -710,25 +726,33 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-show="seccionActiva.id === 'cuentas'" class="panel" aria-labelledby="titulo-seccion-admin">
+          <div class="panel-header cabecera-profesionales">
+            <div><h2>Cuentas administradoras</h2><small>Gestioná los accesos de administración.</small></div>
+            <button type="button" :disabled="ocupado" @click="abrirDialogoCuenta()">+ Nueva cuenta</button>
+          </div>
           <ul class="lista">
             <li v-for="cuenta in usuarios" :key="cuenta.id">
               <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}<template v-if="cuenta.profesional"> · {{ cuenta.profesional }}</template></small></div>
-              <button type="button" class="secundario" :disabled="ocupado" @click="seleccionarUsuario(cuenta)">Editar</button>
+              <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoCuenta(cuenta)">Editar</button>
             </li>
           </ul>
-          <form v-if="usuarioEditado" :key="usuarioEditado.id" class="formulario-cuenta" @submit.prevent="guardarUsuario">
-            <h3>{{ usuarioEditado.email }}</h3>
+          <p v-if="!usuarios.length" class="vacío">Todavía no hay cuentas cargadas.</p>
+          <dialog ref="dialogoCuenta" class="modal-servicio" aria-labelledby="titulo-dialogo-cuenta" @close="cerrarDialogoCuenta" @cancel="ocupado && $event.preventDefault()">
+            <div class="modal-cabecera">
+              <div><span class="modal-etiqueta">ADMINISTRACIÓN DE ZENLI</span><h2 id="titulo-dialogo-cuenta">{{ accionCuenta === 'editar' ? 'Editar cuenta' : 'Nueva cuenta' }}</h2><p>{{ accionCuenta === 'editar' ? usuarioEditado?.email : 'Creá una cuenta de acceso para administración.' }}</p></div>
+              <button type="button" class="cerrar-modal" aria-label="Cerrar" :disabled="ocupado" @click="cerrarDialogoCuenta">✕</button>
+            </div>
+            <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
+          <form v-if="accionCuenta === 'editar' && usuarioEditado" :key="usuarioEditado.id" class="formulario-cuenta" @submit.prevent="guardarUsuario">
             <label v-if="usuarioEditado.id !== usuario.id" class="casilla"><input v-model="editarActivo" type="checkbox"> Cuenta activa</label>
             <label for="editar-clave">Nueva contraseña (opcional)</label>
             <input id="editar-clave" v-model="editarClave" type="password" autocomplete="new-password" minlength="12" maxlength="72">
             <div class="acciones">
               <button :disabled="ocupado">Guardar cuenta</button>
-              <button type="button" class="secundario" :disabled="ocupado" @click="usuarioEditado = null; editarClave = ''">Cancelar</button>
             </div>
           </form>
 
-          <form class="formulario-cuenta" @submit.prevent="crearUsuario">
-            <h3>Nueva cuenta</h3>
+          <form v-else-if="accionCuenta === 'crear'" class="formulario-cuenta" @submit.prevent="crearUsuario">
             <label for="alta-email">Correo</label>
             <input id="alta-email" v-model="altaEmail" type="email" autocomplete="off" maxlength="180" required>
             <label for="alta-clave">Contraseña inicial</label>
@@ -747,6 +771,8 @@ onBeforeUnmount(() => {
             </template>
             <button :disabled="ocupado || (altaProfesional && !ajustesAgenda)">Crear cuenta</button>
           </form>
+            <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarDialogoCuenta">Cancelar</button></div>
+          </dialog>
         </section>
 
         <section v-show="seccionActiva.id === 'configuracion-agenda'" id="configuracion-agenda" class="panel">
