@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Administracion\AgendaAdministrativa;
 use App\Administracion\ComunicacionAgenda;
 use App\Administracion\HorariosProfesionales;
-use App\Administracion\SesionAdministrativa;
 use App\Agenda\AgendaPostgresql;
 use App\Agenda\Disponibilidad;
 use App\Agenda\TurnoNoDisponible;
@@ -102,9 +101,14 @@ foreach ([Version20261118000100::class, Version20261118000200::class] as $clase)
     aplicarMigracion($conexion, $clase);
 }
 
-foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000', '20261119001100', '20261119001200', '20261121000100'] as $version) {
+foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000', '20261119001100', '20261119001200', '20261121000100', '20261121000400'] as $version) {
     require __DIR__.'/../migrations/Version'.$version.'.php';
     aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
+}
+
+function contarAuditoria(Connection $conexion, string $tipo): int
+{
+    return (int) $conexion->fetchOne('SELECT count(*) FROM eventos_acceso WHERE tipo = ?', [$tipo]);
 }
 
 function aplicarMigracion(Connection $conexion, string $clase): void
@@ -442,7 +446,7 @@ verificar((int) $conexion->fetchOne('SELECT count(*) FROM eventos_turnos_adminis
 verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ?', [$id]) === 0, 'La cancelación libera a todo el equipo.');
 $interna->cargar($turno, '101');
 
-$comunicacion = new ComunicacionAgenda($entidades);
+$comunicacion = new ComunicacionAgenda($entidades, new App\Seguridad\AuditoriaAccesos($conexion, new Symfony\Component\HttpFoundation\RequestStack()));
 $comunicacion->vincularCuenta('101', 'profesional@example.test', 'Clave local de prueba 1');
 $comunicacion->vincularCuenta('102', 'otra@example.test', 'Clave local de prueba 2');
 $remitente = (string) $conexion->fetchOne('SELECT usuario_id FROM profesionales WHERE id = 101');
@@ -452,17 +456,18 @@ verificar($comunicacion->consultar($destinataria)['mensajes'][0]['texto'] === 'M
 verificar($comunicacion->consultar('101')['mensajes'] === [], 'Una cuenta ajena al mensaje no puede leerlo.');
 fwrite(STDOUT, "PostgreSQL: edición, cancelación, alcance profesional y mensajes privados verificados.\n");
 
-$sesiones = new SesionAdministrativa($conexion);
-$peticion = Request::create('/api/admin/sesion', 'POST');
-$peticion->setSession(new Session(new MockArraySessionStorage()));
-verificar($sesiones->ingresar($peticion, 'profesional@example.test', 'Clave local de prueba 1'), 'La cuenta vinculada puede iniciar sesión.');
-verificar($sesiones->exigirAgenda($peticion)['profesional_id'] === '101', 'La sesión usa la profesional vinculada.');
-try {
-    $sesiones->exigir($peticion);
-    throw new RuntimeException('La cuenta profesional obtuvo acceso administrativo.');
-} catch (HttpException $error) {
-    verificar($error->getStatusCode() === 403, 'Los permisos de administración siguen separados.');
-}
+// El firewall autentica con ProveedorUsuarios y el hasher bcrypt; acá se prueba qué cuenta carga.
+$proveedor = new App\Seguridad\ProveedorUsuarios($conexion);
+$ingresar = static function (string $email, string $clave) use ($proveedor): App\Seguridad\UsuarioSesion {
+    $cuenta = $proveedor->loadUserByIdentifier($email);
+    verificar(password_verify($clave, $cuenta->getPassword()), 'La contraseña de la cuenta vinculada debe verificarse.');
+
+    return $cuenta;
+};
+$cuenta = $ingresar('profesional@example.test', 'Clave local de prueba 1');
+verificar($cuenta->profesionalId === '101', 'La sesión usa la profesional vinculada.');
+verificar($cuenta->getRoles() === ['ROLE_PROFESIONAL'], 'Los permisos de administración siguen separados.');
+verificar(contarAuditoria($conexion, 'CUENTA_VINCULADA') === 2, 'Vincular cuentas queda auditado.');
 
 verificar(count($interna->consultar('2099-06-01', null, '2099-06-30')['turnos']) === 2, 'El mes incluye turnos fuera del primer día.');
 verificar(count($interna->consultar('2099-06-01', '102', '2099-06-07')['turnos']) === 1, 'La semana conserva el alcance profesional.');
@@ -474,9 +479,8 @@ try {
 }
 
 $comunicacion->vincularCuenta(null, 'dual@example.test', 'Clave local de prueba 3', true, 'Profesional administradora');
-verificar($sesiones->ingresar($peticion, 'dual@example.test', 'Clave local de prueba 3'), 'La cuenta de rol doble puede iniciar sesión.');
-$dual = $sesiones->exigir($peticion);
-verificar($dual['admin'] && is_string($dual['profesional_id']), 'La misma sesión conserva administración e identidad profesional.');
+$dual = $ingresar('dual@example.test', 'Clave local de prueba 3');
+verificar($dual->admin && is_string($dual->profesionalId) && $dual->getRoles() === ['ROLE_ADMIN', 'ROLE_PROFESIONAL'], 'La misma sesión conserva administración e identidad profesional.');
 
 $comunicacion->vincularCuenta('104', 'dual-existente@example.test', 'Clave local de prueba 4', true);
 $conexion->executeStatement("INSERT INTO usuarios (email, password_hash, roles) VALUES ('existente@example.test', 'prueba', '[\"ROLE_ADMIN\"]')");
@@ -493,7 +497,7 @@ verificar($espacioEditado['nombre'] === 'Cabina principal' && $espacioEditado['d
 verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_recursos WHERE recurso_id = 102 AND turno_admin_id IS NOT NULL') === 1, 'Editar el espacio conserva la ocupación del turno.');
 
 verificar($conexion->fetchOne("SELECT nombre FROM recursos WHERE codigo = 'ESPACIO_1'") === 'Sala principal', 'Se reemplaza el nombre inicial de la sala.');
-$ocasional = $dual['profesional_id'];
+$ocasional = $dual->profesionalId;
 verificar(!$horarios->consultar($ocasional)['por_franjas'], 'Una profesional nueva admite agendado manual inicialmente.');
 $pauta = [
     'por_franjas' => true,

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Administracion\PresentacionProfesionales;
-use App\Administracion\SesionAdministrativa;
 use App\Controller\PresentacionProfesionalesController;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
@@ -103,17 +102,11 @@ $verificar($servicio->imagen('1', $version, true) === false && $servicio->public
 try { $servicio->cambiarModo('otro', '1'); throw new RuntimeException('Modo inválido aceptado.'); } catch (InvalidArgumentException) {}
 $servicio->guardarImagen('1', null, true, '1');
 $verificar($servicio->imagen('1', $version, false) === false && (string) $db->fetchOne('SELECT actualizado_por FROM presentacion_profesionales_imagenes WHERE profesional_id = 1') === '1', 'Eliminar conserva autor y revoca imagen.');
-$controller = new PresentacionProfesionalesController($servicio, new SesionAdministrativa($db));
+require __DIR__.'/soporte-seguridad.php';
+$controller = new PresentacionProfesionalesController($servicio, sesionDePrueba(administradoraDePrueba()));
 $sesion = new Session(new MockArraySessionStorage());
 $visibilidad = Request::create('/api/admin/profesionales-portada/1/visibilidad', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"visible":false}');
 $visibilidad->setSession($sesion);
-try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('Visibilidad anónima aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Visibilidad requiere sesión.'); }
-$sesion->set('admin_id', '2'); $sesion->set('admin_credencial', hash('sha256', $hash));
-try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('Visibilidad profesional aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Visibilidad requiere administración.'); }
-$sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $hash)); $sesion->set('admin_csrf', 'token');
-try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('Visibilidad sin CSRF aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Visibilidad requiere CSRF.'); }
-$visibilidad->headers->set('X-Zenli-CSRF', 'incorrecto');
-try { $controller->visibilidad($visibilidad, '1'); throw new RuntimeException('CSRF incorrecto aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Visibilidad requiere CSRF válido.'); }
 $visibilidad->headers->set('X-Zenli-CSRF', 'token');
 $verificar($controller->visibilidad($visibilidad, '1')->getStatusCode() === 200, 'Administración puede ocultar.');
 $verificar((string) $db->fetchOne('SELECT actualizado_por FROM presentacion_profesionales_config WHERE id = 1') === '1', 'Visibilidad registra autor.');
@@ -124,24 +117,12 @@ foreach (['{"visible":"false"}', '{}', '{'] as $contenido) {
 }
 $verificar($controller->visibilidad($visibilidad, '999')->getStatusCode() === 422, 'Profesional inexistente rechazada.');
 $servicio->cambiarVisibilidad('1', true, '1');
-$sesion->remove('admin_id');
 $peticion = Request::create('/api/admin/profesionales-portada/modo', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"modo":"imagenes"}');
 $peticion->setSession($sesion);
-try { $controller->modo($peticion); throw new RuntimeException('Acceso anónimo aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Debe requerir sesión.'); }
-$sesion->set('admin_id', '2'); $sesion->set('admin_credencial', hash('sha256', $hash));
-try { $controller->modo($peticion); throw new RuntimeException('Acceso profesional aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Debe requerir administración.'); }
-$sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $hash)); $sesion->set('admin_csrf', 'token');
-try { $controller->modo($peticion); throw new RuntimeException('Escritura sin CSRF aceptada.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Debe requerir CSRF.'); }
 $peticion->headers->set('X-Zenli-CSRF', 'token');
 $verificar($controller->modo($peticion)->getStatusCode() === 200, 'Administración puede cambiar modo.');
 $orden = Request::create('/api/admin/profesionales-portada/1/orden', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"direccion":1}');
 $orden->setSession($sesion);
-$sesion->remove('admin_id');
-try { $controller->orden($orden, '1'); throw new RuntimeException('Orden anónimo aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Orden requiere sesión.'); }
-$sesion->set('admin_id', '2'); $sesion->set('admin_credencial', hash('sha256', $hash));
-try { $controller->orden($orden, '1'); throw new RuntimeException('Orden profesional aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Orden requiere administración.'); }
-$sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $hash));
-try { $controller->orden($orden, '1'); throw new RuntimeException('Orden sin CSRF aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Orden requiere CSRF.'); }
 $orden->headers->set('X-Zenli-CSRF', 'token');
 $verificar($controller->orden($orden, '1')->getStatusCode() === 200, 'Administración puede ordenar.');
 $orden = Request::create('/api/admin/profesionales-portada/1/orden', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"direccion":"1"}');
@@ -149,12 +130,6 @@ $orden->setSession($sesion); $orden->headers->set('X-Zenli-CSRF', 'token');
 $verificar($controller->orden($orden, '1')->getStatusCode() === 422, 'Dirección debe ser entera.');
 $nombre = Request::create('/api/admin/profesionales-portada/1/nombre', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: '{"nombre":"  Nataly Editada  "}');
 $nombre->setSession($sesion);
-$sesion->remove('admin_id');
-try { $controller->nombre($nombre, '1'); throw new RuntimeException('Nombre anónimo aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 401, 'Nombre requiere sesión.'); }
-$sesion->set('admin_id', '2'); $sesion->set('admin_credencial', hash('sha256', $hash));
-try { $controller->nombre($nombre, '1'); throw new RuntimeException('Nombre profesional aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Nombre requiere administración.'); }
-$sesion->set('admin_id', '1'); $sesion->set('admin_credencial', hash('sha256', $hash));
-try { $controller->nombre($nombre, '1'); throw new RuntimeException('Nombre sin CSRF aceptado.'); } catch (HttpException $e) { $verificar($e->getStatusCode() === 403, 'Nombre requiere CSRF.'); }
 $nombre->headers->set('X-Zenli-CSRF', 'token');
 $verificar($controller->nombre($nombre, '1')->getStatusCode() === 200, 'Nombre guardado.');
 $verificar($db->fetchOne('SELECT nombre FROM profesionales WHERE id = 1') === 'Nataly Editada', 'Nombre compartido actualizado.');

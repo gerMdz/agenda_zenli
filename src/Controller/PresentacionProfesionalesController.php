@@ -30,15 +30,13 @@ final readonly class PresentacionProfesionalesController
     #[Route('/api/admin/profesionales-portada', methods: ['GET'])]
     public function configuracion(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
         return $this->respuesta($this->presentacion->configuracion());
     }
 
     #[Route('/api/admin/profesionales-portada/modo', methods: ['PATCH'])]
     public function modo(Request $peticion): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $this->presentacion->cambiarModo($peticion->toArray()['modo'] ?? null, $usuario['id']);
         } catch (JsonException|InvalidArgumentException $error) {
@@ -50,8 +48,7 @@ final readonly class PresentacionProfesionalesController
     #[Route('/api/admin/profesionales-portada/{id}/nombre', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PATCH'])]
     public function nombre(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $this->presentacion->cambiarNombre($id, $peticion->toArray()['nombre'] ?? null, $usuario['id']);
         } catch (JsonException|InvalidArgumentException $error) {
@@ -63,8 +60,7 @@ final readonly class PresentacionProfesionalesController
     #[Route('/api/admin/profesionales-portada/{id}/visibilidad', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PATCH'])]
     public function visibilidad(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $this->presentacion->cambiarVisibilidad($id, $peticion->toArray()['visible'] ?? null, $usuario['id']);
         } catch (JsonException|InvalidArgumentException $error) {
@@ -76,8 +72,7 @@ final readonly class PresentacionProfesionalesController
     #[Route('/api/admin/profesionales-portada/{id}/orden', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PATCH'])]
     public function orden(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             return $this->respuesta($this->presentacion->mover($id, $peticion->toArray()['direccion'] ?? null, $usuario['id']));
         } catch (JsonException|InvalidArgumentException $error) {
@@ -88,8 +83,7 @@ final readonly class PresentacionProfesionalesController
     #[Route('/api/admin/profesionales-portada/{id}/imagen', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['POST'])]
     public function guardarImagen(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         $archivo = $peticion->files->get('imagen');
         if ($archivo !== null && !$archivo instanceof UploadedFile) {
             return $this->respuesta(['error' => 'Elegí un solo archivo.'], 422);
@@ -111,7 +105,6 @@ final readonly class PresentacionProfesionalesController
     #[Route('/api/admin/profesionales-portada/{id}/imagen/{version}', requirements: ['id' => '[1-9][0-9]{0,18}', 'version' => '[a-f0-9]{64}'], methods: ['GET'])]
     public function imagenPrivada(Request $peticion, string $id, string $version): Response
     {
-        $this->sesion->exigir($peticion);
         return $this->imagen($id, $version, false);
     }
 

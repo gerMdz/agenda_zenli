@@ -9,6 +9,7 @@ use App\Entity\Profesional;
 use App\Entity\ProfesionalCuentaAdministrativa;
 use App\Entity\UsuarioAdministrativo;
 use App\Entity\UsuarioPerfil;
+use App\Seguridad\AuditoriaAccesos;
 use DateTimeInterface;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,7 +18,7 @@ use InvalidArgumentException;
 
 final readonly class ComunicacionAgenda
 {
-    public function __construct(private EntityManagerInterface $entidades)
+    public function __construct(private EntityManagerInterface $entidades, private AuditoriaAccesos $auditoria)
     {
     }
 
@@ -69,7 +70,7 @@ final readonly class ComunicacionAgenda
 
     public function vincularCuenta(
         mixed $profesional, mixed $email, mixed $clave, mixed $admin = false,
-        mixed $nombre = null, mixed $cuentaExistente = false,
+        mixed $nombre = null, mixed $cuentaExistente = false, ?string $autor = null,
     ): void {
         if (!is_string($email) || !is_bool($admin) || !is_bool($cuentaExistente)
             || ($profesional !== null && (!is_string($profesional) || preg_match('/\A[1-9][0-9]{0,17}\z/', $profesional) !== 1))
@@ -83,7 +84,7 @@ final readonly class ComunicacionAgenda
         }
         $hash = $cuentaExistente ? null : UsuariosAdministrativos::hashClave($clave);
 
-        TransaccionEntidades::ejecutar($this->entidades, function () use ($profesional, $email, $hash, $nombre, $admin): void {
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($profesional, $email, $hash, $nombre, $admin, $autor): void {
             if ($hash === null) {
                 $usuario = $this->entidades->createQuery('SELECT u FROM App\Entity\UsuarioAdministrativo u WHERE u.email = :email AND u.activo = true')
                     ->setParameter('email', $email)->setLockMode(LockMode::PESSIMISTIC_WRITE)
@@ -99,7 +100,9 @@ final readonly class ComunicacionAgenda
                 $this->entidades->persist($usuario);
                 // La profesional referencia la cuenta: debe existir antes de vincularla.
                 $this->entidades->flush();
+                $this->auditoria->registrar('CUENTA_CREADA', $usuario->id, $autor);
             }
+            $this->auditoria->registrar('CUENTA_VINCULADA', $usuario->id, $autor);
             $cuenta = $this->entidades->getReference(UsuarioPerfil::class, $usuario->id);
             if ($profesional === null) {
                 $perfil = new Profesional(trim($nombre));

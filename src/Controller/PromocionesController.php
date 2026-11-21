@@ -30,7 +30,6 @@ final readonly class PromocionesController
     #[Route('/api/admin/promociones', methods: ['GET'])]
     public function listar(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
         return $this->respuesta(['promociones' => $this->promociones->listar()]);
     }
 
@@ -39,8 +38,7 @@ final readonly class PromocionesController
     #[Route('/api/admin/promociones/{id}', requirements: ['id' => '[1-9][0-9]{0,9}'], methods: ['PUT'])]
     public function guardar(Request $peticion, ?int $id = null): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $multipart = str_starts_with($peticion->headers->get('Content-Type', ''), 'multipart/form-data');
             $archivo = $peticion->files->get('imagen');
@@ -59,10 +57,8 @@ final readonly class PromocionesController
     #[Route('/api/admin/promociones/{id}/imagen/{version}', requirements: ['id' => '[1-9][0-9]{0,9}', 'version' => '[a-f0-9]{64}'], methods: ['GET'])]
     public function imagen(Request $peticion, int $id, string $version): Response
     {
+        // La ruta de administración está protegida por el firewall; la pública solo sirve visibles.
         $admin = str_starts_with($peticion->getPathInfo(), '/api/admin/');
-        if ($admin) {
-            $this->sesion->exigir($peticion);
-        }
         $imagen = $this->promociones->imagen($id, $version, !$admin);
         if ($imagen === false) {
             throw new NotFoundHttpException();
@@ -77,8 +73,7 @@ final readonly class PromocionesController
     #[Route('/api/admin/promociones/{id}/orden', requirements: ['id' => '[1-9][0-9]{0,9}'], methods: ['PATCH'])]
     public function orden(Request $peticion, int $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $direccion = $peticion->toArray()['direccion'] ?? null;
             if (!is_int($direccion)) {
@@ -95,8 +90,7 @@ final readonly class PromocionesController
     #[Route('/api/admin/promociones/{id}/visibilidad', requirements: ['id' => '[1-9][0-9]{0,9}'], methods: ['PATCH'])]
     public function visibilidad(Request $peticion, int $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $datos = $peticion->toArray();
             if (!isset($datos['visible']) || !is_bool($datos['visible'])) {
@@ -112,8 +106,7 @@ final readonly class PromocionesController
     #[Route('/api/admin/promociones/{id}', requirements: ['id' => '[1-9][0-9]{0,9}'], methods: ['DELETE'])]
     public function eliminar(Request $peticion, int $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $this->promociones->eliminar($id, $usuario['id']);
         } catch (InvalidArgumentException $error) {

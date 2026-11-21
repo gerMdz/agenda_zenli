@@ -33,7 +33,7 @@ final readonly class AgendaAdministrativaController
     #[Route('', methods: ['GET'])]
     public function consultar(Request $peticion): JsonResponse
     {
-        $usuario = $this->sesion->exigirAgenda($peticion);
+        $usuario = $this->sesion->actual();
         try {
             return $this->respuesta($this->agenda->consultar(
                 $peticion->query->getString('fecha'),
@@ -48,7 +48,6 @@ final readonly class AgendaAdministrativaController
     #[Route('/configuracion', methods: ['GET'])]
     public function configuracion(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
 
         return $this->respuesta($this->agenda->configuracion());
     }
@@ -57,10 +56,9 @@ final readonly class AgendaAdministrativaController
     #[Route('/profesionales/{id}/bloqueos', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['POST'])]
     public function horarios(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
+        $usuario = $this->sesion->actual();
         try {
             if (!$peticion->isMethod('GET')) {
-                $this->sesion->verificarToken($peticion);
                 if ($peticion->isMethod('POST')) {
                     $this->horarios->agregarBloqueo($id, $peticion->toArray(), $usuario['id']);
 
@@ -83,8 +81,6 @@ final readonly class AgendaAdministrativaController
     #[Route('/espacios/{id}', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT'])]
     public function guardarEspacio(Request $peticion, ?string $id = null): JsonResponse
     {
-        $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
         try {
             $this->agenda->guardarEspacio($peticion->toArray(), $id);
         } catch (JsonException|InvalidArgumentException $error) {
@@ -99,8 +95,6 @@ final readonly class AgendaAdministrativaController
     #[Route('/preparacion', methods: ['PUT'])]
     public function guardarPreparacion(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
         try {
             $this->agenda->guardarPreparacion($peticion->toArray());
         } catch (JsonException) {
@@ -121,8 +115,7 @@ final readonly class AgendaAdministrativaController
     #[Route('/preparaciones/{id}', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT', 'DELETE'])]
     public function modificarPreparacion(Request $peticion, string $id): JsonResponse
     {
-        $autor = $this->sesion->exigirAgenda($peticion);
-        $this->sesion->verificarToken($peticion);
+        $autor = $this->sesion->actual();
         try {
             $this->agenda->modificarPreparacion($id, $peticion->toArray(), $autor['id'], self::agendaPropia($autor), $peticion->isMethod('DELETE'));
             return $this->respuesta(['guardado' => true]);
@@ -143,8 +136,7 @@ final readonly class AgendaAdministrativaController
 
     private function modificarTurno(Request $peticion, ?string $id = null): JsonResponse
     {
-        $autor = $this->sesion->exigirAgenda($peticion);
-        $this->sesion->verificarToken($peticion);
+        $autor = $this->sesion->actual();
         try {
             $datos = $peticion->toArray();
             $propia = self::agendaPropia($autor);
@@ -168,9 +160,8 @@ final readonly class AgendaAdministrativaController
     #[Route('/mensajes', methods: ['GET', 'POST'])]
     public function mensajes(Request $peticion): JsonResponse
     {
-        $usuario = $this->sesion->exigirAgenda($peticion);
+        $usuario = $this->sesion->actual();
         if ($peticion->isMethod('POST')) {
-            $this->sesion->verificarToken($peticion);
             try {
                 $datos = $peticion->toArray();
                 $this->comunicacion->enviar($usuario['id'], $datos['destinatario'] ?? null, $datos['texto'] ?? null);
@@ -187,13 +178,12 @@ final readonly class AgendaAdministrativaController
     #[Route('/cuentas-profesionales', methods: ['POST'])]
     public function vincularCuenta(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
         try {
             $datos = $peticion->toArray();
             $this->comunicacion->vincularCuenta(
                 $datos['profesional'] ?? null, $datos['email'] ?? null, $datos['clave'] ?? null,
                 $datos['admin'] ?? false, $datos['nombre'] ?? null, $datos['cuenta_existente'] ?? false,
+                $this->sesion->actual()['id'],
             );
         } catch (JsonException) {
             return $this->respuesta(['error' => 'Revisá los datos de la cuenta.'], 422);
@@ -209,11 +199,9 @@ final readonly class AgendaAdministrativaController
     #[Route('/profesionales', methods: ['GET', 'POST'])]
     public function crearProfesional(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
         if ($peticion->isMethod('GET')) {
             return $this->respuesta(['profesionales' => $this->perfiles->listar()]);
         }
-        $this->sesion->verificarToken($peticion);
         try {
             $datos = $peticion->toArray();
             $id = $this->perfiles->crear($datos['nombre'] ?? null);
@@ -230,8 +218,6 @@ final readonly class AgendaAdministrativaController
     #[Route('/profesionales/{id}/estado', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT'])]
     public function modificarProfesional(Request $peticion, string $id): JsonResponse
     {
-        $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
         try {
             $datos = $peticion->toArray();
             if (str_ends_with($peticion->getPathInfo(), '/estado')) {

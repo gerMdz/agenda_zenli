@@ -31,6 +31,7 @@ final readonly class RepositorioPerfilesProfesionales
         return array_map(static fn (Profesional $p): array => [
             'id' => $p->id(), 'nombre' => $p->nombre(), 'activa' => $p->activa(),
             'tiene_cuenta' => $p->usuario() !== null, 'admin' => $p->usuario()?->esAdmin() ?? false,
+            'usuario_id' => $p->usuario()?->id(),
         ], $profesionales);
     }
 

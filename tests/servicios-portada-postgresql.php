@@ -176,15 +176,14 @@ $conexion->executeStatement("ALTER TABLE usuarios ADD email TEXT, ADD password_h
 $conexion->executeStatement("CREATE TABLE profesionales (id BIGINT, usuario_id BIGINT, activa BOOLEAN)");
 $hash = password_hash('clave de prueba', PASSWORD_DEFAULT);
 $conexion->executeStatement("UPDATE usuarios SET email = 'admin@example.test', password_hash = ?, roles = '[\"ROLE_ADMIN\"]' WHERE id = 1", [$hash]);
-foreach (['SesionAdministrativa', 'UsuariosAdministrativos'] as $clase) {
-    require __DIR__.'/../src/Administracion/'.$clase.'.php';
-}
-require __DIR__.'/../src/Controller/AdministracionController.php';
-$controller = new App\Controller\AdministracionController(new App\Administracion\SesionAdministrativa($conexion), $portada, $servicios, new App\Administracion\UsuariosAdministrativos(new App\Repository\UsuariosAdministrativosRepository($entidades)));
+require __DIR__.'/soporte-seguridad.php';
+$auditoria = auditoriaDePrueba($conexion);
+$controller = new App\Controller\AdministracionController(
+    sesionDePrueba(administradoraDePrueba()), $portada, $servicios,
+    new App\Administracion\UsuariosAdministrativos(new App\Repository\UsuariosAdministrativosRepository($entidades, $auditoria), new App\Seguridad\LimiteIngresos($conexion), $auditoria),
+    new Symfony\Bundle\SecurityBundle\Security(new Symfony\Component\DependencyInjection\Container()), $auditoria,
+);
 $sesion = new Symfony\Component\HttpFoundation\Session\Session(new Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage());
-$sesion->set('admin_id', '1');
-$sesion->set('admin_credencial', hash('sha256', $hash));
-$sesion->set('admin_csrf', 'token');
 $peticion = Symfony\Component\HttpFoundation\Request::create('/api/admin/servicios/'.$otraPareja.'/visible', 'PATCH', server: ['HTTP_X_ZENLI_CSRF' => 'token', 'CONTENT_TYPE' => 'application/json'], content: '{"visible":false}');
 $peticion->setSession($sesion);
 $verificar($controller->cambiarVisibilidadServicio($peticion, (string) $otraPareja)->getStatusCode() === 200 && !$servicios->obtener($otraPareja)['visible'], 'Debe ocultar mediante JSON.');

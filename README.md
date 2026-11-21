@@ -53,6 +53,12 @@ docker compose exec --user www-data app php bin/console zenli:admin:crear admin@
 
 Entrá a `/admin`. Podés actualizar el teléfono de WhatsApp en formato internacional, subir una imagen JPG, PNG o WebP de hasta 4 MB o volver a la imagen original. También podés cargar los enlaces HTTPS de Instagram y Facebook. Cada campo vacío oculta ese enlace en la portada. En el mismo panel podés crear cuentas administradoras, cambiar sus contraseñas y activar o desactivar su acceso. Los cambios de portada se publican al guardar.
 
+Después de cinco contraseñas incorrectas, el ingreso de esa cuenta se demora un minuto, y cada nuevo fallo duplica la espera hasta un máximo de una hora. Desde el panel, «Desbloquear» quita la demora. Si nadie puede entrar al panel, quitala desde la consola:
+
+```sh
+docker compose -f compose.prod.yaml exec --user www-data app php bin/console zenli:admin:desbloquear admin@ejemplo.com
+```
+
 En producción el panel utiliza cookies seguras y se debe abrir por HTTPS. Si el proxy HTTPS aplica un límite al cuerpo de la solicitud, configurá al menos 5 MB para `/api/admin/portada`.
 
 ## Despliegue en el VPS

@@ -17,5 +17,7 @@ class UsuarioPerfil
     #[ORM\Column(type: 'json', options: ['jsonb' => true])]
     private array $roles;
 
+    public function id(): string { return (string) $this->id; }
+
     public function esAdmin(): bool { return in_array('ROLE_ADMIN', $this->roles, true) || array_key_exists('ROLE_ADMIN', $this->roles); }
 }

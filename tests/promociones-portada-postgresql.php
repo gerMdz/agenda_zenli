@@ -144,38 +144,17 @@ $promociones->eliminar($ids[0], 'admin');
 $promociones->guardar(null, ['nombre' => 'Cuarta', 'descripcion' => 'Descripción'], 'admin');
 $verificar(array_column($promociones->listar(), 'nombre') === ['Tercera', 'Segunda', 'Cuarta'], 'Una promoción nueva debe agregarse al final y excluir eliminadas.');
 
-$conexion->executeStatement('CREATE TABLE usuarios (id BIGINT PRIMARY KEY, email TEXT, password_hash TEXT, roles JSONB, activo BOOLEAN)');
-$conexion->executeStatement('CREATE TABLE profesionales (id BIGINT, usuario_id BIGINT, activa BOOLEAN)');
-$hash = password_hash('clave de prueba', PASSWORD_DEFAULT);
-$conexion->executeStatement("INSERT INTO usuarios VALUES (1, 'admin@example.test', ?, '[\"ROLE_ADMIN\"]', true), (2, 'profesional@example.test', ?, '[]', true)", [$hash, $hash]);
-$conexion->executeStatement('INSERT INTO profesionales VALUES (1, 2, true)');
-require __DIR__.'/../src/Administracion/SesionAdministrativa.php';
-require __DIR__.'/../src/Controller/PromocionesController.php';
-$controller = new App\Controller\PromocionesController($promociones, new App\Administracion\SesionAdministrativa($conexion));
+require __DIR__.'/soporte-seguridad.php';
+$controller = new App\Controller\PromocionesController($promociones, sesionDePrueba(administradoraDePrueba()));
 $sesion = new Symfony\Component\HttpFoundation\Session\Session(new Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage());
-$sesion->set('admin_id', '1');
-$sesion->set('admin_credencial', hash('sha256', $hash));
-$sesion->set('admin_csrf', 'token');
-$peticion = static function (string $contenido, $sesion, string $token = 'token') use ($ids) {
-    $request = Symfony\Component\HttpFoundation\Request::create('/api/admin/promociones/'.$ids[1].'/orden', 'PATCH', server: ['HTTP_X_ZENLI_CSRF' => $token, 'CONTENT_TYPE' => 'application/json'], content: $contenido);
+$peticion = static function (string $contenido, $sesion) use ($ids) {
+    $request = Symfony\Component\HttpFoundation\Request::create('/api/admin/promociones/'.$ids[1].'/orden', 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: $contenido);
     $request->setSession($sesion);
     return $request;
 };
 foreach (['{' => 400, '{}' => 422, '{"direccion":"-1"}' => 422, '{"direccion":0}' => 422] as $contenido => $estado) {
     $verificar($controller->orden($peticion($contenido, $sesion), $ids[1])->getStatusCode() === $estado, 'Debe rechazar JSON o dirección inválida.');
 }
-foreach ([['1', '', 403], ['2', 'token', 403], [null, 'token', 401]] as [$usuario, $token, $estado]) {
-    $sesion->set('admin_id', $usuario);
-    try {
-        $controller->orden($peticion('{"direccion":-1}', $sesion, $token), $ids[1]);
-        throw new RuntimeException('Debe exigir administración y CSRF.');
-    } catch (Symfony\Component\HttpKernel\Exception\HttpException $error) {
-        $verificar($error->getStatusCode() === $estado, 'Debe rechazar accesos no autorizados.');
-    }
-}
-$sesion->set('admin_id', '1');
-$sesion->set('admin_credencial', hash('sha256', $hash));
-$sesion->set('admin_csrf', 'token');
 $verificar($controller->orden($peticion('{"direccion":-1}', $sesion), $ids[1])->getStatusCode() === 200, 'Debe permitir el movimiento autenticado.');
 $otraConexion = DriverManager::getConnection(['driver' => 'pdo_pgsql', 'host' => $socket, 'user' => 'zenli_pruebas', 'dbname' => 'postgres']);
 $otraConexion->executeStatement("SET lock_timeout = '100ms'");

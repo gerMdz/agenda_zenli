@@ -12,6 +12,10 @@ services:
     App\Administracion\:
         resource: ../src/Administracion/
 
+    App\Seguridad\:
+        resource: ../src/Seguridad/
+        exclude: ../src/Seguridad/{UsuarioSesion.php,IngresoRechazado.php}
+
     App\Repository\:
         resource: ../src/Repository/
 

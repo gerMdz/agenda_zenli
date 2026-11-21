@@ -7,7 +7,6 @@ use App\Administracion\ComunicacionAgenda;
 use App\Administracion\HorariosProfesionales;
 use App\Administracion\PerfilesProfesionales;
 use App\Administracion\RepositorioPerfilesProfesionales;
-use App\Administracion\SesionAdministrativa;
 use App\Controller\AgendaAdministrativaController;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
@@ -46,35 +45,23 @@ $verificar = static function (bool $condicion, string $mensaje): void {
 $hash = password_hash('clave de prueba segura', PASSWORD_DEFAULT);
 $conexion->executeStatement("INSERT INTO usuarios (id, email, password_hash, roles) VALUES (101, 'admin@example.com', ?, '[\"ROLE_ADMIN\"]'), (102, 'profesional@example.com', ?, '[]')", [$hash, $hash]);
 $conexion->executeStatement("INSERT INTO profesionales (usuario_id, nombre) VALUES (102, 'Profesional')");
-$sesion = new SesionAdministrativa($conexion);
+require __DIR__.'/soporte-seguridad.php';
+$auditoria = auditoriaDePrueba($conexion);
+$sesion = sesionDePrueba(administradoraDePrueba('101'));
 App\Doctrine\InstanteType::registrar();
 $configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
 $configuracion->enableNativeLazyObjects(true);
 $entidades = new EntityManager($conexion, $configuracion);
 $horarios = new HorariosProfesionales($entidades);
-$comunicacion = new ComunicacionAgenda($entidades);
-$controller = new AgendaAdministrativaController($sesion, new AgendaAdministrativa($entidades, $horarios), $comunicacion, $horarios, new PerfilesProfesionales(new RepositorioPerfilesProfesionales($entidades)));
+$comunicacion = new ComunicacionAgenda($entidades, $auditoria);
+$controller = new AgendaAdministrativaController($sesion, new AgendaAdministrativa($entidades, $horarios), $comunicacion, $horarios, new PerfilesProfesionales(new RepositorioPerfilesProfesionales($entidades), new App\Seguridad\LimiteIngresos($conexion)));
 $peticion = static function (?string $usuario, string $contenido, bool $token = true, string $metodo = 'POST', string $ruta = '/api/admin/agenda/profesionales') use ($hash): Request {
     $request = Request::create($ruta, $metodo, [], [], [], ['CONTENT_TYPE' => 'application/json'], $contenido);
-    $session = new Session(new MockArraySessionStorage());
-    if ($usuario !== null) {
-        $session->set('admin_id', $usuario);
-        $session->set('admin_credencial', hash('sha256', $hash));
-    }
-    $session->set('admin_csrf', 'token');
-    $request->setSession($session);
-    if ($token) $request->headers->set('X-Zenli-CSRF', 'token');
+    // Los permisos y el CSRF los aplica el firewall (tests/seguridad-http.php); acá solo importa el cuerpo.
+    $request->setSession(new Session(new MockArraySessionStorage()));
 
     return $request;
 };
-foreach ([[null, true, 401], ['102', true, 403], ['101', false, 403]] as [$usuario, $token, $estado]) {
-    try {
-        $controller->crearProfesional($peticion($usuario, '{"nombre":"Sin permiso"}', $token));
-        throw new RuntimeException('Debe rechazar la solicitud sin permisos o token.');
-    } catch (HttpException $error) {
-        $verificar($error->getStatusCode() === $estado, 'Estado de autorización incorrecto.');
-    }
-}
 foreach (['{}', '{', '{"nombre":"   "}', '{"nombre":123}', '{"nombre":"'.str_repeat('a', 121).'"}', '{"nombre":"a\u0000b"}'] as $invalido) {
     $respuesta = $controller->crearProfesional($peticion('101', $invalido));
     $verificar($respuesta->getStatusCode() === 422, 'Debe rechazar nombres y JSON inválidos.');
@@ -90,14 +77,6 @@ $verificar((int) $conexion->fetchOne('SELECT count(*) FROM usuarios') === $usuar
 $comunicacion->vincularCuenta($id, 'nueva@example.com', 'clave de prueba segura');
 $verificar($conexion->fetchOne('SELECT u.email FROM profesionales p JOIN usuarios u ON u.id = p.usuario_id WHERE p.id = ?', [$id]) === 'nueva@example.com', 'Debe poder vincular una cuenta posteriormente.');
 $ruta = '/api/admin/agenda/profesionales/'.$id;
-foreach ([[null, true, 401], ['102', true, 403], ['101', false, 403]] as [$usuario, $token, $estado]) {
-    try {
-        $controller->modificarProfesional($peticion($usuario, '{"activa":false}', $token, 'PUT', $ruta.'/estado'), $id);
-        throw new RuntimeException('Debe rechazar la modificación sin permisos o token.');
-    } catch (HttpException $error) {
-        $verificar($error->getStatusCode() === $estado, 'Estado de autorización incorrecto.');
-    }
-}
 foreach (['{}', '{', '{"nombre":"   "}', '{"nombre":123}'] as $invalido) {
     $verificar($controller->modificarProfesional($peticion('101', $invalido, true, 'PUT', $ruta), $id)->getStatusCode() === 422, 'Debe rechazar nombre inválido.');
 }

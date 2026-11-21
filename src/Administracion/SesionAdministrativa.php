@@ -4,128 +4,49 @@ declare(strict_types=1);
 
 namespace App\Administracion;
 
-use Doctrine\DBAL\Connection;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Session\SessionInterface;
+use App\Seguridad\TokenCsrf;
+use App\Seguridad\UsuarioSesion;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 
+/**
+ * Acceso de los controladores a la cuenta autenticada por el firewall de Symfony.
+ *
+ * La autenticación, los permisos por ruta (access_control) y el CSRF de las escrituras se aplican
+ * antes del controlador; ver config/packages/security.yaml y App\Seguridad.
+ */
 final readonly class SesionAdministrativa
 {
-    private const HASH_FICTICIO = '$2y$12$EC4XFX7Oz4bARSA8nzjewOKSV2XSTtNv8W8yJAcRuOVEfr3.J3R6O';
-
-    public function __construct(private Connection $conexion)
+    public function __construct(private TokenStorageInterface $tokens, private TokenCsrf $csrf)
     {
     }
 
-    public function token(SessionInterface $sesion): string
+    public function token(): string
     {
-        $token = $sesion->get('admin_csrf');
-        if (!is_string($token)) {
-            $token = bin2hex(random_bytes(32));
-            $sesion->set('admin_csrf', $token);
-        }
-
-        return $token;
+        return $this->csrf->valor();
     }
 
-    public function verificarToken(Request $peticion): void
+    public function cuenta(): ?UsuarioSesion
     {
-        $token = $peticion->getSession()->get('admin_csrf');
-        if (!is_string($token) || !hash_equals($token, $peticion->headers->get('X-Zenli-CSRF', ''))) {
-            throw new HttpException(403, 'La sesión del formulario venció.');
-        }
+        $usuario = $this->tokens->getToken()?->getUser();
+
+        return $usuario instanceof UsuarioSesion ? $usuario : null;
     }
 
-    public function usuario(SessionInterface $sesion): ?array
+    /** @return array{id: string, email: string, admin: bool, profesional_id: ?string}|null */
+    public function usuario(): ?array
     {
-        $id = $sesion->get('admin_id');
-        if (!is_string($id)) {
-            return null;
-        }
-
-        $usuario = $this->conexion->fetchAssociative(<<<'SQL'
-            SELECT u.id::text, u.email, u.password_hash, jsonb_exists(u.roles, 'ROLE_ADMIN')::int AS admin,
-                   p.id::text AS profesional_id
-            FROM usuarios u LEFT JOIN profesionales p ON p.usuario_id = u.id AND p.activa
-            WHERE u.id = ? AND u.activo AND (jsonb_exists(u.roles, 'ROLE_ADMIN') OR p.id IS NOT NULL)
-            SQL, [$id]);
-
-        if ($usuario === false || !hash_equals($sesion->get('admin_credencial', ''), self::huella($usuario))) {
-            $sesion->invalidate();
-
-            return null;
-        }
-
-        return [
-            'id' => $usuario['id'], 'email' => $usuario['email'], 'admin' => (bool) $usuario['admin'],
-            'profesional_id' => $usuario['profesional_id'],
-        ];
+        return $this->cuenta()?->datos();
     }
 
-    public function exigir(Request $peticion): array
+    /**
+     * Cuenta de la petición actual. El firewall ya exigió la sesión; la excepción solo cubre una
+     * ruta que quede fuera de access_control por error.
+     *
+     * @return array{id: string, email: string, admin: bool, profesional_id: ?string}
+     */
+    public function actual(): array
     {
-        $usuario = $this->exigirAgenda($peticion);
-        if (!$usuario['admin']) {
-            throw new HttpException(403, 'Esta sección requiere permisos de administración.');
-        }
-
-        return $usuario;
-    }
-
-    public function exigirAgenda(Request $peticion): array
-    {
-        return $this->usuario($peticion->getSession()) ?? throw new HttpException(401, 'Ingresá a tu cuenta.');
-    }
-
-    public function ingresar(Request $peticion, string $email, string $clave): bool
-    {
-        $email = strtolower(trim($email));
-        // Límites independientes por origen y por cuenta. Se aplican también a cuentas inexistentes.
-        $this->consumirIntento('origen:'.$peticion->getClientIp(), 30);
-        $this->consumirIntento('cuenta:'.$email, 8);
-        $usuario = $this->conexion->fetchAssociative(<<<'SQL'
-            SELECT u.id::text, u.password_hash FROM usuarios u
-            LEFT JOIN profesionales p ON p.usuario_id = u.id AND p.activa
-            WHERE u.email = ? AND u.activo AND (jsonb_exists(u.roles, 'ROLE_ADMIN') OR p.id IS NOT NULL)
-            SQL, [$email]);
-
-        if (!password_verify($clave, $usuario['password_hash'] ?? self::HASH_FICTICIO) || $usuario === false) {
-            return false;
-        }
-
-        $this->conexion->delete('intentos_acceso_admin', ['clave' => hash('sha256', 'cuenta:'.$email)]);
-        $sesion = $peticion->getSession();
-        $sesion->invalidate();
-        $sesion->set('admin_id', $usuario['id']);
-        $sesion->set('admin_credencial', self::huella($usuario));
-
-        return true;
-    }
-
-    private function consumirIntento(string $clave, int $limite): void
-    {
-        $intentos = $this->conexion->fetchOne(<<<'SQL'
-            INSERT INTO intentos_acceso_admin (clave, intentos, vence_en)
-            VALUES (?, 1, statement_timestamp() + interval '10 minutes')
-            ON CONFLICT (clave) DO UPDATE SET
-                intentos = CASE WHEN intentos_acceso_admin.vence_en <= statement_timestamp()
-                    THEN 1 ELSE LEAST(intentos_acceso_admin.intentos + 1, 31) END,
-                vence_en = CASE WHEN intentos_acceso_admin.vence_en <= statement_timestamp()
-                    THEN excluded.vence_en ELSE intentos_acceso_admin.vence_en END
-            RETURNING intentos
-            SQL, [hash('sha256', $clave)]);
-
-        if ((int) $intentos > $limite) {
-            throw new HttpException(429, 'Demasiados intentos. Probá nuevamente en unos minutos.');
-        }
-
-        if (random_int(1, 100) === 1) {
-            $this->conexion->executeStatement('DELETE FROM intentos_acceso_admin WHERE vence_en <= statement_timestamp()');
-        }
-    }
-
-    private static function huella(array $usuario): string
-    {
-        return hash('sha256', $usuario['password_hash']);
+        return $this->usuario() ?? throw new HttpException(401, 'Ingresá a tu cuenta.');
     }
 }

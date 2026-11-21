@@ -1,0 +1,36 @@
+security:
+    password_hashers:
+        # Igual que los hashes existentes (password_hash de PHP 8.4): bcrypt de costo 12.
+        App\Seguridad\UsuarioSesion:
+            algorithm: bcrypt
+            cost: 12
+
+    providers:
+        usuarios:
+            id: App\Seguridad\ProveedorUsuarios
+
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_AGENDA]
+        ROLE_PROFESIONAL: [ROLE_AGENDA]
+
+    # Al ingresar se descarta la sesión anterior completa, incluido su token CSRF.
+    session_fixation_strategy: invalidate
+    hide_user_not_found: true
+
+    firewalls:
+        administracion:
+            pattern: ^/api/admin(/|$)
+            lazy: true
+            provider: usuarios
+            custom_authenticators:
+                - App\Seguridad\AutenticadorAdministrativo
+            entry_point: App\Seguridad\AutenticadorAdministrativo
+            access_denied_handler: App\Seguridad\AccesoDenegado
+
+    # Se evalúa en orden y aplica la primera regla que coincide. Lo que no figura exige
+    # administración: una ruta nueva bajo /api/admin queda protegida por defecto.
+    access_control:
+        - { path: ^/api/admin/sesion$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/agenda$, roles: ROLE_AGENDA }
+        - { path: ^/api/admin/agenda/(turnos|preparaciones|mensajes)(/|$), roles: ROLE_AGENDA }
+        - { path: ^/api/admin, roles: ROLE_ADMIN }

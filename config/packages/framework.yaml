@@ -1,6 +1,10 @@
 framework:
     secret: '%env(APP_SECRET)%'
+    csrf_protection: true
     session:
+        # Una hora sin actividad cierra la sesión (App\Seguridad\ProteccionAdministracion).
+        gc_maxlifetime: 3600
+        cookie_lifetime: 0
         cookie_httponly: true
         cookie_samesite: lax
         cookie_secure: auto

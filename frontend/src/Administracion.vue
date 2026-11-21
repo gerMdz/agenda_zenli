@@ -371,6 +371,19 @@ function cambiarEstadoProfesional(persona) {
   })
 }
 
+function horaDemora(fin) {
+  return new Date(fin).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function desbloquearCuenta(usuarioId, nombre) {
+  if (!window.confirm(`¿Permitir que ${nombre} vuelva a intentar ingresar ahora?`)) return
+  return ejecutar(async () => {
+    await api(`/api/admin/usuarios/${usuarioId}/bloqueo`, { method: 'DELETE' })
+    await recargarEquipo()
+    mensaje.value = 'La cuenta puede volver a ingresar.'
+  })
+}
+
 function crearCuentaProfesional() {
   return ejecutar(async () => {
     await api('/api/admin/agenda/cuentas-profesionales', {
@@ -827,8 +840,11 @@ onBeforeUnmount(() => {
           </div>
           <ul class="lista">
             <li v-for="cuenta in usuarios" :key="cuenta.id">
-              <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}<template v-if="cuenta.profesional"> · {{ cuenta.profesional }}</template></small></div>
-              <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoCuenta(cuenta)">Editar</button>
+              <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}<template v-if="cuenta.profesional"> · {{ cuenta.profesional }}</template><template v-if="cuenta.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(cuenta.demora_hasta) }}</template></small></div>
+              <div class="acciones">
+                <button v-if="cuenta.demora_hasta" type="button" class="secundario" :disabled="ocupado" @click="desbloquearCuenta(cuenta.id, cuenta.email)">Desbloquear</button>
+                <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoCuenta(cuenta)">Editar</button>
+              </div>
             </li>
           </ul>
           <p v-if="!usuarios.length" class="vacío">Todavía no hay cuentas cargadas.</p>
@@ -909,8 +925,9 @@ onBeforeUnmount(() => {
             </div>
             <ul class="lista">
               <li v-for="persona in perfilesProfesionales" :key="persona.id">
-                <div><strong>{{ persona.nombre }}</strong><small>{{ persona.activa ? (persona.admin ? 'Profesional y administradora' : persona.tiene_cuenta ? 'Profesional' : 'Sin cuenta') : 'Dada de baja' }}</small></div>
+                <div><strong>{{ persona.nombre }}</strong><small>{{ persona.activa ? (persona.admin ? 'Profesional y administradora' : persona.tiene_cuenta ? 'Profesional' : 'Sin cuenta') : 'Dada de baja' }}<template v-if="persona.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(persona.demora_hasta) }}</template></small></div>
                 <div class="acciones">
+                  <button v-if="persona.demora_hasta" type="button" class="secundario" :disabled="ocupado" @click="desbloquearCuenta(persona.usuario_id, persona.nombre)">Desbloquear</button>
                   <button v-if="persona.activa && !persona.tiene_cuenta" type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('cuenta', persona.id)">Vincular cuenta</button>
                   <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('editar', persona)">Editar</button>
                   <button type="button" class="secundario" :disabled="ocupado" @click="cambiarEstadoProfesional(persona)">{{ persona.activa ? 'Dar de baja' : 'Reactivar' }}</button>

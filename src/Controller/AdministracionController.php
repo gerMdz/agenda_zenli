@@ -8,8 +8,10 @@ use App\Administracion\ConfiguracionPortada;
 use App\Administracion\SesionAdministrativa;
 use App\Administracion\ServiciosPortada;
 use App\Administracion\UsuariosAdministrativos;
+use App\Seguridad\AuditoriaAccesos;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -24,53 +26,41 @@ final readonly class AdministracionController
         private ConfiguracionPortada $portada,
         private ServiciosPortada $servicios,
         private UsuariosAdministrativos $usuarios,
+        private Security $seguridad,
+        private AuditoriaAccesos $auditoria,
     ) {
     }
 
     #[Route('/sesion', methods: ['GET'])]
-    public function sesion(Request $peticion): JsonResponse
+    public function sesion(): JsonResponse
     {
-        $sesion = $peticion->getSession();
-        $usuario = $this->sesion->usuario($sesion);
-
-        return $this->respuesta(['usuario' => $usuario, 'csrf' => $this->sesion->token($sesion)]);
+        return $this->respuesta(['usuario' => $this->sesion->usuario(), 'csrf' => $this->sesion->token()]);
     }
 
+    /** El autenticador ya validó el ingreso; si llega acá, la sesión es nueva y está autenticada. */
     #[Route('/sesion', methods: ['POST'])]
-    public function ingresar(Request $peticion): JsonResponse
+    public function ingresar(): JsonResponse
     {
-        $this->sesion->verificarToken($peticion);
-        try {
-            $datos = $peticion->toArray();
-        } catch (JsonException) {
-            return $this->error('Ingresá el correo y la contraseña.', 400);
-        }
-        $email = $datos['email'] ?? null;
-        $clave = $datos['clave'] ?? null;
-        if (!is_string($email) || strlen($email) > 180 || !is_string($clave) || strlen($clave) > 72
-            || str_contains($email, "\0") || str_contains($clave, "\0")
-            || !filter_var(trim($email), FILTER_VALIDATE_EMAIL)
-            || !$this->sesion->ingresar($peticion, $email, $clave)) {
-            return $this->error('Correo o contraseña incorrectos.', 401);
-        }
-
-        return $this->sesion($peticion);
+        return $this->sesion();
     }
 
     #[Route('/sesion', methods: ['DELETE'])]
     public function salir(Request $peticion): JsonResponse
     {
-        $this->sesion->verificarToken($peticion);
+        $cuenta = $this->sesion->cuenta();
+        if ($cuenta !== null) {
+            $this->auditoria->registrar('SALIDA', $cuenta->id);
+            $this->seguridad->logout(false);
+        }
         $peticion->getSession()->invalidate();
 
-        return $this->sesion($peticion);
+        return $this->sesion();
     }
 
     #[Route('/portada/modo', methods: ['PATCH'])]
     public function cambiarModoPortada(Request $peticion): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $datos = $peticion->toArray();
         } catch (JsonException) {
@@ -89,8 +79,7 @@ final readonly class AdministracionController
     #[Route('/portada/visibilidad', methods: ['PATCH'])]
     public function cambiarVisibilidadPortada(Request $peticion): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $datos = $peticion->toArray();
         } catch (JsonException) {
@@ -107,8 +96,7 @@ final readonly class AdministracionController
     #[Route('/portada', methods: ['POST'])]
     public function guardarPortada(Request $peticion): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         $archivo = $peticion->files->get('imagen');
         if ($archivo !== null && !$archivo instanceof UploadedFile) {
             return $this->error('Elegí un solo archivo.', 422);
@@ -135,7 +123,6 @@ final readonly class AdministracionController
     #[Route('/usuarios', methods: ['GET'])]
     public function listarUsuarios(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
 
         return $this->respuesta(['usuarios' => $this->usuarios->listar()]);
     }
@@ -143,8 +130,6 @@ final readonly class AdministracionController
     #[Route('/usuarios', methods: ['POST'])]
     public function crearUsuario(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
         try {
             $datos = $peticion->toArray();
             $email = $datos['email'] ?? null;
@@ -152,7 +137,7 @@ final readonly class AdministracionController
             if (!is_string($email) || !is_string($clave)) {
                 return $this->error('Ingresá el correo y la contraseña.', 422);
             }
-            $this->usuarios->crear($email, $clave);
+            $this->usuarios->crear($email, $clave, $this->sesion->actual()['id']);
         } catch (JsonException|InvalidArgumentException $error) {
             return $this->error($error instanceof JsonException ? 'Revisá los datos de la cuenta.' : $error->getMessage(), 422);
         } catch (UniqueConstraintViolationException) {
@@ -165,8 +150,7 @@ final readonly class AdministracionController
     #[Route('/usuarios/{id}', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
     public function actualizarUsuario(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $datos = $peticion->toArray();
             $activo = $datos['activo'] ?? null;
@@ -177,7 +161,7 @@ final readonly class AdministracionController
             if (!$activo && $usuario['id'] === $id) {
                 return $this->error('No podés desactivar tu propia cuenta.', 422);
             }
-            if (!$this->usuarios->actualizar($id, $activo, $clave, $usuario['id'], $peticion->getSession()->get('admin_credencial'))) {
+            if (!$this->usuarios->actualizar($id, $activo, $clave, $usuario['id'], $this->sesion->cuenta()->huella)) {
                 return $this->error('No se pudo actualizar la cuenta. Volvé a ingresar si tu acceso cambió.', 409);
             }
         } catch (JsonException|InvalidArgumentException $error) {
@@ -187,18 +171,27 @@ final readonly class AdministracionController
         return $this->respuesta(['usuarios' => $this->usuarios->listar()]);
     }
 
+    /** Quita la demora de ingreso de una cuenta, administradora o profesional. */
+    #[Route('/usuarios/{id}/bloqueo', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['DELETE'])]
+    public function desbloquearUsuario(string $id): JsonResponse
+    {
+        if (!$this->usuarios->desbloquear($id, $this->sesion->actual()['id'])) {
+            return $this->error('La cuenta no existe.', 404);
+        }
+
+        return $this->respuesta(['usuarios' => $this->usuarios->listar()]);
+    }
+
     #[Route('/servicios', methods: ['GET'])]
     public function listarServicios(Request $peticion): JsonResponse
     {
-        $this->sesion->exigir($peticion);
         return $this->respuesta(['servicios' => $this->servicios->listar()]);
     }
 
     #[Route('/servicios', methods: ['POST'])]
     public function crearServicio(Request $peticion): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         $archivo = $peticion->files->get('imagen');
         if ($archivo !== null && !$archivo instanceof UploadedFile) {
             return $this->error('Elegí un solo archivo.', 422);
@@ -222,8 +215,7 @@ final readonly class AdministracionController
     #[Route('/servicios/{id}', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['POST', 'PATCH'])]
     public function actualizarServicio(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         $archivo = $peticion->files->get('imagen');
         if ($archivo !== null && !$archivo instanceof UploadedFile) {
             return $this->error('Elegí un solo archivo.', 422);
@@ -248,8 +240,7 @@ final readonly class AdministracionController
     #[Route('/servicios/{id}', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['DELETE'])]
     public function eliminarServicio(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
 
         try {
             $this->servicios->eliminar((int)$id, $usuario['id']);
@@ -263,8 +254,7 @@ final readonly class AdministracionController
     #[Route('/servicios/{id}/orden', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
     public function cambiarOrdenServicio(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
 
         try {
             $datos = $peticion->toArray();
@@ -285,8 +275,7 @@ final readonly class AdministracionController
     #[Route('/servicios/{id}/configuracion', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
     public function configurarServicio(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
         try {
             $datos = $peticion->toArray();
             foreach (['duracion_minima', 'profesionales_requeridos'] as $campo) {
@@ -307,8 +296,7 @@ final readonly class AdministracionController
     #[Route('/servicios/{id}/visible', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
     public function cambiarVisibilidadServicio(Request $peticion, string $id): JsonResponse
     {
-        $usuario = $this->sesion->exigir($peticion);
-        $this->sesion->verificarToken($peticion);
+        $usuario = $this->sesion->actual();
 
         try {
             $datos = $peticion->toArray();

@@ -6,12 +6,13 @@ namespace App\Repository;
 
 use App\Entity\ProfesionalCuentaAdministrativa;
 use App\Entity\UsuarioAdministrativo;
+use App\Seguridad\AuditoriaAccesos;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 
 final readonly class UsuariosAdministrativosRepository
 {
-    public function __construct(private EntityManagerInterface $entidades)
+    public function __construct(private EntityManagerInterface $entidades, private AuditoriaAccesos $auditoria)
     {
     }
 
@@ -36,14 +37,30 @@ final readonly class UsuariosAdministrativosRepository
         return $resultado;
     }
 
-    public function crear(string $email, string $hash): void
+    public function crear(string $email, string $hash, ?string $autor = null): void
     {
-        $usuario = new UsuarioAdministrativo();
-        $usuario->email = $email;
-        $usuario->passwordHash = $hash;
-        $usuario->roles = ['ROLE_ADMIN'];
-        $this->entidades->persist($usuario);
-        $this->entidades->flush();
+        $this->entidades->getConnection()->transactional(function () use ($email, $hash, $autor): void {
+            $usuario = new UsuarioAdministrativo();
+            $usuario->email = $email;
+            $usuario->passwordHash = $hash;
+            $usuario->roles = ['ROLE_ADMIN'];
+            $this->entidades->persist($usuario);
+            $this->entidades->flush();
+            $this->auditoria->registrar('CUENTA_CREADA', $usuario->id, $autor);
+        });
+    }
+
+    public function email(string $id): ?string
+    {
+        return $this->buscarActualizado($id)?->email;
+    }
+
+    public function idPorEmail(string $email): ?string
+    {
+        $id = $this->entidades->createQuery('SELECT u.id FROM App\Entity\UsuarioAdministrativo u WHERE u.email = :email')
+            ->setParameter('email', $email)->getOneOrNullResult(Query::HYDRATE_SINGLE_SCALAR);
+
+        return $id === null ? null : (string) $id;
     }
 
     public function actualizar(string $id, bool $activo, ?string $hash, string $autor, string $huella): bool
@@ -59,9 +76,13 @@ final readonly class UsuariosAdministrativosRepository
             if ($usuario === null || !$usuario->esAdministrador()) {
                 return false;
             }
+            if ($usuario->activo !== $activo) {
+                $this->auditoria->registrar($activo ? 'CUENTA_ACTIVADA' : 'CUENTA_DESACTIVADA', $usuario->id, $autor);
+            }
             $usuario->activo = $activo;
             if ($hash !== null) {
                 $usuario->passwordHash = $hash;
+                $this->auditoria->registrar('CLAVE_CAMBIADA', $usuario->id, $autor);
             }
             $this->entidades->flush();
 

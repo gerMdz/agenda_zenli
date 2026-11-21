@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Administracion;
 
+use App\Seguridad\LimiteIngresos;
 use InvalidArgumentException;
 
 final readonly class PerfilesProfesionales
 {
-    public function __construct(private RepositorioPerfilesProfesionales $perfiles)
+    public function __construct(private RepositorioPerfilesProfesionales $perfiles, private LimiteIngresos $limite)
     {
     }
 
@@ -19,9 +20,13 @@ final readonly class PerfilesProfesionales
         return $this->perfiles->crear($nombre);
     }
 
+    /** `demora_hasta` indica una demora de ingreso vigente de la cuenta vinculada (ISO 8601) o null. */
     public function listar(): array
     {
-        return $this->perfiles->listar();
+        $perfiles = $this->perfiles->listar();
+        $demoras = $this->limite->demorasPorUsuario(array_values(array_filter(array_column($perfiles, 'usuario_id'))));
+
+        return array_map(static fn (array $p): array => $p + ['demora_hasta' => $demoras[$p['usuario_id'] ?? ''] ?? null], $perfiles);
     }
 
     public function renombrar(string $id, mixed $nombre): void
