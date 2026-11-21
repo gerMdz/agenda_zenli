@@ -48,3 +48,4 @@
 - Los tratamientos documentados que faltan se incorporan como servicios ocultos, sin inventar sus parámetros operativos; la configuración debe completarse antes de agendarlos.
 - La presentación de profesionales en portada es global y comienza oculta. Administración puede elegir nombres o nombres con imágenes; si falta alguna imagen se muestran solo nombres. Solo se publican perfiles activos y la configuración no registra ni presume consentimiento.
 - Las promociones de portada son textos informativos administrables, ocultos al crearse; no aplican descuentos ni condiciones a la agenda. La eliminación lógica conserva el último autor, sin sustituir una auditoría histórica.
+- Servicios, promociones, ubicación, horarios y consultas tienen visibilidad global independiente, inicialmente visible. Ocultar una sección conserva sus datos y las visibilidades individuales; profesionales mantiene su modo propio.

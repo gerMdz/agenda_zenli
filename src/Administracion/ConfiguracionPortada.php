@@ -13,6 +13,7 @@ final readonly class ConfiguracionPortada
     public const TELEFONO_INICIAL = '+5492616356192';
     public const DIRECCION_INICIAL = 'Espejo 167, Ciudad de Mendoza';
     public const HORARIOS_INICIALES = "Lun, mié y vie · 10:00 a 20:00\nMar, jue y sáb · 11:00 a 19:00";
+    public const SECCIONES = ['servicios', 'promociones', 'ubicacion', 'horarios', 'consultas'];
 
     public function __construct(private Connection $conexion)
     {
@@ -20,7 +21,7 @@ final readonly class ConfiguracionPortada
 
     public function consultar(): array
     {
-        $fila = $this->conexion->fetchAssociative('SELECT telefono, imagen_version, instagram, facebook, direccion, horarios, solo_imagen::int AS solo_imagen FROM configuracion_portada WHERE id = 1');
+        $fila = $this->conexion->fetchAssociative('SELECT telefono, imagen_version, instagram, facebook, direccion, horarios, solo_imagen::int AS solo_imagen, servicios_visible::int, promociones_visible::int, ubicacion_visible::int, horarios_visible::int, consultas_visible::int FROM configuracion_portada WHERE id = 1');
 
         return [
             'telefono' => $fila['telefono'] ?? self::TELEFONO_INICIAL,
@@ -30,7 +31,24 @@ final readonly class ConfiguracionPortada
             'direccion' => $fila['direccion'] ?? self::DIRECCION_INICIAL,
             'horarios' => $fila['horarios'] ?? self::HORARIOS_INICIALES,
             'solo_imagen' => (bool) ($fila['solo_imagen'] ?? false),
+            'visibilidad' => array_combine(self::SECCIONES, array_map(static fn (string $seccion): bool => (bool) ($fila[$seccion.'_visible'] ?? true), self::SECCIONES)),
         ];
+    }
+
+    public function cambiarVisibilidad(string $seccion, bool $visible, string $autor): void
+    {
+        if (!in_array($seccion, self::SECCIONES, true)) {
+            throw new InvalidArgumentException('Elegí una sección válida.');
+        }
+        $columna = $seccion.'_visible';
+        $this->conexion->executeStatement(<<<SQL
+            INSERT INTO configuracion_portada (id, telefono, actualizado_por, $columna)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                $columna = excluded.$columna,
+                actualizado_por = excluded.actualizado_por,
+                actualizado_en = statement_timestamp()
+            SQL, [self::TELEFONO_INICIAL, $autor, $visible ? 'true' : 'false']);
     }
 
     public function imagen(string $version): array|false

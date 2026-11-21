@@ -16,6 +16,8 @@ La migración `Version20261119000300` agrega `servicios_portada` para gestionar 
 
 La migración `Version20261119000400` agrega dirección y horarios informativos a `configuracion_portada`, conservando inicialmente los textos publicados; no configura disponibilidad de agenda.
 
+La migración `Version20261120000300` agrega cinco indicadores globales de visibilidad, inicialmente verdaderos, a `configuracion_portada`. No modifica los registros individuales ni la configuración de profesionales.
+
 Una `reserva` es la cabecera comercial; `reserva_participantes` identifica participantes y `reserva_sesiones` representa cada tratamiento, profesional e intervalo. `servicios` define ofertas reservables y `servicio_sesiones` su composición. Una reserva puede tener varias sesiones consecutivas. El recurso físico se ocupa por sesión.
 
 Se usan `BIGINT` para IDs, `TIMESTAMPTZ` para instantes, `DATE` y `TIME` para vigencias y franjas semanales. Zona horaria prevista: `America/Argentina/Mendoza`.

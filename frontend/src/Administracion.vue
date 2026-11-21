@@ -36,6 +36,14 @@ const horarios = ref('')
 const instagram = ref('')
 const facebook = ref('')
 const soloImagen = ref(false)
+const visibilidad = ref({ servicios: true, promociones: true, ubicacion: true, horarios: true, consultas: true })
+const seccionesPortada = [
+  { id: 'servicios', nombre: 'Servicios' },
+  { id: 'promociones', nombre: 'Promociones' },
+  { id: 'ubicacion', nombre: 'Ubicación' },
+  { id: 'horarios', nombre: 'Horarios' },
+  { id: 'consultas', nombre: 'Consultas' },
+]
 const imagenGuardada = ref(null)
 const imagenTemporal = ref(null)
 const entradaArchivo = ref(null)
@@ -180,6 +188,7 @@ function aplicarPortada(portada) {
   instagram.value = portada.instagram ?? ''
   facebook.value = portada.facebook ?? ''
   soloImagen.value = portada.solo_imagen === true
+  visibilidad.value = { ...visibilidad.value, ...portada.visibilidad }
   imagenGuardada.value = portada.imagen
   restaurar.value = false
 }
@@ -261,6 +270,16 @@ function cambiarModoPortada() {
     mensaje.value = soloImagen.value
       ? 'Sitio bajado. La portada pública muestra solo la imagen.'
       : 'Sitio subido. La portada completa está visible.'
+  })
+}
+
+function cambiarVisibilidadSeccion(seccion) {
+  return ejecutar(async () => {
+    const resultado = await api('/api/admin/portada/visibilidad', {
+      method: 'PATCH', datos: { seccion, visible: !visibilidad.value[seccion] },
+    })
+    visibilidad.value = resultado.visibilidad
+    mensaje.value = 'Visibilidad de la portada actualizada.'
   })
 }
 
@@ -735,6 +754,14 @@ onBeforeUnmount(() => {
             {{ soloImagen ? 'Subir sitio' : 'Bajar sitio' }}
           </button>
           <div><small id="ayuda-modo">Al bajar el sitio, se muestra la tarjeta de Zenli.</small></div>
+          <h2>Secciones de la portada</h2>
+          <small>Ocultar una sección conserva sus datos y la visibilidad individual de sus contenidos.</small>
+          <ul class="lista-servicios">
+            <li v-for="seccion in seccionesPortada" :key="seccion.id">
+              <div><strong>{{ seccion.nombre }}</strong> · {{ visibilidad[seccion.id] ? 'Visible' : 'Oculta' }}</div>
+              <button type="button" class="secundario" :disabled="ocupado" :aria-label="`${visibilidad[seccion.id] ? 'Ocultar' : 'Mostrar'} ${seccion.nombre}`" @click="cambiarVisibilidadSeccion(seccion.id)">{{ visibilidad[seccion.id] ? 'Ocultar' : 'Mostrar' }}</button>
+            </li>
+          </ul>
           <form @submit.prevent="guardarPortada">
             <label for="telefono">Teléfono de WhatsApp</label>
             <input id="telefono" v-model="telefono" name="telefono" type="tel" autocomplete="tel" placeholder="+54…" :disabled="ocupado" required>

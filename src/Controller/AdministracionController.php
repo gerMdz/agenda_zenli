@@ -86,6 +86,24 @@ final readonly class AdministracionController
         return $this->respuesta(['solo_imagen' => $soloImagen]);
     }
 
+    #[Route('/portada/visibilidad', methods: ['PATCH'])]
+    public function cambiarVisibilidadPortada(Request $peticion): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $datos = $peticion->toArray();
+        } catch (JsonException) {
+            $datos = [];
+        }
+        if (!is_string($datos['seccion'] ?? null) || !in_array($datos['seccion'], ConfiguracionPortada::SECCIONES, true) || !is_bool($datos['visible'] ?? null)) {
+            return $this->error('Elegí una sección y visibilidad válidas.', 422);
+        }
+        $this->portada->cambiarVisibilidad($datos['seccion'], $datos['visible'], $usuario['id']);
+
+        return $this->respuesta(['visibilidad' => $this->portada->consultar()['visibilidad']]);
+    }
+
     #[Route('/portada', methods: ['POST'])]
     public function guardarPortada(Request $peticion): JsonResponse
     {

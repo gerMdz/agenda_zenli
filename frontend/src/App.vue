@@ -12,6 +12,7 @@ const portadaCargada = ref(false)
 const redes = ref([])
 const servicios = ref([])
 const promociones = ref([])
+const visibilidad = ref({ servicios: true, promociones: true, ubicacion: true, horarios: true, consultas: true })
 const servicioSeleccionado = ref(null)
 const modalAbierto = ref(false)
 const enlaceContacto = computed(() => `https://wa.me/${telefono.value.slice(1)}`)
@@ -37,6 +38,7 @@ onMounted(async () => {
     if (respPortada.ok) {
       const portada = await respPortada.json()
       soloImagen.value = portada.solo_imagen === true
+      visibilidad.value = { ...visibilidad.value, ...portada.visibilidad }
       telefono.value = portada.telefono
       direccion.value = portada.direccion
       horarios.value = portada.horarios
@@ -84,12 +86,12 @@ onMounted(async () => {
         </a>
         <nav aria-label="Navegación principal">
           <a href="#inicio">Inicio</a>
-          <a href="#masajes">Masajes</a>
+          <a v-if="visibilidad.servicios" href="#masajes">Masajes</a>
           <a href="#metodo">Método Zenli</a>
           <a href="#nosotras">Nosotras</a>
-          <a href="#ubicacion">Ubicación</a>
+          <a v-if="visibilidad.ubicacion && direccion" href="#ubicacion">Ubicación</a>
         </nav>
-        <a class="boton-dorado contacto-cabecera" :href="enlaceContacto" aria-label="Consultas por WhatsApp"><span class="etiqueta-contacto">Consultas por </span>WhatsApp</a>
+        <a v-if="visibilidad.consultas" class="boton-dorado contacto-cabecera" :href="enlaceContacto" aria-label="Consultas por WhatsApp"><span class="etiqueta-contacto">Consultas por </span>WhatsApp</a>
       </div>
     </header>
 
@@ -100,7 +102,7 @@ onMounted(async () => {
           <p class="ceja">Método Zenli</p>
           <h1 id="titulo">Bienestar, equilibrio<br> y energía</h1>
           <p>Masajes que combinan técnicas tradicionales y orientales para tu bienestar integral.</p>
-          <a class="boton-dorado" href="#masajes">Conocé nuestros masajes <span aria-hidden="true">↓</span></a>
+          <a v-if="visibilidad.servicios" class="boton-dorado" href="#masajes">Conocé nuestros masajes <span aria-hidden="true">↓</span></a>
         </div>
       </section>
 
@@ -112,7 +114,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section id="masajes" class="ancho masajes" aria-labelledby="titulo-masajes">
+      <section v-if="visibilidad.servicios" id="masajes" class="ancho masajes" aria-labelledby="titulo-masajes">
         <div class="titulo-seccion">
           <span class="loto" aria-hidden="true"><i></i></span>
           <h2 id="titulo-masajes">Nuestros masajes</h2>
@@ -132,7 +134,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section v-if="promociones.length" class="ancho masajes" aria-labelledby="titulo-promociones">
+      <section v-if="visibilidad.promociones && promociones.length" class="ancho masajes" aria-labelledby="titulo-promociones">
         <div class="titulo-seccion"><span class="loto" aria-hidden="true"><i></i></span><h2 id="titulo-promociones">Promociones</h2></div>
         <div class="tratamientos">
           <article v-for="promocion in promociones" :key="promocion.id">
@@ -150,7 +152,7 @@ onMounted(async () => {
             <h2 id="modal-titulo" class="modal-titulo">{{ servicioSeleccionado.nombre }}</h2>
             <p class="modal-desc">{{ servicioSeleccionado.descripcion_corta }}</p>
             <div v-if="servicioSeleccionado.detalle" class="modal-detalle">{{ servicioSeleccionado.detalle }}</div>
-            <div class="modal-accion">
+            <div v-if="visibilidad.consultas" class="modal-accion">
               <a class="boton-dorado" :href="enlaceContacto">Reservar turno <span aria-hidden="true">↗</span></a>
             </div>
           </div>
@@ -165,20 +167,20 @@ onMounted(async () => {
             <h2 id="titulo-nosotras">Nuestro espacio</h2>
             <p>Te damos la bienvenida a Zenli, nuestro centro de masajes en Mendoza.</p>
           </div>
-          <a class="boton-dorado" :href="enlaceContacto">Escribinos <span aria-hidden="true">↗</span></a>
+          <a v-if="visibilidad.consultas" class="boton-dorado" :href="enlaceContacto">Escribinos <span aria-hidden="true">↗</span></a>
         </div>
       </section>
 
-      <section id="ubicacion" class="ancho datos" aria-label="Ubicación, horarios y consultas">
-        <div v-if="direccion">
+      <section v-if="(visibilidad.ubicacion && direccion) || (visibilidad.horarios && horarios) || visibilidad.consultas" class="ancho datos" aria-label="Ubicación, horarios y consultas">
+        <div v-if="visibilidad.ubicacion && direccion" id="ubicacion">
           <h2>Ubicación</h2>
           <address><a :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccion)}`" target="_blank" rel="noopener noreferrer">{{ direccion }} ↗</a></address>
         </div>
-        <div v-if="horarios">
+        <div v-if="visibilidad.horarios && horarios">
           <h2>Horarios del centro</h2>
           <p class="horarios">{{ horarios }}</p>
         </div>
-        <div>
+        <div v-if="visibilidad.consultas">
           <h2>Consultas</h2>
           <a class="telefono" :href="enlaceContacto" target="_blank" rel="noopener noreferrer">{{ telefonoVisible }} ↗</a>
           <ul v-if="redes.length" class="redes" aria-label="Redes sociales">
