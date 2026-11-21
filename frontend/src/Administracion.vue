@@ -399,6 +399,9 @@ async function abrirDialogoHorario(dia = null) {
   mensaje.value = ''
   diaHorario.value = dia
   horarioAnterior.value = JSON.parse(JSON.stringify(horarioProfesional.value))
+  if (dia && !horarioProfesional.value.franjas.some(franja => franja.dia_semana === dia)) {
+    agregarFranja('semanal')
+  }
   await nextTick()
   dialogoHorario.value.showModal()
 }
@@ -931,7 +934,7 @@ onBeforeUnmount(() => {
               <small v-if="horarioProfesional.por_franjas && !horarioProfesional.franjas.length">Sin franjas, la profesional queda sin disponibilidad. Agregá una fecha cuando confirme que viene.</small>
               <small v-else-if="!horarioProfesional.por_franjas">Modo manual: los horarios se acuerdan al cargar cada turno. Se mantienen los controles de ocupación.</small>
               <div class="acciones">
-                <button type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('semanal')">+ Franja semanal</button>
+                <button v-if="!diaHorario" type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('semanal')">+ Franja semanal</button>
                 <button v-if="!diaHorario" type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('puntual')">+ Fecha puntual</button>
               </div>
               <template v-for="(franja, indice) in horarioProfesional.franjas" :key="indice">
@@ -956,6 +959,7 @@ onBeforeUnmount(() => {
                 <button type="button" class="secundario" @click="horarioProfesional.franjas.splice(indice, 1)">Quitar franja</button>
               </fieldset>
               </template>
+              <button v-if="diaHorario" type="button" class="secundario" :disabled="ocupado" @click="agregarFranja('semanal')">+ Agregar otra franja</button>
               <template v-if="!diaHorario">
               <h3>Excepciones por fecha</h3>
               <small>El horario especial reemplaza las franjas de ese día. Un horario no disponible impide agendar durante ese período, incluso en modo manual.</small>
