@@ -50,6 +50,8 @@ const minutosPreparacion = ref('')
 const preparacionServicios = ref({})
 const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false })
 const nombreProfesional = ref('')
+const dialogoProfesional = ref(null)
+const accionProfesional = ref('')
 const espacioEditado = ref(null)
 const espacioNombre = ref('')
 const espacioDetalle = ref('')
@@ -308,6 +310,7 @@ function crearProfesional() {
     await api('/api/admin/agenda/profesionales', { method: 'POST', datos: { nombre: nombreProfesional.value } })
     nombreProfesional.value = ''
     await recargarEquipo()
+    cerrarDialogoProfesional()
     mensaje.value = 'Profesional creada sin cuenta.'
   })
 }
@@ -321,8 +324,26 @@ function crearCuentaProfesional() {
     const vinculo = cuenta.value.cuenta_existente
     cuenta.value = { profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false }
     await recargarEquipo()
+    cerrarDialogoProfesional()
     mensaje.value = vinculo ? 'Cuenta vinculada.' : 'Cuenta profesional creada.'
   })
+}
+
+async function abrirDialogoProfesional(accion, profesional = '') {
+  error.value = ''
+  mensaje.value = ''
+  accionProfesional.value = accion
+  cuenta.value.profesional = profesional
+  await nextTick()
+  dialogoProfesional.value.showModal()
+}
+
+function cerrarDialogoProfesional() {
+  if (dialogoProfesional.value?.open) dialogoProfesional.value.close()
+  accionProfesional.value = ''
+  nombreProfesional.value = ''
+  cuenta.value = { profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false }
+  error.value = ''
 }
 
 function guardarPreparacionAgenda() {
@@ -643,7 +664,7 @@ onBeforeUnmount(() => {
       <h1 id="titulo-seccion-admin">{{ usuario?.admin ? seccionActiva.nombre : 'Administración de Zenli' }}</h1>
       <p v-if="usuario" class="cuenta-actual">{{ usuario.email }}</p>
       <p v-if="cargando" role="status">Cargando…</p>
-      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios')" class="error" role="alert">{{ error }}</p>
+      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios') && !accionProfesional" class="error" role="alert">{{ error }}</p>
       <p v-if="mensaje && (!usuario?.admin || seccionActiva.id !== 'servicios')" class="mensaje" role="status">{{ mensaje }}</p>
 
       <section v-if="!cargando && !usuario" class="panel inicio-sesion">
@@ -758,19 +779,31 @@ onBeforeUnmount(() => {
           </section>
 
           <section v-show="seccionActiva.id === 'profesionales'" class="panel">
-            <h2>Profesionales</h2>
+            <div class="panel-header cabecera-profesionales">
+              <div><h2>Profesionales</h2><small>Gestioná el equipo y sus cuentas de acceso.</small></div>
+              <div class="acciones">
+                <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('cuenta')">Crear o vincular cuenta</button>
+                <button type="button" :disabled="ocupado" @click="abrirDialogoProfesional('perfil')">+ Nueva profesional</button>
+              </div>
+            </div>
             <ul class="lista">
               <li v-for="persona in ajustesAgenda.profesionales" :key="persona.id">
                 <div><strong>{{ persona.nombre }}</strong><small>{{ Number(persona.admin) ? 'Profesional y administradora' : Number(persona.tiene_cuenta) ? 'Profesional' : 'Sin cuenta' }}</small></div>
+                <button v-if="!Number(persona.tiene_cuenta)" type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('cuenta', persona.id)">Vincular cuenta</button>
               </li>
             </ul>
-            <form @submit.prevent="crearProfesional">
-              <h3>Nueva profesional sin cuenta</h3>
+            <p v-if="!ajustesAgenda.profesionales.length" class="vacío">Todavía no hay profesionales cargadas.</p>
+            <dialog ref="dialogoProfesional" class="modal-servicio" aria-labelledby="titulo-dialogo-profesional" @close="cerrarDialogoProfesional" @cancel="ocupado && $event.preventDefault()">
+              <div class="modal-cabecera">
+                <div><span class="modal-etiqueta">EQUIPO DE ZENLI</span><h2 id="titulo-dialogo-profesional">{{ accionProfesional === 'perfil' ? 'Nueva profesional' : 'Crear o vincular cuenta' }}</h2><p>{{ accionProfesional === 'perfil' ? 'Agregá una profesional sin crear una cuenta de acceso.' : 'Asigná una cuenta a una profesional del equipo.' }}</p></div>
+                <button type="button" class="cerrar-modal" aria-label="Cerrar" :disabled="ocupado" @click="cerrarDialogoProfesional">✕</button>
+              </div>
+              <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
+            <form v-if="accionProfesional === 'perfil'" @submit.prevent="crearProfesional">
               <label>Nombre <input v-model.trim="nombreProfesional" maxlength="120" required></label>
               <button :disabled="ocupado">Crear profesional</button>
             </form>
-            <form @submit.prevent="crearCuentaProfesional">
-              <h3>Crear o vincular cuenta</h3>
+            <form v-else-if="accionProfesional === 'cuenta'" @submit.prevent="crearCuentaProfesional">
               <label>Profesional
                 <select v-model="cuenta.profesional" required>
                   <option disabled value="">Elegí una opción</option>
@@ -787,6 +820,8 @@ onBeforeUnmount(() => {
               </template>
               <button :disabled="ocupado">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>
             </form>
+              <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarDialogoProfesional">Cancelar</button></div>
+            </dialog>
           </section>
 
           <section v-show="seccionActiva.id === 'horarios-profesionales'" id="horarios-profesionales" class="panel" aria-labelledby="titulo-horarios-profesionales">
@@ -1057,6 +1092,7 @@ button.cerrar-modal { flex-shrink: 0; border: 1px solid #e4dac3; border-radius: 
 .vacío { color: #526255; font-style: italic; margin: 1rem 0 0; }
 
 @media (max-width: 46rem) {
+  .cabecera-profesionales { align-items: flex-start; flex-direction: column; }
   header { flex-wrap: wrap; gap: .55rem; }
   header .acceso-agenda { padding-inline: .55rem; }
   header button { padding-inline: .45rem; }
