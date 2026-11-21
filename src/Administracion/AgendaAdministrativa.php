@@ -206,7 +206,7 @@ final readonly class AgendaAdministrativa
                         throw new InvalidArgumentException('Seleccioná profesionales activas.');
                     }
                     if (!$this->horarios->permite($profesional, $desde, $fin)) {
-                        throw new TurnoNoDisponible('El turno y su preparación deben entrar en el horario de todas las profesionales asignadas.');
+                        throw new TurnoNoDisponible('Una profesional asignada no está disponible durante el turno o su preparación; revisá sus horarios y bloqueos.');
                     }
                     $this->verificarLibre('profesionales', 'profesional_id', $profesional, $ocupacion, $editar);
                 }
@@ -300,7 +300,9 @@ final readonly class AgendaAdministrativa
             LIMIT 1
             SQL, [$id, ...$intervalo, $editar ?? '0', $id, ...$intervalo]);
         if ($ocupado !== false) {
-            throw new TurnoNoDisponible('El espacio o una de las profesionales ya tiene una ocupación en ese horario.');
+            throw new TurnoNoDisponible($tabla === 'recursos'
+                ? 'El espacio tiene una ocupación o bloqueo en ese horario.'
+                : 'Una profesional asignada tiene una ocupación o bloqueo en ese horario.');
         }
     }
 

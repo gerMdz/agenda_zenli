@@ -210,6 +210,36 @@ $turno = [
     'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
 ];
 $interna->guardarPreparacion(['modo' => 'general', 'minutos' => 10]);
+$horarios->agregarBloqueo('104', ['fecha' => '2099-07-10', 'todo_el_dia' => true], '101');
+$aislado = array_replace($turno, ['profesionales' => ['105'], 'inicio' => '2099-07-10T10:00']);
+$aisladoId = $interna->cargar($aislado, '101');
+try {
+    $interna->cargar(array_replace($aislado, ['espacio' => '103']), '101');
+    throw new RuntimeException('La ocupación de la profesional no fue detectada.');
+} catch (TurnoNoDisponible $error) {
+    verificar(str_contains($error->getMessage(), 'profesional') && !str_contains($error->getMessage(), 'espacio'), 'El conflicto debe identificar a la profesional.');
+}
+try {
+    $interna->cargar(array_replace($aislado, ['profesionales' => []]), '101');
+    throw new RuntimeException('La ocupación del espacio no fue detectada.');
+} catch (TurnoNoDisponible $error) {
+    verificar(str_contains($error->getMessage(), 'espacio') && !str_contains($error->getMessage(), 'profesional'), 'El conflicto debe identificar el espacio.');
+}
+$interna->cancelar($aisladoId, '101', null, 1);
+try {
+    $interna->cargar(array_replace($aislado, ['profesionales' => ['104']]), '101');
+    throw new RuntimeException('El bloqueo de la profesional no fue detectado.');
+} catch (TurnoNoDisponible $error) {
+    verificar(str_contains($error->getMessage(), 'profesional') && !str_contains($error->getMessage(), 'espacio'), 'El bloqueo debe identificar a la profesional.');
+}
+$conexion->executeStatement("INSERT INTO bloqueos (recurso_id, inicio, fin) VALUES (102, '2099-07-10 10:00-03', '2099-07-10 11:00-03')");
+try {
+    $interna->cargar($aislado, '101');
+    throw new RuntimeException('El bloqueo del espacio no fue detectado.');
+} catch (TurnoNoDisponible $error) {
+    verificar(str_contains($error->getMessage(), 'espacio') && !str_contains($error->getMessage(), 'profesional'), 'El bloqueo debe identificar el espacio.');
+}
+$conexion->executeStatement("DELETE FROM bloqueos WHERE recurso_id = 102 AND inicio = '2099-07-10 10:00-03'");
 $conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripcion_corta, actualizado_por, duracion_minima, profesionales_requeridos) VALUES (103, 'Mínimos de prueba', 'Prueba', 'prueba', 120, 1)");
 foreach ([30, 45, 60, 90] as $duracion) {
     $datosMinimos = array_replace($turno, ['servicio' => '103', 'profesionales' => [], 'duracion' => $duracion]);
