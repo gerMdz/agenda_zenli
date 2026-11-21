@@ -26,8 +26,25 @@ foreach ($migracion->getSql() as $consulta) {
     $conexion->executeStatement($consulta->getStatement(), $consulta->getParameters(), $consulta->getTypes());
 }
 $conexion->executeStatement("INSERT INTO servicios_portada (nombre, descripcion_corta, orden, visible, actualizado_por) VALUES ('A', 'Prueba', 0, true, 'inicial'), ('B', 'Prueba', 0, false, 'inicial'), ('C', 'Prueba', 8, true, 'inicial')");
+require __DIR__.'/../migrations/Version20261119001100.php';
+$conexion->beginTransaction();
+$migracion = new DoctrineMigrations\Version20261119001100($conexion, new NullLogger());
+$migracion->up(new Schema());
+foreach ($migracion->getSql() as $consulta) {
+    $conexion->executeStatement($consulta->getStatement(), $consulta->getParameters(), $consulta->getTypes());
+}
+if ((int) $conexion->fetchOne("SELECT count(*) FROM servicios_portada WHERE nombre = 'Masaje en pareja' AND NOT visible AND duracion_minima IS NULL AND profesionales_requeridos IS NULL") !== 1) {
+    throw new RuntimeException('La pareja importada debe comenzar oculta e incompleta.');
+}
+$conexion->rollBack();
+$conexion->executeStatement("INSERT INTO servicios_portada (nombre, descripcion_corta, orden, visible, actualizado_por) VALUES ('Masaje Descontracturante', 'Ya existente', 100, true, 'admin'), ('Masaje en pareja', 'Ya existente', 101, true, 'admin'), ('Otra pareja', 'Ya existente', 102, false, 'admin')");
+$migracion = new DoctrineMigrations\Version20261119001100($conexion, new NullLogger());
+$migracion->up(new Schema());
+foreach ($migracion->getSql() as $consulta) {
+    $conexion->executeStatement($consulta->getStatement(), $consulta->getParameters(), $consulta->getTypes());
+}
 $servicios = new ServiciosPortada($conexion);
-$nombres = static fn (array $filas): array => array_column($filas, 'nombre');
+$nombres = static fn (array $filas): array => array_values(array_filter(array_column($filas, 'nombre'), static fn (string $nombre): bool => in_array($nombre, ['A', 'B', 'C'], true)));
 $verificar = static function (bool $condicion, string $mensaje): void {
     if (!$condicion) throw new RuntimeException($mensaje);
 };
@@ -49,9 +66,37 @@ foreach ([[99999, 1], [(int) $ids[1], -1], [(int) $ids[0], 0]] as [$id, $direcci
 $verificar($nombres($servicios->listar()) === ['B', 'C', 'A'], 'Un movimiento inválido no debe modificar el orden.');
 fwrite(STDOUT, "Reordenamiento de portada verificado.\n");
 
+$verificar((int) $conexion->fetchOne("SELECT count(*) FROM servicios_portada WHERE lower(nombre) LIKE '%descontracturante%'") === 1, 'No debe duplicar tratamientos existentes.');
+$verificar((int) $conexion->fetchOne("SELECT count(*) FROM servicios_portada WHERE nombre IN ('Relajante', 'Mixto', 'Tailandés', 'Bruxismo cervicocraneofacial', 'Reflexología de pies', 'Lomi Lomi', 'Experiencia Zenli') AND visible = false AND duracion_minima IS NULL AND profesionales_requeridos IS NULL") === 7, 'Debe importar los tratamientos restantes ocultos e incompletos.');
+$pareja = (int) $conexion->fetchOne("SELECT id FROM servicios_portada WHERE nombre = 'Masaje en pareja'");
+$otraPareja = (int) $conexion->fetchOne("SELECT id FROM servicios_portada WHERE nombre = 'Otra pareja'");
+$verificar(in_array('Masaje en pareja', array_column($servicios->listarVisibles(), 'nombre'), true), 'La pareja visible debe seguir visible tras la migración.');
+$verificar(!in_array('Otra pareja', array_column($servicios->listarVisibles(), 'nombre'), true), 'La pareja oculta debe seguir oculta tras la migración.');
+$servicios->cambiarVisibilidad($otraPareja, true, 'admin');
+$servicios->actualizar($otraPareja, 'Experiencia en pareja', 'Descripción editada', '', null, false, 'admin');
+$verificar(in_array('Experiencia en pareja', array_column($servicios->listarVisibles(), 'nombre'), true), 'Debe permitir mostrar y editar pareja.');
+$nuevaPareja = $servicios->crear('Nueva pareja', 'Descripción nueva', '', null, 'admin');
+$verificar(in_array('Nueva pareja', array_column($servicios->listarVisibles(), 'nombre'), true), 'Debe permitir crear pareja visible.');
+$servicios->actualizar($pareja, 'Masaje compartido', 'Descripción editada', '', null, false, 'admin');
+$servicios->actualizar($pareja, 'Masaje en pareja', 'Descripción editada', '', null, false, 'admin');
+$verificar(in_array('Masaje en pareja', array_column($servicios->listarVisibles(), 'nombre'), true), 'Debe permitir renombrar un servicio visible como pareja.');
+$id = (int) $ids[0];
+$verificar(!$servicios->obtener($id)['configuracion_completa'], 'Los servicios existentes comienzan incompletos.');
+$servicios->configurar($id, 60, 2, 'admin');
+$verificar($servicios->obtener($id)['configuracion_completa'] && (int) $servicios->obtener($id)['duracion_minima'] === 60, 'Debe guardar configuración completa.');
+$servicios->configurar($id, null, 2, 'admin');
+$verificar(!$servicios->obtener($id)['configuracion_completa'], 'Debe permitir volver a configuración incompleta.');
+try {
+    $servicios->configurar($id, 0, 1, 'admin');
+    throw new RuntimeException('Debe rechazar valores no positivos.');
+} catch (InvalidArgumentException) {
+}
+$verificar($servicios->obtener($id)['duracion_minima'] === null, 'La configuración inválida no debe modificar datos.');
+fwrite(STDOUT, "Configuración y catálogo de servicios verificados.\n");
+
 $conexion->executeStatement('CREATE TABLE usuarios (id BIGINT PRIMARY KEY)');
 $conexion->executeStatement('INSERT INTO usuarios VALUES (1)');
-foreach (['Version20261119000100', 'Version20261119000200', 'Version20261119000400'] as $nombre) {
+foreach (['Version20261119000100', 'Version20261119000200', 'Version20261119000400', 'Version20261119000500'] as $nombre) {
     require __DIR__.'/../migrations/'.$nombre.'.php';
     $clase = 'DoctrineMigrations\\'.$nombre;
     $migracion = new $clase($conexion, new NullLogger());

@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Administracion\AgendaAdministrativa;
 use App\Administracion\ComunicacionAgenda;
 use App\Administracion\HorariosProfesionales;
+use App\Administracion\PerfilesProfesionales;
 use App\Administracion\SesionAdministrativa;
 use App\Agenda\TurnoNoDisponible;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -25,6 +26,7 @@ final readonly class AgendaAdministrativaController
         private AgendaAdministrativa $agenda,
         private ComunicacionAgenda $comunicacion,
         private HorariosProfesionales $horarios,
+        private PerfilesProfesionales $perfiles,
     ) {
     }
 
@@ -185,6 +187,23 @@ final readonly class AgendaAdministrativaController
         }
 
         return $this->respuesta(['creada' => true], 201);
+    }
+
+    #[Route('/profesionales', methods: ['POST'])]
+    public function crearProfesional(Request $peticion): JsonResponse
+    {
+        $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $datos = $peticion->toArray();
+            $id = $this->perfiles->crear($datos['nombre'] ?? null);
+        } catch (JsonException) {
+            return $this->respuesta(['error' => 'Revisá los datos del perfil profesional.'], 422);
+        } catch (InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], 422);
+        }
+
+        return $this->respuesta(['id' => $id], 201);
     }
 
     private static function agendaPropia(array $usuario): ?string

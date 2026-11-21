@@ -58,6 +58,17 @@ function verificar(bool $condicion, string $mensaje): void
 
 $dia = new DateTimeImmutable('2099-06-03 10:10:00 America/Argentina/Mendoza');
 $diaSemana = (int) $dia->format('N');
+if (($argv[2] ?? null) === 'interna') {
+    $conexion = conectar($socket, 'interna-competidor-'.getmypid());
+    $interna = new AgendaAdministrativa($conexion, new HorariosProfesionales($conexion));
+    try {
+        $interna->cargar(['servicio' => '101', 'espacio' => '103', 'profesionales' => [], 'inicio' => '2099-06-06T10:00', 'duracion' => 40, 'cliente' => 'Prueba'], '101');
+        fwrite(STDOUT, "confirmada\n");
+    } catch (TurnoNoDisponible) {
+        fwrite(STDOUT, "no disponible\n");
+    }
+    exit;
+}
 if (isset($argv[2])) {
     $profesionalId = (int) $argv[2];
     $agenda = new AgendaPostgresql(conectar($socket, 'agenda-competidor-'.$profesionalId), new Disponibilidad());
@@ -79,7 +90,7 @@ foreach ([Version20261118000100::class, Version20261118000200::class] as $clase)
     aplicarMigracion($conexion, $clase);
 }
 
-foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000'] as $version) {
+foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000', '20261119001100', '20261119001200'] as $version) {
     require __DIR__.'/../migrations/Version'.$version.'.php';
     aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
 }
@@ -188,9 +199,9 @@ fwrite(STDOUT, "PostgreSQL: dos confirmaciones concurrentes, un solo ganador y s
 
 
 
-$conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripcion_corta, actualizado_por) VALUES (101, 'Sesión interna', 'Prueba', 'prueba')");
+$conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripcion_corta, actualizado_por, duracion_minima, profesionales_requeridos) VALUES (101, 'Sesión interna', 'Prueba', 'prueba', 30, 2), (102, 'Sin configurar', 'Prueba', 'prueba', NULL, NULL)");
 $conexion->executeStatement("INSERT INTO usuarios (id, email, password_hash) VALUES (101, 'admin@example.test', 'prueba')");
-$conexion->executeStatement("INSERT INTO profesionales (id, nombre) VALUES (104, 'Prueba C')");
+$conexion->executeStatement("INSERT INTO profesionales (id, nombre) VALUES (104, 'Prueba C'), (105, 'Prueba D')");
 $conexion->executeStatement("INSERT INTO recursos (id, codigo, nombre) VALUES (102, 'PRUEBA_2', 'Espacio dos'), (103, 'PRUEBA_3', 'Espacio tres')");
 $horarios = new HorariosProfesionales($conexion);
 $interna = new AgendaAdministrativa($conexion, $horarios);
@@ -199,6 +210,87 @@ $turno = [
     'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
 ];
 $interna->guardarPreparacion(['modo' => 'general', 'minutos' => 10]);
+$conexion->executeStatement("INSERT INTO servicios_portada (id, nombre, descripcion_corta, actualizado_por, duracion_minima, profesionales_requeridos) VALUES (103, 'Mínimos de prueba', 'Prueba', 'prueba', 120, 1)");
+foreach ([30, 45, 60, 90] as $duracion) {
+    $datosMinimos = array_replace($turno, ['servicio' => '103', 'profesionales' => [], 'duracion' => $duracion]);
+    $minimosId = $interna->cargar($datosMinimos, '101');
+    $consultado = $interna->consultar('2099-06-03')['turnos'][0];
+    verificar($consultado['duracion'] === $duracion && $consultado['equipo_incompleto'], 'Cada duración debe admitirse aun por debajo del mínimo configurado.');
+    $interna->cargar(array_replace($datosMinimos, ['duracion' => 30, 'revision' => 1]), '101', null, $minimosId);
+    $interna->cancelar($minimosId, '101', null, 2);
+}
+$datosEquipo = array_replace($turno, ['servicio' => '103', 'duracion' => 30]);
+$equipoId = $interna->cargar($datosEquipo, '101');
+$consultado = $interna->consultar('2099-06-03')['turnos'][0];
+verificar(!$consultado['equipo_incompleto'] && count($consultado['equipo']) === 2, 'Un equipo superior al mínimo debe aceptarse sin alerta.');
+verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ?', [$equipoId]) === 2, 'Todas las profesionales adicionales deben quedar ocupadas.');
+$interna->cargar(array_replace($datosEquipo, ['revision' => 1]), '101', null, $equipoId);
+$interna->cancelar($equipoId, '101', null, 2);
+$pendiente = array_replace($turno, ['profesionales' => [], 'inicio' => '2099-06-05T10:00', 'sena_pagada' => true, 'sena_importe_centavos' => '12345']);
+$pendienteId = $interna->cargar($pendiente, '101');
+$sinEquipo = $interna->consultar('2099-06-05')['turnos'][0];
+verificar($sinEquipo['equipo'] === [] && $sinEquipo['equipo_incompleto'] && $sinEquipo['sena_pagada'] && $sinEquipo['sena_importe_centavos'] === '12345', 'El turno sin equipo y su seña deben aparecer en administración.');
+verificar($interna->consultar('2099-06-05', '104')['turnos'] === [], 'El turno sin asignar no debe exponerse a profesionales.');
+try {
+    $interna->cargar(array_replace($pendiente, ['profesionales' => ['104']]), '101');
+    throw new RuntimeException('El turno sin equipo no ocupó el espacio.');
+} catch (TurnoNoDisponible) {
+}
+try {
+    $interna->cargar(array_replace($pendiente, ['servicio' => '102', 'espacio' => '103']), '101');
+    throw new RuntimeException('Se permitió un servicio incompleto.');
+} catch (InvalidArgumentException $error) {
+    verificar(str_contains($error->getMessage(), 'configurados'), 'El rechazo debe explicar la configuración faltante.');
+}
+$interna->cargar(array_replace($pendiente, ['profesionales' => ['104'], 'revision' => 1, 'sena_pagada' => false]), '101', null, $pendienteId);
+$parcial = $interna->consultar('2099-06-05', '104')['turnos'][0];
+verificar($parcial['equipo_incompleto'] && !$parcial['sena_pagada'], 'La asignación parcial conserva la alerta y actualiza la seña.');
+$evento = json_decode($conexion->fetchOne('SELECT estado_anterior FROM eventos_turnos_administrativos WHERE turno_id = ?', [$pendienteId]), true, flags: JSON_THROW_ON_ERROR);
+verificar((string) $evento['sena_importe_centavos'] === '12345' && $evento['profesionales'] === [], 'La auditoría conserva la seña y el equipo anteriores.');
+try {
+    $interna->cargar(array_replace($pendiente, ['profesionales' => ['104', '105'], 'revision' => 2]), '101', '104', $pendienteId);
+    throw new RuntimeException('Una profesional asignó a otra profesional.');
+} catch (HttpException $error) {
+    verificar($error->getStatusCode() === 403, 'Solo administración puede asignar a otra profesional.');
+}
+$interna->cargar(array_replace($pendiente, ['profesionales' => ['104', '105'], 'revision' => 2]), '101', null, $pendienteId);
+verificar(!$interna->consultar('2099-06-05')['turnos'][0]['equipo_incompleto'], 'La asignación completa elimina la alerta.');
+$interna->cancelar($pendienteId, '101', null, 3);
+
+$conexion->beginTransaction();
+try {
+    $conexion->fetchOne('SELECT id FROM recursos WHERE id = 103 FOR UPDATE');
+    $procesosInternos = [];
+    for ($i = 0; $i < 2; ++$i) {
+        $proceso = proc_open([PHP_BINARY, __FILE__, $socket, 'interna'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $canales);
+        verificar(is_resource($proceso), 'No se pudo iniciar el turno concurrente.');
+        $procesosInternos[] = [$proceso, $canales];
+    }
+    $observadorInterno = conectar($socket, 'interna-observador');
+    $limite = microtime(true) + 5;
+    do {
+        $esperando = (int) $observadorInterno->fetchOne("SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE 'interna-competidor-%' AND wait_event_type = 'Lock'");
+        if ($esperando === 2) {
+            break;
+        }
+        usleep(20_000);
+    } while (microtime(true) < $limite);
+    verificar($esperando === 2, 'Los turnos internos deben competir por el bloqueo del espacio.');
+} finally {
+    $conexion->rollBack();
+}
+$resultadosInternos = [];
+foreach ($procesosInternos as [$proceso, $canales]) {
+    $resultadosInternos[] = trim(stream_get_contents($canales[1]));
+    $errores = stream_get_contents($canales[2]);
+    fclose($canales[1]);
+    fclose($canales[2]);
+    verificar(proc_close($proceso) === 0, 'Error en turno concurrente: '.$errores);
+}
+sort($resultadosInternos);
+verificar($resultadosInternos === ['confirmada', 'no disponible'], 'Solo un turno sin profesionales puede ocupar el espacio.');
+$concurrenteId = $interna->consultar('2099-06-06')['turnos'][0]['id'];
+$interna->cancelar($concurrenteId, '101', null, 1);
 $id = $interna->cargar($turno, '101');
 verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_profesionales WHERE turno_admin_id = ?', [$id]) === 2, 'Un turno de equipo debe ocupar a ambas profesionales.');
 verificar((int) $conexion->fetchOne('SELECT count(*) FROM ocupaciones_recursos WHERE turno_admin_id = ?', [$id]) === 1, 'El equipo usa un solo espacio.');

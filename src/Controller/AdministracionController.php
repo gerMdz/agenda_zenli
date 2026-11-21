@@ -264,6 +264,28 @@ final readonly class AdministracionController
         return $this->respuesta(['servicios' => $servicios]);
     }
 
+    #[Route('/servicios/{id}/configuracion', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
+    public function configurarServicio(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->exigir($peticion);
+        $this->sesion->verificarToken($peticion);
+        try {
+            $datos = $peticion->toArray();
+            foreach (['duracion_minima', 'profesionales_requeridos'] as $campo) {
+                if (!array_key_exists($campo, $datos) || ($datos[$campo] !== null && (!is_int($datos[$campo]) || $datos[$campo] < 1 || $datos[$campo] > 2147483647))) {
+                    throw new InvalidArgumentException('La duración y la cantidad de profesionales deben ser enteros positivos o null.');
+                }
+            }
+            $this->servicios->configurar((int) $id, $datos['duracion_minima'], $datos['profesionales_requeridos'], $usuario['id']);
+        } catch (JsonException) {
+            return $this->error('Revisá los datos de configuración.', 400);
+        } catch (InvalidArgumentException $error) {
+            return $this->error($error->getMessage(), 422);
+        }
+
+        return $this->respuesta(['servicios' => $this->servicios->listar()]);
+    }
+
     #[Route('/servicios/{id}/visible', requirements: ['id' => '[1-9][0-9]{0,18}'], methods: ['PATCH'])]
     public function cambiarVisibilidadServicio(Request $peticion, string $id): JsonResponse
     {

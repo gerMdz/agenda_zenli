@@ -35,14 +35,16 @@ final readonly class AgendaAdministrativa
         $turnos = $this->conexion->fetchAllAssociative(<<<'SQL'
             SELECT t.id::text, t.servicio_nombre AS servicio, t.cliente_nombre AS cliente, t.inicio, t.fin,
                    t.revision, t.servicio_id::text, r.id::text AS espacio_id, r.nombre AS espacio,
-                   array_to_json(array_agg(p.id::text ORDER BY p.id))::text AS equipo,
+                   COALESCE(json_agg(p.id::text ORDER BY p.id) FILTER (WHERE p.id IS NOT NULL), '[]'::json)::text AS equipo,
                    (extract(epoch FROM t.fin - t.inicio) / 60)::int AS duracion,
-                   string_agg(p.nombre, ', ' ORDER BY p.nombre) AS profesionales
+                   COALESCE(string_agg(p.nombre, ', ' ORDER BY p.nombre), '') AS profesionales,
+                   t.profesionales_requeridos, t.sena_pagada::int AS sena_pagada,
+                   t.sena_importe_centavos::text AS sena_importe_centavos
             FROM turnos_administrativos t
             JOIN ocupaciones_recursos ore ON ore.turno_admin_id = t.id
             JOIN recursos r ON r.id = ore.recurso_id
-            JOIN ocupaciones_profesionales op ON op.turno_admin_id = t.id
-            JOIN profesionales p ON p.id = op.profesional_id
+            LEFT JOIN ocupaciones_profesionales op ON op.turno_admin_id = t.id
+            LEFT JOIN profesionales p ON p.id = op.profesional_id
             WHERE t.inicio < ? AND t.fin > ? AND t.cancelado_en IS NULL
               AND (CAST(? AS bigint) IS NULL OR EXISTS (
                   SELECT 1 FROM ocupaciones_profesionales propia
@@ -55,6 +57,9 @@ final readonly class AgendaAdministrativa
             $turno['inicio'] = (new DateTimeImmutable($turno['inicio']))->format(DATE_ATOM);
             $turno['fin'] = (new DateTimeImmutable($turno['fin']))->format(DATE_ATOM);
             $turno['equipo'] = json_decode($turno['equipo'], true, flags: JSON_THROW_ON_ERROR);
+            $turno['profesionales_requeridos'] = $turno['profesionales_requeridos'] === null ? null : (int) $turno['profesionales_requeridos'];
+            $turno['equipo_incompleto'] = $turno['profesionales_requeridos'] === null || count($turno['equipo']) < $turno['profesionales_requeridos'];
+            $turno['sena_pagada'] = (bool) $turno['sena_pagada'];
             $turno['editable'] = $propia === null || $turno['equipo'] === [$propia];
         }
         unset($turno);
@@ -76,7 +81,7 @@ final readonly class AgendaAdministrativa
         unset($bloqueo);
 
         return [
-            'servicios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre FROM servicios_portada ORDER BY orden, nombre'),
+            'servicios' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre, duracion_minima, profesionales_requeridos FROM servicios_portada ORDER BY orden, nombre'),
             'profesionales' => $this->conexion->fetchAllAssociative('SELECT id::text, nombre, (usuario_id IS NOT NULL)::int AS tiene_cuenta FROM profesionales WHERE activa AND (CAST(? AS bigint) IS NULL OR id = ?) ORDER BY nombre', [$propia, $propia]),
             'espacios' => $this->espacios(),
             'preparacion' => $this->preparacion(),
@@ -151,8 +156,8 @@ final readonly class AgendaAdministrativa
         $servicio = self::id($datos['servicio'] ?? null);
         $espacio = self::id($datos['espacio'] ?? null);
         $equipo = $datos['profesionales'] ?? null;
-        if (!is_array($equipo) || !array_is_list($equipo) || $equipo === [] || count($equipo) > 100) {
-            throw new InvalidArgumentException('Seleccioná al menos una profesional.');
+        if (!is_array($equipo) || !array_is_list($equipo) || count($equipo) > 100) {
+            throw new InvalidArgumentException('Revisá la selección de profesionales.');
         }
         $equipo = array_unique(array_map(self::id(...), $equipo));
         sort($equipo, SORT_STRING);
@@ -166,16 +171,25 @@ final readonly class AgendaAdministrativa
         }
         $inicio = self::fecha($datos['inicio'] ?? null, 'Y-m-d\TH:i');
         $duracion = self::minutos($datos['duracion'] ?? null, 1);
+        $pagada = $datos['sena_pagada'] ?? null;
+        $importe = $datos['sena_importe_centavos'] ?? null;
+        if ((array_key_exists('sena_pagada', $datos) && !is_bool($pagada))
+            || ($importe !== null && (!is_string($importe) || preg_match('/\A(?:0|[1-9][0-9]{0,17})\z/', $importe) !== 1))) {
+            throw new InvalidArgumentException('Ingresá una seña válida en centavos.');
+        }
 
         try {
-            return $this->conexion->transactional(function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision): string {
+            return $this->conexion->transactional(function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe): string {
                 $anterior = $editar === null ? null : $this->bloquearEditable($editar, $propia, $revision);
                 if ($this->conexion->fetchOne('SELECT id FROM recursos WHERE id = ? AND activo FOR UPDATE', [$espacio]) === false) {
                     throw new InvalidArgumentException('Elegí un espacio activo.');
                 }
-                $nombre = $this->conexion->fetchOne('SELECT nombre FROM servicios_portada WHERE id = ?', [$servicio]);
-                if ($nombre === false) {
+                $configuracion = $this->conexion->fetchAssociative('SELECT nombre, duracion_minima, profesionales_requeridos FROM servicios_portada WHERE id = ? FOR SHARE', [$servicio]);
+                if ($configuracion === false) {
                     throw new InvalidArgumentException('Elegí un servicio del catálogo.');
+                }
+                if ((int) $configuracion['duracion_minima'] < 1 || (int) $configuracion['profesionales_requeridos'] < 1) {
+                    throw new InvalidArgumentException('El servicio no tiene duración mínima y profesionales requeridos configurados.');
                 }
                 $politica = $this->preparacion();
                 $minutos = ($politica['modo'] ?? null) === 'general' ? $politica['minutos'] : ($politica['servicios'][$servicio] ?? null);
@@ -197,11 +211,13 @@ final readonly class AgendaAdministrativa
                     $this->verificarLibre('profesionales', 'profesional_id', $profesional, $ocupacion, $editar);
                 }
 
-                $campos = [$servicio, $nombre, trim($cliente), $inicio->format(DATE_ATOM), $ocupacion[1]];
+                $pagada = array_key_exists('sena_pagada', $datos) ? $pagada : ($anterior === null ? false : (bool) $anterior['sena_pagada']);
+                $importe = array_key_exists('sena_importe_centavos', $datos) ? $importe : ($anterior['sena_importe_centavos'] ?? null);
+                $campos = [$servicio, $configuracion['nombre'], trim($cliente), $inicio->format(DATE_ATOM), $ocupacion[1], (int) $configuracion['profesionales_requeridos'], $pagada ? 1 : 0, $importe];
                 if ($editar === null) {
                     $id = $this->conexion->fetchOne(<<<'SQL'
-                        INSERT INTO turnos_administrativos (servicio_id, servicio_nombre, cliente_nombre, inicio, fin, creado_por)
-                        VALUES (?, ?, ?, ?, ?, ?) RETURNING id::text
+                        INSERT INTO turnos_administrativos (servicio_id, servicio_nombre, cliente_nombre, inicio, fin, profesionales_requeridos, sena_pagada, sena_importe_centavos, creado_por)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id::text
                         SQL, [...$campos, $autor]);
                 } else {
                     $id = $editar;
@@ -209,7 +225,7 @@ final readonly class AgendaAdministrativa
                     $this->liberar($id);
                     $this->conexion->executeStatement(<<<'SQL'
                         UPDATE turnos_administrativos
-                        SET servicio_id = ?, servicio_nombre = ?, cliente_nombre = ?, inicio = ?, fin = ?, revision = revision + 1
+                        SET servicio_id = ?, servicio_nombre = ?, cliente_nombre = ?, inicio = ?, fin = ?, profesionales_requeridos = ?, sena_pagada = ?, sena_importe_centavos = ?, revision = revision + 1
                         WHERE id = ?
                         SQL, [...$campos, $id]);
                 }

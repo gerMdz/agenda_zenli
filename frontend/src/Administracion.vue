@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import portadaOriginal from './image/portada.webp'
 import LayoutAdministracion from './LayoutAdministracion.vue'
+import EntradaHora from './EntradaHora.vue'
 import { secciones } from './navegacionAdministracion.js'
 
 function seccionDeUrl() {
@@ -48,6 +49,7 @@ const modoPreparacion = ref('')
 const minutosPreparacion = ref('')
 const preparacionServicios = ref({})
 const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false })
+const nombreProfesional = ref('')
 const espacioEditado = ref(null)
 const espacioNombre = ref('')
 const espacioDetalle = ref('')
@@ -74,6 +76,8 @@ const servicioEditando = ref(null)
 const editNombre = ref('')
 const editDescCorta = ref('')
 const editDetalle = ref('')
+const editMinimo = ref('')
+const editProfesionales = ref('')
 const editArchivo = ref(null)
 const editEliminarImagen = ref(false)
 const servicioImagenTemporal = ref(null)
@@ -295,6 +299,15 @@ function crearUsuario() {
   })
 }
 
+function crearProfesional() {
+  return ejecutar(async () => {
+    await api('/api/admin/agenda/profesionales', { method: 'POST', datos: { nombre: nombreProfesional.value } })
+    nombreProfesional.value = ''
+    await recargarEquipo()
+    mensaje.value = 'Profesional creada sin cuenta.'
+  })
+}
+
 function crearCuentaProfesional() {
   return ejecutar(async () => {
     await api('/api/admin/agenda/cuentas-profesionales', {
@@ -478,6 +491,8 @@ function iniciarEdicion(servicio) {
   editNombre.value = servicio.nombre
   editDescCorta.value = servicio.descripcion_corta
   editDetalle.value = servicio.detalle
+  editMinimo.value = servicio.duracion_minima ?? ''
+  editProfesionales.value = servicio.profesionales_requeridos ?? ''
   editArchivo.value = null
   editEliminarImagen.value = false
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
@@ -533,6 +548,20 @@ async function guardarEdicion() {
   } finally {
     ocupado.value = false
   }
+}
+
+function guardarConfiguracionServicio() {
+  return ejecutar(async () => {
+    const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}/configuracion`, {
+      method: 'PATCH',
+      datos: {
+        duracion_minima: editMinimo.value === '' ? null : Number(editMinimo.value),
+        profesionales_requeridos: editProfesionales.value === '' ? null : Number(editProfesionales.value),
+      },
+    })
+    servicios.value = resultado.servicios
+    mensaje.value = 'Configuración de agenda guardada.'
+  })
 }
 
 async function eliminarServicio(id) {
@@ -703,13 +732,19 @@ onBeforeUnmount(() => {
           </section>
 
           <section v-show="seccionActiva.id === 'profesionales'" class="panel">
-            <h2>Cuentas de profesionales</h2>
+            <h2>Profesionales</h2>
             <ul class="lista">
               <li v-for="persona in ajustesAgenda.profesionales" :key="persona.id">
                 <div><strong>{{ persona.nombre }}</strong><small>{{ Number(persona.admin) ? 'Profesional y administradora' : Number(persona.tiene_cuenta) ? 'Profesional' : 'Sin cuenta' }}</small></div>
               </li>
             </ul>
+            <form @submit.prevent="crearProfesional">
+              <h3>Nueva profesional sin cuenta</h3>
+              <label>Nombre <input v-model.trim="nombreProfesional" maxlength="120" required></label>
+              <button :disabled="ocupado">Crear profesional</button>
+            </form>
             <form @submit.prevent="crearCuentaProfesional">
+              <h3>Crear o vincular cuenta</h3>
               <label>Profesional
                 <select v-model="cuenta.profesional" required>
                   <option disabled value="">Elegí una opción</option>
@@ -759,8 +794,8 @@ onBeforeUnmount(() => {
                   <input v-model="franja.vigente_hasta" type="date" :min="franja.vigente_desde">
                 </label>
                 <div class="acciones">
-                  <label>Desde (24 h) <input v-model.trim="franja.hora_inicio" placeholder="09:00" maxlength="15" required></label>
-                  <label>Hasta (24 h) <input v-model.trim="franja.hora_fin" placeholder="14:30" maxlength="15" required></label>
+                  <label>Desde (24 h) <EntradaHora v-model="franja.hora_inicio" segundos required /></label>
+                  <label>Hasta (24 h) <EntradaHora v-model="franja.hora_fin" segundos permitir-medianoche required /></label>
                 </div>
                 <button type="button" class="secundario" @click="horarioProfesional.franjas.splice(indice, 1)">Quitar franja</button>
               </fieldset>
@@ -775,8 +810,8 @@ onBeforeUnmount(() => {
                 <label>Fecha <input v-model="excepcion.fecha" type="date" required></label>
                 <label v-if="excepcion.tipo === 'bloqueo'" class="casilla"><input v-model="excepcion.todo_el_dia" type="checkbox"> Todo el día</label>
                 <div v-if="!excepcion.todo_el_dia" class="acciones">
-                  <label>Desde (24 h) <input v-model.trim="excepcion.hora_inicio" placeholder="09:00" maxlength="15" required></label>
-                  <label>Hasta (24 h) <input v-model.trim="excepcion.hora_fin" placeholder="14:30" maxlength="15" required></label>
+                  <label>Desde (24 h) <EntradaHora v-model="excepcion.hora_inicio" segundos required /></label>
+                  <label>Hasta (24 h) <EntradaHora v-model="excepcion.hora_fin" segundos permitir-medianoche required /></label>
                 </div>
                 <button type="button" class="secundario" @click="horarioProfesional.excepciones.splice(indice, 1)">Quitar excepción</button>
               </fieldset>
@@ -817,6 +852,8 @@ onBeforeUnmount(() => {
                 <div class="servicio-detalle">
                   <strong>{{ servicio.nombre }}</strong>
                   <small>{{ servicio.descripcion_corta }}</small>
+                  <small v-if="servicio.duracion_minima == null || servicio.profesionales_requeridos == null">Configuración de agenda incompleta</small>
+                  <small v-else>Mínimo: {{ servicio.duracion_minima }} min · Profesionales: {{ servicio.profesionales_requeridos }}</small>
                   <span v-if="servicio.imagen_version" class="badge">con imagen</span>
                   <span v-else class="badge sin-imagen">sin imagen</span>
                 </div>
@@ -844,6 +881,7 @@ onBeforeUnmount(() => {
             <input id="nuevo-desc" v-model="nuevoDescCorta" type="text" maxlength="255" placeholder="Ej: Presión intensa y técnicas de masaje tailandés." :disabled="ocupado" required>
             <label for="nuevo-detalle">Detalle extenso <small>(opcional)</small></label>
             <textarea id="nuevo-detalle" v-model="nuevoDetalle" rows="4" placeholder="Descripción completa del masaje, beneficios, técnica…" :disabled="ocupado"></textarea>
+            <small>Después de crear el servicio, configurá su duración mínima y profesionales para poder agendarlo.</small>
             <label for="nuevo-imagen">Imagen</label>
             <div v-if="servicioImagenTemporal" class="vista-previa-servicio">
               <img :src="servicioImagenTemporal" alt="Vista previa">
@@ -882,6 +920,13 @@ onBeforeUnmount(() => {
               <button :disabled="ocupado">Guardar cambios</button>
               <button type="button" class="secundario" :disabled="ocupado" @click="cancelarEdicion">Cancelar</button>
             </div>
+          </form>
+          <form v-if="servicioEditando" class="formulario-servicio" @submit.prevent="guardarConfiguracionServicio">
+            <h3>Configuración de agenda: {{ servicioEditando.nombre }}</h3>
+            <label>Tiempo mínimo (minutos) <input v-model.number="editMinimo" type="number" min="1" :disabled="ocupado"></label>
+            <label>Cantidad mínima de profesionales <input v-model.number="editProfesionales" type="number" min="1" :disabled="ocupado"></label>
+            <small>Sin estos datos el servicio no puede agendarse. La duración mínima es informativa; se pueden elegir las cuatro duraciones.</small>
+            <button :disabled="ocupado">Guardar configuración de agenda</button>
           </form>
         </section>
       </div>

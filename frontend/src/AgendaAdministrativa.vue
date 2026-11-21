@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import LayoutAdministracion from './LayoutAdministracion.vue'
+import EntradaHora from './EntradaHora.vue'
 
 function seccionDeAgenda() {
   return window.location.hash === '#mensajes' ? 'mensajes' : 'agenda'
@@ -146,6 +147,21 @@ const cliente = ref('')
 const servicio = ref('')
 const hora = ref('')
 const duracion = ref('')
+const senaPagada = ref(false)
+const senaImporte = ref('')
+function importeVisible(centavos) {
+  if (centavos == null) return ''
+  const valor = String(centavos).padStart(3, '0')
+  return `${valor.slice(0, -2)}.${valor.slice(-2)}`
+}
+function importeEnCentavos(valor) {
+  if (!valor.trim()) return null
+  const partes = valor.trim().replace(',', '.').match(/^(\d+)(?:\.(\d{1,2}))?$/)
+  if (!partes) throw new Error('Ingresá un importe válido con hasta dos decimales.')
+  const centavos = (partes[1] + (partes[2] ?? '').padEnd(2, '0')).replace(/^0+(?=\d)/, '')
+  if (centavos.length > 18) throw new Error('El importe de la seña es demasiado grande.')
+  return centavos
+}
 const espacio = ref('')
 const equipo = ref([])
 const espacioElegido = computed(() => datos.value?.espacios.find(item => item.id === espacio.value))
@@ -154,6 +170,12 @@ const preparacion = computed(() => {
   const ajustes = datos.value?.preparacion
   return ajustes?.modo === 'general' ? ajustes.minutos : ajustes?.servicios?.[servicio.value]
 })
+const servicioElegido = computed(() => datos.value?.servicios.find(item => item.id === servicio.value))
+function servicioCompleto(item) {
+  const ajustes = datos.value?.preparacion
+  const minutos = ajustes?.modo === 'general' ? ajustes.minutos : ajustes?.servicios?.[item.id]
+  return item.duracion_minima != null && item.profesionales_requeridos != null && minutos != null
+}
 
 async function api(ruta, method = 'GET', cuerpo) {
   const respuesta = await fetch(ruta, {
@@ -236,6 +258,8 @@ function editarTurno(turno) {
   cliente.value = turno.cliente
   servicio.value = turno.servicio_id ?? ''
   duracion.value = Number(turno.duracion)
+  senaPagada.value = turno.sena_pagada
+  senaImporte.value = importeVisible(turno.sena_importe_centavos)
   espacio.value = turno.espacio_id
   equipo.value = [...turno.equipo]
   varias.value = equipo.value.length > 1
@@ -247,6 +271,8 @@ function limpiarTurno() {
   cliente.value = ''
   hora.value = ''
   duracion.value = ''
+  senaPagada.value = false
+  senaImporte.value = ''
   varias.value = false
   equipo.value = usuario.value.profesional_id ? [usuario.value.profesional_id] : []
   espacio.value = datos.value.espacios.length === 1 ? datos.value.espacios[0].id : ''
@@ -255,7 +281,6 @@ function limpiarTurno() {
 function guardarTurno() {
   return ejecutar(async () => {
     const anterior = editando.value
-    if (varias.value && equipo.value.length < 2) throw new Error('Elegí al menos dos profesionales para un turno de equipo.')
     await api(anterior ? `/api/admin/agenda/turnos/${anterior.id}` : '/api/admin/agenda/turnos', anterior ? 'PUT' : 'POST', {
       cliente: cliente.value,
       servicio: servicio.value,
@@ -263,6 +288,8 @@ function guardarTurno() {
       profesionales: equipo.value,
       inicio: `${fechaTurno.value}T${hora.value}`,
       duracion: duracion.value,
+      sena_pagada: senaPagada.value,
+      sena_importe_centavos: importeEnCentavos(senaImporte.value),
       revision: anterior ? Number(anterior.revision) : undefined,
     })
     fecha.value = fechaTurno.value
@@ -366,7 +393,7 @@ onMounted(() => ejecutar(async () => {
               <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
               <span v-if="vista === 'semana'" class="resumen-dia">
                 <small v-for="turno in dia.turnos.slice(0, 3)" :key="turno.id">
-                  {{ turno.todo_el_dia ? 'Todo el día' : reloj.format(new Date(turno.inicio)) }} · {{ turno.bloqueado ? 'Bloqueado' : turno.servicio }}
+                  {{ turno.todo_el_dia ? 'Todo el día' : reloj.format(new Date(turno.inicio)) }} · {{ turno.bloqueado ? 'Bloqueado' : turno.servicio }}{{ !turno.bloqueado && turno.equipo_incompleto ? ' ⚠ Sin equipo completo' : '' }}
                 </small>
               </span>
             </button>
@@ -379,6 +406,8 @@ onMounted(() => ejecutar(async () => {
               <span v-if="turno.bloqueado" class="marca-bloqueo">Horario bloqueado</span>
               <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
               <small><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
+              <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
+              <small v-if="!turno.bloqueado">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
               <a v-if="turno.bloqueado && usuario.admin" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar bloqueo</a>
               <div v-else-if="turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
@@ -405,8 +434,8 @@ onMounted(() => ejecutar(async () => {
             <label>Fecha <input v-model="bloqueoNuevo.fecha" type="date" required></label>
             <label class="opcion"><input v-model="bloqueoNuevo.todo_el_dia" type="checkbox"> Todo el día</label>
             <div v-if="!bloqueoNuevo.todo_el_dia" class="acciones">
-              <label>Desde (24 h) <input v-model.trim="bloqueoNuevo.hora_inicio" placeholder="09:00" maxlength="5" required></label>
-              <label>Hasta (24 h) <input v-model.trim="bloqueoNuevo.hora_fin" placeholder="14:30" maxlength="5" required></label>
+              <label>Desde (24 h) <EntradaHora v-model="bloqueoNuevo.hora_inicio" required /></label>
+              <label>Hasta (24 h) <EntradaHora v-model="bloqueoNuevo.hora_fin" permitir-medianoche required /></label>
             </div>
             <button :disabled="ocupado">Guardar bloqueo</button>
           </form>
@@ -419,21 +448,29 @@ onMounted(() => ejecutar(async () => {
           </div>
           <p v-if="error && modalAbierto" role="alert">{{ error }}</p>
             <p v-if="!datos.servicios.length">Creá un servicio en <a href="/admin">Administración</a> para cargar turnos.</p>
-            <p v-else-if="!datos.profesionales.length || !datos.espacios.length">Hace falta al menos una profesional y un espacio activos.</p>
+            <p v-else-if="!datos.espacios.length">Hace falta al menos un espacio activo.</p>
             <form v-else @submit.prevent="guardarTurno">
               <label>Servicio
                 <select v-model="servicio" required>
                   <option disabled value="">Elegí un servicio</option>
-                  <option v-for="item in datos.servicios" :key="item.id" :value="item.id">{{ item.nombre }}</option>
+                  <option v-for="item in datos.servicios" :key="item.id" :value="item.id" :disabled="!servicioCompleto(item)">{{ item.nombre }}{{ servicioCompleto(item) ? '' : ' · configuración incompleta' }}</option>
                 </select>
               </label>
               <p v-if="servicio && preparacion == null"><template v-if="usuario.admin">Definí la preparación de este servicio en <a href="/admin#configuracion-agenda">Administración</a>.</template><template v-else>Pedile a administración que configure la preparación de este servicio.</template></p>
               <p v-else-if="servicio">Preparación antes del turno: {{ preparacion }} min.</p>
               <label>Fecha del turno <input v-model="fechaTurno" type="date" required></label>
               <label>Nombre del cliente <input v-model="cliente" maxlength="150" required></label>
+              <label class="opcion"><input v-model="senaPagada" type="checkbox"> Seña pagada</label>
+              <label>Importe de la seña (opcional) <input v-model.trim="senaImporte" type="text" inputmode="decimal" placeholder="0,00"></label>
               <div class="barra">
-                <label>Hora (24 horas) <input v-model="hora" type="text" placeholder="14:30" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" required></label>
-                <label>Duración (min) <input v-model.number="duracion" type="number" min="1" max="1440" required></label>
+                <label>Hora (24 horas) <EntradaHora v-model="hora" required /></label>
+                <label>Duración (min)
+                  <select v-model.number="duracion" required>
+                    <option disabled value="">Elegí una duración</option>
+                    <option v-if="editando && ![30, 45, 60, 90].includes(Number(editando.duracion))" :value="Number(editando.duracion)">{{ editando.duracion }} (duración anterior)</option>
+                    <option v-for="minutos in [30, 45, 60, 90]" :key="minutos" :value="minutos">{{ minutos }}</option>
+                  </select>
+                </label>
               </div>
               <label v-if="datos.espacios.length > 1">Espacio
                 <select v-model="espacio" required>
@@ -450,12 +487,13 @@ onMounted(() => ejecutar(async () => {
                 </label>
               </fieldset>
               <label v-else-if="usuario.admin">Profesional
-                <select :value="equipo[0] ?? ''" required @change="equipo = [$event.target.value]">
-                  <option disabled value="">Elegí una profesional</option>
+                <select :value="equipo[0] ?? ''" @change="equipo = $event.target.value ? [$event.target.value] : []">
+                  <option value="">Sin asignar</option>
                   <option v-for="persona in datos.profesionales" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
                 </select>
               </label>
-              <button :disabled="ocupado || !fechaTurno || preparacion == null || (varias && equipo.length < 2)">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
+              <p v-if="servicioElegido && equipo.length < Number(servicioElegido.profesionales_requeridos)">Faltan profesionales: el turno quedará señalado en la agenda.</p>
+              <button :disabled="ocupado || !fechaTurno || !servicioElegido || !servicioCompleto(servicioElegido)">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
             </form>
         </dialog>
 

@@ -10,7 +10,7 @@
 8. Vigencia, compatibilidad y condiciones de promociones.
 9. Quién puede crear, aprobar y levantar bloqueos de clientes; categorías y política de conservación de incidencias.
 10. Método de verificación del teléfono y comunicaciones por correo/WhatsApp.
-11. Política de pagos/señas, si existiera (no definida).
+11. Política de pagos/señas: importes exigidos, medios, devoluciones y demás condiciones no están definidos; la agenda solo registra estado e importe.
 12. Confirmar identidad visual y contenidos públicos vigentes.
 
 No transformar preguntas pendientes en reglas asumidas por defecto sin aprobación del centro.
@@ -18,6 +18,7 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 ## Servicios de la portada
 
 - Las imágenes de los 4 servicios iniciales deben subirse desde `/admin` para reemplazar el placeholder. El archivo `masajes.webp` (sprite de imágenes) deja de ser necesario una vez que cada servicio tiene su imagen.
+- Completar duración mínima, cantidad de profesionales y preparación de los servicios que se quieran agendar; revisar los tratamientos importados antes de mostrarlos.
 
 ## Integración de agenda
 

@@ -18,7 +18,9 @@ final readonly class ServiciosPortada
     public function listar(): array
     {
         return $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT id, nombre, descripcion_corta, detalle, orden, visible, imagen_version, actualizado_por, actualizado_en
+            SELECT id, nombre, descripcion_corta, detalle, orden, visible, imagen_version, actualizado_por, actualizado_en,
+                   duracion_minima, profesionales_requeridos,
+                   (duracion_minima IS NOT NULL AND profesionales_requeridos IS NOT NULL) AS configuracion_completa
             FROM servicios_portada
             ORDER BY orden ASC, id ASC
             SQL);
@@ -28,7 +30,9 @@ final readonly class ServiciosPortada
     public function obtener(int $id)
     {
         return $this->conexion->fetchAssociative(<<<'SQL'
-            SELECT id, nombre, descripcion_corta, detalle, orden, visible, imagen_version, actualizado_por, actualizado_en
+            SELECT id, nombre, descripcion_corta, detalle, orden, visible, imagen_version, actualizado_por, actualizado_en,
+                   duracion_minima, profesionales_requeridos,
+                   (duracion_minima IS NOT NULL AND profesionales_requeridos IS NOT NULL) AS configuracion_completa
             FROM servicios_portada
             WHERE id = ?
             SQL, [$id]);
@@ -38,7 +42,8 @@ final readonly class ServiciosPortada
     public function listarVisibles(): array
     {
         return $this->conexion->fetchAllAssociative(<<<'SQL'
-            SELECT id, nombre, descripcion_corta, detalle, orden, imagen_version
+            SELECT id, nombre, descripcion_corta, detalle, orden, imagen_version, duracion_minima, profesionales_requeridos,
+                   (duracion_minima IS NOT NULL AND profesionales_requeridos IS NOT NULL) AS configuracion_completa
             FROM servicios_portada
             WHERE visible = true
             ORDER BY orden ASC, id ASC
@@ -207,10 +212,24 @@ final readonly class ServiciosPortada
         if ($existente === false) {
             throw new InvalidArgumentException('El servicio no existe.');
         }
-
         $this->conexion->executeStatement(
             'UPDATE servicios_portada SET visible = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
             [$visible, $autor, $id]
         );
+    }
+
+    public function configurar(int $id, ?int $duracionMinima, ?int $profesionalesRequeridos, string $autor): void
+    {
+        if (($duracionMinima !== null && ($duracionMinima < 1 || $duracionMinima > 2147483647))
+            || ($profesionalesRequeridos !== null && ($profesionalesRequeridos < 1 || $profesionalesRequeridos > 2147483647))) {
+            throw new InvalidArgumentException('La duración y la cantidad de profesionales deben ser enteros positivos o null.');
+        }
+        $actualizados = $this->conexion->executeStatement(
+            'UPDATE servicios_portada SET duracion_minima = ?, profesionales_requeridos = ?, actualizado_por = ?, actualizado_en = statement_timestamp() WHERE id = ?',
+            [$duracionMinima, $profesionalesRequeridos, $autor, $id],
+        );
+        if ($actualizados === 0) {
+            throw new InvalidArgumentException('El servicio no existe.');
+        }
     }
 }
