@@ -59,6 +59,8 @@ const espacioNombre = ref('')
 const espacioDetalle = ref('')
 const profesionalHorario = ref('')
 const horarioProfesional = ref(null)
+const dialogoHorario = ref(null)
+const horarioAnterior = ref(null)
 const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const fechaMendoza = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Argentina/Mendoza' })
 const perfilesSinCuenta = computed(() => (ajustesAgenda.value?.profesionales ?? []).filter(item => !Number(item.tiene_cuenta)))
@@ -125,6 +127,7 @@ function aplicarSesion(sesion) {
   csrf.value = sesion.csrf
   if (!sesion.usuario) {
     cerrarDialogoCuenta()
+    cerrarDialogoHorario()
     usuarios.value = []
     usuarioEditado.value = null
     editarClave.value = ''
@@ -384,6 +387,21 @@ function cargarHorario() {
   })
 }
 
+async function abrirDialogoHorario() {
+  error.value = ''
+  mensaje.value = ''
+  horarioAnterior.value = JSON.parse(JSON.stringify(horarioProfesional.value))
+  await nextTick()
+  dialogoHorario.value.showModal()
+}
+
+function cerrarDialogoHorario() {
+  if (dialogoHorario.value?.open) dialogoHorario.value.close()
+  if (horarioAnterior.value) horarioProfesional.value = horarioAnterior.value
+  horarioAnterior.value = null
+  error.value = ''
+}
+
 function agregarFranja(tipo) {
   horarioProfesional.value.por_franjas = true
   horarioProfesional.value.franjas.push({
@@ -407,6 +425,8 @@ function guardarHorario() {
     aplicarHorario(await api(`/api/admin/agenda/profesionales/${profesionalHorario.value}/horarios`, {
       method: 'PUT', datos: horarioProfesional.value,
     }))
+    horarioAnterior.value = null
+    cerrarDialogoHorario()
     mensaje.value = 'Horarios guardados.'
   })
 }
@@ -680,7 +700,7 @@ onBeforeUnmount(() => {
       <h1 id="titulo-seccion-admin">{{ usuario?.admin ? seccionActiva.nombre : 'Administración de Zenli' }}</h1>
       <p v-if="usuario" class="cuenta-actual">{{ usuario.email }}</p>
       <p v-if="cargando" role="status">Cargando…</p>
-      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios') && !accionProfesional && !accionCuenta" class="error" role="alert">{{ error }}</p>
+      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios') && !accionProfesional && !accionCuenta && !horarioAnterior" class="error" role="alert">{{ error }}</p>
       <p v-if="mensaje && (!usuario?.admin || seccionActiva.id !== 'servicios')" class="mensaje" role="status">{{ mensaje }}</p>
 
       <section v-if="!cargando && !usuario" class="panel inicio-sesion">
@@ -858,6 +878,15 @@ onBeforeUnmount(() => {
                 <option v-for="persona in ajustesAgenda.profesionales" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
               </select>
             </label>
+            <div v-if="horarioProfesional" class="acciones">
+              <button type="button" :disabled="ocupado" @click="abrirDialogoHorario">Editar horarios</button>
+            </div>
+            <dialog ref="dialogoHorario" class="modal-servicio" aria-labelledby="titulo-dialogo-horario" @close="cerrarDialogoHorario" @cancel="ocupado && $event.preventDefault()">
+              <div class="modal-cabecera">
+                <div><span class="modal-etiqueta">AGENDA DE ZENLI</span><h2 id="titulo-dialogo-horario">Editar horarios</h2><p>{{ ajustesAgenda.profesionales.find(persona => persona.id === profesionalHorario)?.nombre }}</p></div>
+                <button type="button" class="cerrar-modal" aria-label="Cerrar edición de horarios" :disabled="ocupado" @click="cerrarDialogoHorario">✕</button>
+              </div>
+              <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
             <form v-if="horarioProfesional" @submit.prevent="guardarHorario">
               <label class="casilla"><input v-model="horarioProfesional.por_franjas" type="checkbox" :disabled="ocupado"> Limitar turnos a las franjas cargadas</label>
               <small v-if="horarioProfesional.por_franjas && !horarioProfesional.franjas.length">Sin franjas, la profesional queda sin disponibilidad. Agregá una fecha cuando confirme que viene.</small>
@@ -904,6 +933,8 @@ onBeforeUnmount(() => {
               </fieldset>
               <button :disabled="ocupado">Guardar horarios</button>
             </form>
+              <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarDialogoHorario">Cancelar</button></div>
+            </dialog>
           </section>
 
           <section v-show="seccionActiva.id === 'preparacion'" class="panel" aria-labelledby="titulo-seccion-admin">

@@ -26,6 +26,8 @@ const dialogo = ref(null)
 const modalAbierto = ref(false)
 const dialogoBloqueo = ref(null)
 const modoBloqueo = ref(false)
+const dialogoMensaje = ref(null)
+const mensajeAbierto = ref(false)
 const bloqueoNuevo = ref({ profesional: '', fecha: '', todo_el_dia: false, hora_inicio: '', hora_fin: '' })
 const nombreDia = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
 const tituloMes = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -314,8 +316,23 @@ function enviarMensaje() {
   return ejecutar(async () => {
     bandeja.value = await api('/api/admin/agenda/mensajes', 'POST', { destinatario: destinatario.value, texto: texto.value })
     texto.value = ''
+    dialogoMensaje.value.close()
     aviso.value = 'Mensaje enviado.'
   })
+}
+
+function abrirMensaje() {
+  error.value = ''
+  aviso.value = ''
+  mensajeAbierto.value = true
+  dialogoMensaje.value.showModal()
+}
+
+function cerrarMensaje() {
+  mensajeAbierto.value = false
+  destinatario.value = ''
+  texto.value = ''
+  error.value = ''
 }
 
 function salir() {
@@ -336,10 +353,6 @@ onMounted(() => ejecutar(async () => {
   usuario.value = sesion.usuario
   csrf.value = sesion.csrf
   await Promise.all([cargarDia(), api('/api/admin/agenda/mensajes').then(contenido => { bandeja.value = contenido })])
-  if (seccionAgenda.value === 'mensajes') {
-    await nextTick()
-    document.getElementById('mensajes')?.scrollIntoView()
-  }
 }))
 </script>
 
@@ -351,13 +364,13 @@ onMounted(() => ejecutar(async () => {
     </header>
     <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda">
     <main id="turnos">
-      <h1>Agenda interna</h1>
-      <p v-if="error && !modalAbierto && !modoBloqueo" role="alert">{{ error }}</p>
+      <h1>{{ seccionAgenda === 'mensajes' ? 'Mensajes privados' : 'Agenda interna' }}</h1>
+      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
       <p v-if="!datos && ocupado" role="status">Cargando agenda…</p>
 
       <template v-if="datos">
-        <section class="panel">
+        <section v-show="seccionAgenda === 'agenda'" class="panel">
           <div class="barra cabecera-calendario">
             <div class="acciones" aria-label="Vista de calendario">
               <button v-for="opcion in vistas" :key="opcion.id" type="button" :aria-pressed="vista === opcion.id"
@@ -403,12 +416,14 @@ onMounted(() => ejecutar(async () => {
           <ul v-else class="turnos">
             <li v-for="turno in turnosDia" :key="turno.id" :class="{ propio: !turno.bloqueado && esPropio(turno), bloqueado: turno.bloqueado }">
               <strong>{{ horarioVisible(turno) }}</strong>
-              <span v-if="turno.bloqueado" class="marca-bloqueo">Horario bloqueado</span>
-              <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
-              <small><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
-              <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
-              <small v-if="!turno.bloqueado">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
-              <a v-if="turno.bloqueado && usuario.admin" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar bloqueo</a>
+              <div class="detalle-turno">
+                <span v-if="turno.bloqueado" class="marca-bloqueo">Horario bloqueado</span>
+                <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
+                <small><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
+                <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
+                <small v-if="!turno.bloqueado">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
+              </div>
+              <a v-if="turno.bloqueado && usuario.admin" class="enlace-accion" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar bloqueo</a>
               <div v-else-if="turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
@@ -497,12 +512,19 @@ onMounted(() => ejecutar(async () => {
             </form>
         </dialog>
 
-        <section id="mensajes" class="panel" aria-labelledby="titulo-mensajes">
+        <section v-show="seccionAgenda === 'mensajes'" id="mensajes" class="panel" aria-labelledby="titulo-mensajes">
             <div class="barra">
-              <h2 id="titulo-mensajes">Mensajes privados</h2>
-              <button type="button" class="secundario" :disabled="ocupado" @click="ejecutar(async () => { bandeja = await api('/api/admin/agenda/mensajes') })">Actualizar</button>
+              <h2 id="titulo-mensajes">Bandeja de mensajes</h2>
+              <div class="acciones">
+                <button type="button" class="secundario" :disabled="ocupado" @click="ejecutar(async () => { bandeja = await api('/api/admin/agenda/mensajes') })">Actualizar</button>
+                <button type="button" :disabled="ocupado || !bandeja.contactos.length" @click="abrirMensaje">+ Nuevo mensaje</button>
+              </div>
             </div>
-            <form v-if="bandeja.contactos.length" @submit.prevent="enviarMensaje">
+            <p v-if="!bandeja.contactos.length">No hay contactos disponibles para enviar mensajes.</p>
+            <dialog ref="dialogoMensaje" aria-labelledby="titulo-nuevo-mensaje" @close="cerrarMensaje" @cancel="ocupado && $event.preventDefault()">
+              <div class="barra"><h2 id="titulo-nuevo-mensaje">Nuevo mensaje</h2><button type="button" class="secundario" :disabled="ocupado" @click="dialogoMensaje.close()">Cerrar</button></div>
+              <p v-if="error && mensajeAbierto" role="alert">{{ error }}</p>
+            <form @submit.prevent="enviarMensaje">
               <label>Para
                 <select v-model="destinatario" required>
                   <option disabled value="">Elegí un contacto</option>
@@ -512,6 +534,7 @@ onMounted(() => ejecutar(async () => {
               <label>Mensaje <textarea v-model="texto" maxlength="2000" rows="3" required></textarea></label>
               <button :disabled="ocupado">Enviar mensaje</button>
             </form>
+            </dialog>
             <p v-if="!bandeja.mensajes.length">Todavía no hay mensajes.</p>
             <ul v-else class="mensajes">
               <li v-for="mensaje in bandeja.mensajes" :key="mensaje.id">
@@ -544,7 +567,10 @@ input:not([type=checkbox], [type=radio]), select, textarea { min-width: 0; paddi
 button { width: fit-content; padding: .6rem .8rem; border: 1px solid #214d3a; border-radius: .4rem; background: #214d3a; color: white; }
 button:disabled { opacity: .55; }
 .turnos { list-style: none; padding: 0; margin: 0; }
-.turnos li { display: grid; grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr) minmax(0, 1fr) auto; overflow-wrap: anywhere; gap: .6rem; padding-block: .65rem; border-top: 1px solid #e4dac3; }
+.turnos li { display: grid; grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr) auto; align-items: start; overflow-wrap: anywhere; gap: .6rem; padding-block: .65rem; border-top: 1px solid #e4dac3; }
+.detalle-turno { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem 1rem; }
+.enlace-accion { display: inline-block; padding: .6rem .8rem; border: 1px solid #214d3a; border-radius: .4rem; background: #fffaf1; color: #214d3a; text-decoration: none; }
+.enlace-accion:hover { background: #e5eee4; }
 .secundario { background: #fffaf1; color: #214d3a; }
 .acciones { display: flex; flex-wrap: wrap; gap: .4rem; }
 .mensajes { list-style: none; padding: 0; }
@@ -572,7 +598,7 @@ dialog form { margin-top: .7rem; }
   .celda { font-size: .72rem; padding: .25rem; }
   .resumen-dia { display: none; }
 }
-@media (max-width: 62rem) {
+@media (max-width: 42rem) {
   .turnos li { grid-template-columns: 1fr; }
 }
 </style>
