@@ -11,3 +11,18 @@ body { margin: 0; }
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
 }
+.fondo-administracion {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  background: #08251b;
+  color: #15372a;
+}
+
+.fondo-administracion::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, #08251b38, #08251b55), url('./image/portada.webp') center 35% / cover;
+}

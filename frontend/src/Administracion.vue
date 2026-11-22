@@ -774,7 +774,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="administracion">
+  <div class="administracion fondo-administracion">
     <header>
       <a class="marca" href="/">Zenli</a>
       <a v-if="usuario?.admin" href="/admin/agenda" class="acceso-agenda">Agenda</a>
@@ -1217,8 +1217,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.administracion { min-height: 100svh; background: #f8f3e7; color: #15372a; }
-header { background: #08271c; color: #fff7e6; display: flex; align-items: center; gap: 1rem; padding: .9rem max(1rem, calc((100% - 70rem) / 2)); }
+header { background: #08251b66; border-bottom: 1px solid #c49d544f; color: #fff7e6; display: flex; align-items: center; gap: 1rem; padding: .9rem max(1rem, calc((100% - 70rem) / 2)); }
 header a { color: inherit; text-underline-offset: .2em; }
 .marca { color: #eac26f; font: 2rem Georgia, serif; text-decoration: none; margin-right: auto; }
 header .acceso-agenda { padding: .45rem .75rem; border-radius: .4rem; background: #eac26f; color: #08271c; font-size: .88rem; font-weight: 750; text-decoration: none; }
@@ -1233,7 +1232,8 @@ h1, h2 { font-family: Georgia, serif; }
 h1 { margin: 0 0 1.25rem; font-size: clamp(2rem, 5vw, 3rem); }
 h2, h3 { margin: 0 0 .4rem; }
 h3 { font-size: 1rem; overflow-wrap: anywhere; }
-.cuenta-actual { margin-top: -.85rem; color: #526255; overflow-wrap: anywhere; }
+main > :is(h1, [role=status]:not(.mensaje), .cuenta-actual) { color: #fff3d8; text-shadow: 0 1px 4px #03130e; }
+.cuenta-actual { margin-top: -.85rem; overflow-wrap: anywhere; }
 fieldset { min-width: 0; border: 1px solid #e4dac3; border-radius: .4rem; }
 .paneles { max-width: 58rem; }
 .panel { background: #fffaf1; padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid #e4dac3; border-radius: .9rem; }

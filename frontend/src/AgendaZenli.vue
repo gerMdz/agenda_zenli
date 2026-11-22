@@ -4,7 +4,7 @@ import LayoutAdministracion from './LayoutAdministracion.vue'
 import CalendarioHoras from './CalendarioHoras.vue'
 import EntradaHora from './EntradaHora.vue'
 import HorariosPersonales from './HorariosPersonales.vue'
-import lotoUrl from './image/favicon.svg?url'
+import lotoUrl from './image/loto.svg?no-inline'
 
 const seccionAgenda = ref('agenda')
 const esSeccionPersonal = computed(() => ['mis-horarios', 'horarios-no-disponibles'].includes(seccionAgenda.value))
@@ -185,10 +185,12 @@ function franjasAtencion(clave, semana, turnos) {
   if (!horario) return null
 
   const especiales = horario.excepciones.filter(item => item.tipo === 'especial' && item.fecha === clave)
-  if (!especiales.length && !horario.por_franjas) return null
-  const franjas = especiales.length ? especiales : horario.franjas.filter(franja =>
-    Number(franja.dia_semana) === semana && vigente(franja, clave),
-  )
+  const vigentes = horario.franjas.filter(franja => vigente(franja, clave))
+  const franjas = especiales.length ? especiales : vigentes.filter(franja => Number(franja.dia_semana) === semana)
+  const tieneHorarioSemanal = vigentes.some(franja => franja.vigente_desde !== franja.vigente_hasta)
+  if (!especiales.length && !horario.por_franjas && ((!tieneHorarioSemanal && !franjas.length) || turnos.some(turno => !turno.bloqueado))) {
+    return null
+  }
   return franjas.map(franja => ({ inicio: minutosDeFranja(franja.hora_inicio), fin: minutosDeFranja(franja.hora_fin) }))
 }
 
@@ -535,7 +537,7 @@ onMounted(() => ejecutar(async () => {
 </script>
 
 <template>
-  <div class="agenda">
+  <div class="agenda fondo-administracion">
     <header class="cabecera-zenli">
       <a href="/" class="marca-zenli" aria-label="Zenli, portada">
         <span class="loto" aria-hidden="true"><i></i></span>
@@ -839,20 +841,6 @@ onMounted(() => ejecutar(async () => {
 </template>
 
 <style scoped>
-.agenda {
-  min-height: 100vh;
-  position: relative;
-  isolation: isolate;
-  background: #08251b;
-  color: #15372a;
-}
-.agenda::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(90deg, #08251b38, #08251b55), url('./image/portada.webp') center 35% / cover;
-}
 .agenda main > :is(h1, [role=status]) { color: #fff3d8; text-shadow: 0 1px 4px #03130e; }
 .cabecera-zenli { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; padding: .9rem max(1rem, (100% - 94rem) / 2); background: #08251b66; border-bottom: 1px solid #c49d544f; color: #fff3d8; }
 .marca-zenli { grid-column: 2; color: #efcf88; text-align: center; text-decoration: none; display: grid; justify-items: center; }
