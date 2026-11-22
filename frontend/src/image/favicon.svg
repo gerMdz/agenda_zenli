@@ -1,4 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="12" fill="#123a2d"/>
-  <text x="32" y="46" text-anchor="middle" font-family="serif" font-size="46" font-style="italic" fill="#d9bd7a">Z</text>
+  <g fill="none" stroke="#efcf88" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M32 48C20 40 20 27 32 15c12 12 12 25 0 33Z"/>
+    <path d="M32 48C18 47 12 37 13 24c5 1 9 3 12 7m7 17c14-1 20-11 19-24-5 1-9 3-12 7"/>
+    <path d="M32 48C20 52 10 45 8 35c3 0 6 1 8 3m16 10c12 4 22-3 24-13-3 0-6 1-8 3"/>
+  </g>
 </svg>
