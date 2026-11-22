@@ -15,6 +15,14 @@
 
 No transformar preguntas pendientes en reglas asumidas por defecto sin aprobación del centro.
 
+## Retomar la agenda privada
+
+- La agenda abre después de iniciar sesión. «Mis horarios» y «Horarios no disponibles» son vistas de consulta del perfil propio. Las franjas semanales, las fechas puntuales y las indisponibilidades se editan desde **Administración → Horarios**.
+- Verificamos la compilación del frontend y las dos secciones en Chrome contra el Docker local. Con el perfil de prueba de Micaela vimos el 25/11/2026 como «Todo el día» y el 27/11/2026 de 13:00 a 15:00. Son datos ficticios exclusivos del entorno local.
+- En Chrome a 390 × 844 px verificamos el fondo a pantalla completa y el menú plegado al entrar. En esa resolución, el resumen y el horario habitual quedan antes de la grilla. Si en el uso diario cuesta llegar al calendario, revisar ese orden con las profesionales.
+- Para habilitar el uso interno con datos reales, confirmar y cargar las franjas de cada profesional, revisar sus excepciones y comprobar la agenda con una cuenta profesional y otra administradora. Mantener `/demo` y las reservas públicas desactivadas. «Solicitudes pendientes» sigue como panel informativo.
+- Los commits, el push y el despliegue los realiza Gerardo.
+
 ## Servicios de la portada
 
 - Las imágenes de los 4 servicios iniciales deben subirse desde `/admin` para reemplazar el placeholder. El archivo `masajes.webp` (sprite de imágenes) deja de ser necesario una vez que cada servicio tiene su imagen.
@@ -47,7 +55,7 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 
 ## Próxima mejora sugerida: mensajes privados
 
-- Abrir «Mensajes privados» en una sección propia del menú lateral, igual que las demás secciones del panel.
+- La bandeja ya tiene su propia sección en el menú lateral. La próxima mejora propuesta es el estado de lectura.
 - Mostrar junto a «Mensajes privados» un contador de mensajes recibidos sin leer para la cuenta que inició sesión.
 - Guardar el estado de lectura por destinatario. Se propone marcar un mensaje como leído cuando la destinataria lo abre y actualizar el contador en ese momento.
 - Mantener la privacidad actual: solo la cuenta remitente y la destinataria pueden ver sus mensajes.
