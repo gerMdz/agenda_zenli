@@ -839,8 +839,22 @@ onMounted(() => ejecutar(async () => {
 </template>
 
 <style scoped>
-.agenda { min-height: 100vh; background: #f8f3e7; color: #15372a; }
-.cabecera-zenli { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; padding: .9rem max(1rem, (100% - 94rem) / 2); background: linear-gradient(90deg,#08251bb0,#08251b65,#08251bc0), url('./image/portada.webp') center 35% / cover; border-bottom: 1px solid #c49d544f; color: #fff3d8; }
+.agenda {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  background: #08251b;
+  color: #15372a;
+}
+.agenda::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, #08251b38, #08251b55), url('./image/portada.webp') center 35% / cover;
+}
+.agenda main > :is(h1, [role=status]) { color: #fff3d8; text-shadow: 0 1px 4px #03130e; }
+.cabecera-zenli { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; padding: .9rem max(1rem, (100% - 94rem) / 2); background: #08251b66; border-bottom: 1px solid #c49d544f; color: #fff3d8; }
 .marca-zenli { grid-column: 2; color: #efcf88; text-align: center; text-decoration: none; display: grid; justify-items: center; }
 .marca-zenli strong { font: 400 clamp(2.7rem, 5vw, 4rem)/.95 Georgia, serif; }
 .marca-zenli small { margin-top: .35rem; text-transform: uppercase; letter-spacing: .17em; font-size: .58rem; }
