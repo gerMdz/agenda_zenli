@@ -681,6 +681,7 @@ onMounted(() => ejecutar(async () => {
             <button type="button" class="secundario" :disabled="ocupado" @click="dialogoDisponibilidad.close()">Cerrar</button>
           </div>
           <p v-if="error && disponibilidadAbierta" role="alert">{{ error }}</p>
+          <p>Consultá los horarios libres de una profesional en cada sala para la fecha elegida.</p>
           <form @submit.prevent="consultarDisponibilidad">
             <label v-if="usuario.admin">Profesional
               <select v-model="profesionalDisponibilidad" :disabled="ocupado" required @change="disponibilidad = null">
@@ -693,7 +694,7 @@ onMounted(() => ejecutar(async () => {
           </form>
           <p v-if="ocupado" role="status">Buscando horarios libres…</p>
           <div v-if="disponibilidad" class="resultado-disponibilidad" aria-live="polite">
-            <p v-if="!disponibilidad.hay_franjas">No hay franjas de atención configuradas para ese día.</p>
+            <p v-if="!disponibilidad.hay_franjas">No se pueden calcular horarios libres para esta fecha. Para consultarlos, configurá franjas semanales o un horario especial en Administración → Horarios. En modo manual se usa el horario especial de la fecha.</p>
             <p v-else-if="!disponibilidad.espacios.length">No hay espacios activos.</p>
             <p v-else-if="!disponibilidad.espacios.some(espacio => espacio.huecos.length)">No quedan horarios libres para ese día.</p>
             <template v-else>
