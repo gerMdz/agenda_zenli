@@ -14,7 +14,10 @@ function actualizarSeccion() {
   seccionAgenda.value = seccionDeAgenda()
 }
 
-onBeforeUnmount(() => window.removeEventListener('hashchange', actualizarSeccion))
+onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', actualizarSeccion)
+  document.removeEventListener('pointerdown', cerrarMenuFuera)
+})
 
 const zona = 'America/Argentina/Mendoza'
 const fecha = ref(new Intl.DateTimeFormat('sv-SE', { timeZone: zona }).format(new Date()))
@@ -23,6 +26,7 @@ const reloj = new Intl.DateTimeFormat('es-AR', { timeZone: zona, hour: '2-digit'
 const datos = ref(null)
 const vista = ref('semana')
 const profesionalSeleccionada = ref('')
+const menuPerfil = ref(null)
 const horarioHabitual = ref(null)
 const dialogo = ref(null)
 const modalAbierto = ref(false)
@@ -96,6 +100,22 @@ async function cargarHorarioEnVista() {
   } catch {
     // La grilla sigue disponible cuando no se puede cargar el horario habitual.
   }
+}
+
+function cerrarMenuPerfil(devolverFoco = false) {
+  if (!menuPerfil.value?.open) return
+  menuPerfil.value.open = false
+  if (devolverFoco) menuPerfil.value.querySelector('summary')?.focus()
+}
+
+function cerrarMenuFuera(evento) {
+  if (!menuPerfil.value?.contains(evento.target)) cerrarMenuPerfil()
+}
+
+function elegirVistaAgenda(id) {
+  profesionalSeleccionada.value = id
+  cerrarMenuPerfil(true)
+  cargarHorarioEnVista()
 }
 
 function esPropio(turno) {
@@ -456,6 +476,7 @@ function salir() {
 onMounted(() => ejecutar(async () => {
   document.title = 'Agenda · Zenli'
   window.addEventListener('hashchange', actualizarSeccion)
+  document.addEventListener('pointerdown', cerrarMenuFuera)
   const sesion = await api('/api/admin/sesion')
   if (!sesion.usuario) {
     window.location.replace('/admin')
@@ -475,11 +496,26 @@ onMounted(() => ejecutar(async () => {
         <strong>Zenli</strong>
         <small>Centro de masajes</small>
       </a>
-      <div v-if="usuario" class="cuenta-zenli">
-        <span class="avatar" aria-hidden="true">{{ identidad.charAt(0).toUpperCase() }}</span>
-        <span class="identidad"><strong>{{ identidad }}</strong><small>{{ usuario.admin ? 'Administración' : 'Profesional' }}</small></span>
-        <button type="button" class="secundario" :disabled="ocupado" @click="salir">Cerrar sesión</button>
-      </div>
+      <details v-if="usuario" ref="menuPerfil" class="cuenta-zenli" @keydown.esc="cerrarMenuPerfil(true)">
+        <summary aria-label="Opciones de perfil">
+          <span class="avatar" aria-hidden="true">{{ identidad.charAt(0).toUpperCase() }}</span>
+          <span class="identidad">
+            <strong>{{ identidad }}</strong>
+            <small>{{ usuario.admin ? 'Administración' : 'Profesional' }}</small>
+            <span class="flecha-perfil" aria-hidden="true"></span>
+          </span>
+        </summary>
+        <div class="opciones-perfil">
+          <div v-if="usuario.admin && datos" class="vistas-perfil" role="group" aria-label="Vista de agenda">
+            <button type="button" :aria-pressed="!profesionalSeleccionada" :disabled="ocupado" @click="elegirVistaAgenda('')">Agenda general</button>
+            <button v-for="persona in datos.profesionales" :key="persona.id" type="button"
+              :aria-pressed="profesionalSeleccionada === persona.id" :disabled="ocupado" @click="elegirVistaAgenda(persona.id)">
+              {{ persona.id === usuario.profesional_id ? `Mi agenda · ${persona.nombre}` : persona.nombre }}
+            </button>
+          </div>
+          <button type="button" :disabled="ocupado" @click="salir">Cerrar sesión</button>
+        </div>
+      </details>
     </header>
     <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda">
     <main id="turnos">
@@ -509,15 +545,6 @@ onMounted(() => ejecutar(async () => {
             </div>
             <label>Ir a fecha <input :value="fecha" type="date" :disabled="ocupado" @change="cambiarFecha($event.target.value)"></label>
           </div>
-          <label v-if="usuario.admin" class="selector-profesional">
-            Vista de agenda
-            <select v-model="profesionalSeleccionada" :disabled="ocupado" @change="cargarHorarioEnVista">
-              <option value="">Agenda general</option>
-              <option v-for="persona in datos.profesionales" :key="persona.id" :value="persona.id">
-                {{ persona.id === usuario.profesional_id ? `Mi agenda · ${persona.nombre}` : persona.nombre }}
-              </option>
-            </select>
-          </label>
           <CalendarioHoras v-if="vista !== 'mes'" :dias="dias" :fecha="fecha" :zona="zona" :ocupado="ocupado"
             @seleccionar="fecha = $event" @ver-turno="verEnAgenda" />
           <div v-else class="calendario">
@@ -734,11 +761,20 @@ onMounted(() => ejecutar(async () => {
 .loto i { transform: translateX(-50%) rotate(-45deg); bottom: .25rem; }
 .loto::before { transform: translateX(-105%) rotate(-78deg); }
 .loto::after { transform: translateX(4%) rotate(-12deg); }
-.cuenta-zenli { justify-self: end; display: flex; align-items: center; gap: .55rem; min-width: 0; border: 1px solid #d8bc7855; border-radius: .7rem; background: #0b2b20; padding: .45rem; }
+.cuenta-zenli { position: relative; justify-self: end; min-width: 0; z-index: 5; }
+.cuenta-zenli summary { display: flex; align-items: center; gap: .65rem; padding: .55rem .8rem; border: 1px solid #d8bc7855; border-radius: .7rem; background: #0b2b20; cursor: pointer; list-style: none; }
+.cuenta-zenli summary::-webkit-details-marker { display: none; }
 .avatar { border-radius: 50%; background: #dfb969; color: #15372a; min-width: 1.8rem; height: 1.8rem; display: grid; place-items: center; font-weight: 750; }
 .identidad { min-width: 0; display: grid; font-size: .82rem; overflow-wrap: anywhere; }
 .identidad small { color: #e8d8b2; }
-.cuenta-zenli button { font-size: .73rem; padding: .43rem; flex: 0 0 auto; }
+.flecha-perfil { width: .42rem; height: .42rem; border: solid #e8d8b2; border-width: 0 2px 2px 0; transform: rotate(45deg); margin: .13rem auto .18rem; }
+.cuenta-zenli[open] .flecha-perfil { transform: translateY(.15rem) rotate(225deg); }
+.opciones-perfil { position: absolute; top: calc(100% + .4rem); right: 0; width: min(16rem, calc(100vw - 2rem)); max-height: 65dvh; overflow-y: auto; padding: .35rem; background: #fffaf1; border: 1px solid #ded9cc; border-radius: .65rem; box-shadow: 0 .6rem 1.7rem #102c2240; }
+.opciones-perfil button { display: block; width: 100%; text-align: left; padding: .55rem .65rem; color: #214d3a; background: transparent; border: 0; font-size: .85rem; overflow-wrap: anywhere; cursor: pointer; }
+.opciones-perfil button:hover, .opciones-perfil [aria-pressed=true] { background: #e5eee4; }
+.opciones-perfil [aria-pressed=true] { font-weight: 750; }
+.vistas-perfil { padding-bottom: .25rem; margin-bottom: .22rem; border-bottom: 1px solid #ded9cc; }
+.cuenta-zenli :is(summary, button):focus-visible { outline: 2px solid #b48b3d; outline-offset: 2px; }
 .agenda :deep(.estructura) { width: min(100% - 2rem, 98rem); }
 .agenda :deep(nav[aria-label="Menú de administración"]) { background: #103629; border-color: #264d3d; }
 .agenda :deep(nav[aria-label="Menú de administración"] a) { color: #fbefcf; }
@@ -778,7 +814,7 @@ onMounted(() => ejecutar(async () => {
   .cabecera-zenli { grid-template-columns: auto 1fr; }
   .marca-zenli { grid-column: 1; }
   .avatar { display: none; }
-  .cuenta-zenli { flex-wrap: wrap; justify-content: flex-end; }
+  .cuenta-zenli summary { padding-inline: .55rem; }
 }
 main { padding-block: clamp(1.25rem, 4vw, 2.6rem); }
 h1, h2 { font-family: Georgia, serif; }
@@ -806,8 +842,7 @@ button:disabled { opacity: .55; }
 .mensajes p { white-space: pre-wrap; overflow-wrap: anywhere; }
 [role=alert] { background: #f9e3df; padding: .65rem; }
 [role=status] { padding: .45rem; }
-.cabecera-calendario, .controles-calendario, .selector-profesional { margin-bottom: .8rem; }
-.selector-profesional { width: min(100%, 19rem); }
+.cabecera-calendario, .controles-calendario { margin-bottom: .8rem; }
 .calendario { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; margin-block: .8rem 1rem; }
 .celda { display: grid; align-content: start; gap: .25rem; width: 100%; min-height: 4rem; padding: .4rem; text-align: left; color: #15372a; border-color: #ddd4bd; background: #fffdf7; overflow-wrap: anywhere; }
 .celda[aria-pressed=true] { outline: 2px solid #214d3a; outline-offset: -2px; }
