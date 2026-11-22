@@ -21,6 +21,10 @@ const menuAbierto = ref(false)
           <a href="/admin/agenda#turnos" class="enlace-agenda" :aria-current="seccion === 'agenda' ? 'page' : undefined" @click="menuAbierto = false">
             {{ usuario.admin ? 'Agenda' : 'Mi agenda' }}
           </a>
+          <template v-if="usuario.profesional_id">
+            <a href="/admin/agenda#mis-horarios" :aria-current="seccion === 'mis-horarios' ? 'page' : undefined" @click="menuAbierto = false">Mis horarios</a>
+            <a href="/admin/agenda#horarios-no-disponibles" :aria-current="seccion === 'horarios-no-disponibles' ? 'page' : undefined" @click="menuAbierto = false">Horarios no disponibles</a>
+          </template>
           <a href="/admin/agenda#mensajes" :aria-current="seccion === 'mensajes' ? 'location' : undefined" @click="menuAbierto = false">Mensajes privados</a>
         </div>
         <template v-if="usuario.admin">

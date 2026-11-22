@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import lotoUrl from './image/favicon.svg?url'
 
 const props = defineProps({
   dias: { type: Array, required: true },
@@ -107,7 +108,7 @@ function posicion(evento) {
       <div class="esquina" aria-hidden="true"></div>
       <button v-for="dia in columnas" :key="dia.clave" class="dia" type="button"
         :aria-pressed="fecha === dia.clave" :disabled="ocupado" @click="emit('seleccionar', dia.clave)">
-        <span>{{ dia.nombre }}</span><strong>{{ dia.numero }} <span v-if="dia.franjasAtencion?.length === 0" class="icono-dia" role="img" aria-label="Sin atención">◷</span></strong>
+        <span>{{ dia.nombre }}</span><strong>{{ dia.numero }} <img v-if="dia.franjasAtencion?.length === 0" class="icono-loto" :src="lotoUrl" alt="Sin atención"></strong>
       </button>
       <template v-if="hayJornada">
         <span class="jornada-label">Todo el día</span>
@@ -120,7 +121,7 @@ function posicion(evento) {
       <div v-for="dia in columnas" :key="'horas-' + dia.clave" class="carril" :class="{ seleccionado: dia.clave === fecha }">
         <div v-for="tramo in tramosSinAtencion(dia.franjasAtencion)" :key="tramo.inicio" class="sin-atencion"
           :style="posicionVertical(tramo)" :title="`Sin atención · ${textoMinutos(tramo.inicio)}–${textoMinutos(tramo.fin)}`">
-          <span class="marca-sin-atencion"><span aria-hidden="true">◷</span> Sin atención<span class="solo-lectores"> de {{ textoMinutos(tramo.inicio) }} a {{ textoMinutos(tramo.fin) }}</span></span>
+          <span class="marca-sin-atencion"><img class="icono-loto" :src="lotoUrl" alt=""> Sin atención<span class="solo-lectores"> de {{ textoMinutos(tramo.inicio) }} a {{ textoMinutos(tramo.fin) }}</span></span>
         </div>
         <button v-for="evento in dia.eventos" :key="evento.turno.id" type="button" class="tarjeta"
           :class="[tipo(evento.turno), { breve: evento.fin - evento.inicio < 36 }]" :style="posicion(evento)" :disabled="ocupado"
@@ -149,8 +150,7 @@ function posicion(evento) {
 .carril { height: calc(var(--horas) * var(--alto-hora)); position: relative; border-left: 1px solid #ded9cc; background: repeating-linear-gradient(to bottom, transparent 0 calc(var(--alto-hora) - 1px), #e5e0d4 calc(var(--alto-hora) - 1px) var(--alto-hora)); }
 .sin-atencion { position: absolute; inset-inline: 0; display: grid; place-items: center; overflow: hidden; background: repeating-linear-gradient(135deg, #efede7 0 5px, #e5e2d9 5px 6px); color: #4e5a53; }
 .marca-sin-atencion { text-align: center; font-size: .7rem; line-height: 1.12; padding: .1rem; }
-.marca-sin-atencion > span[aria-hidden] { font-size: .88rem; }
-.icono-dia { font-size: .82rem; font-weight: 400; }
+.icono-loto { width: 1rem; height: 1rem; vertical-align: middle; }
 .solo-lectores { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .carril.seleccionado { background-color: #f3f5e9; }
 .jornada { border-left: 1px solid #ded9cc; border-bottom: 1px solid #ded9cc; }

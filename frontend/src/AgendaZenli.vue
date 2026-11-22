@@ -3,15 +3,19 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import LayoutAdministracion from './LayoutAdministracion.vue'
 import CalendarioHoras from './CalendarioHoras.vue'
 import EntradaHora from './EntradaHora.vue'
+import HorariosPersonales from './HorariosPersonales.vue'
+import lotoUrl from './image/favicon.svg?url'
 
-function seccionDeAgenda() {
-  return window.location.hash === '#mensajes' ? 'mensajes' : 'agenda'
-}
-
-const seccionAgenda = ref(seccionDeAgenda())
+const seccionAgenda = ref('agenda')
+const esSeccionPersonal = computed(() => ['mis-horarios', 'horarios-no-disponibles'].includes(seccionAgenda.value))
 
 function actualizarSeccion() {
-  seccionAgenda.value = seccionDeAgenda()
+  const seccion = window.location.hash.slice(1)
+  if (seccion === 'mensajes' || (usuario.value?.profesional_id && ['mis-horarios', 'horarios-no-disponibles'].includes(seccion))) {
+    seccionAgenda.value = seccion
+    return
+  }
+  seccionAgenda.value = 'agenda'
 }
 
 onBeforeUnmount(() => {
@@ -525,6 +529,7 @@ onMounted(() => ejecutar(async () => {
   }
   usuario.value = sesion.usuario
   csrf.value = sesion.csrf
+  actualizarSeccion()
   await Promise.all([cargarDia(), cargarHorarioEnVista(), api('/api/admin/agenda/mensajes').then(contenido => { bandeja.value = contenido })])
 }))
 </script>
@@ -560,6 +565,7 @@ onMounted(() => ejecutar(async () => {
     </header>
     <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda">
     <main id="turnos">
+      <HorariosPersonales v-if="esSeccionPersonal" :seccion="seccionAgenda" :consultar="api" />
       <h1 v-if="seccionAgenda === 'mensajes'">Mensajes privados</h1>
       <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
@@ -594,7 +600,7 @@ onMounted(() => ejecutar(async () => {
             <button v-for="dia in dias" :key="dia.clave" type="button" class="celda"
               :class="{ propia: dia.propios }" :aria-pressed="fecha === dia.clave" :disabled="ocupado" @click="fecha = dia.clave">
               <strong>{{ dia.numero }}</strong>
-              <small v-if="dia.franjasAtencion?.length === 0" class="mes-sin-atencion"><span aria-hidden="true">◷</span> Sin atención</small>
+              <small v-if="dia.franjasAtencion?.length === 0" class="mes-sin-atencion"><img class="icono-loto" :src="lotoUrl" alt=""> Sin atención</small>
               <small v-if="dia.citas">{{ dia.citas }} {{ dia.citas === 1 ? 'turno' : 'turnos' }}</small>
               <small v-if="dia.bloqueos" class="marca-bloqueo">{{ dia.bloqueos }} {{ dia.bloqueos === 1 ? 'horario no disponible' : 'horarios no disponibles' }}</small>
               <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
@@ -884,6 +890,7 @@ onMounted(() => ejecutar(async () => {
 .muestra-turno { background: #a9cfae; }.muestra-equipo { background: #e7cb89; }.muestra-bloqueo { background: #deb4b6; }.muestra-preparacion { background: #ccbbd6; }
 .muestra-sin-atencion { background: repeating-linear-gradient(135deg, #f0eee7 0 3px, #d7d4ca 3px 4px); border: 1px solid #cfcbbf; }
 .mes-sin-atencion { color: #59655e; }
+.icono-loto { width: 1rem; height: 1rem; vertical-align: middle; }
 .turnos li:focus { outline: 2px solid #916119; outline-offset: 1px; }
 @media (max-width: 75rem) {
   .tablero { grid-template-columns: minmax(0, 1fr); }
