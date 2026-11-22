@@ -36,6 +36,7 @@
 - Una misma cuenta puede tener permisos administrativos y estar vinculada a una profesional. Los turnos propios se identifican por ese vínculo y se pueden destacar y filtrar dentro del calendario.
 - La agenda que se sirve en `/admin/agenda` usa `AgendaZenli.vue`, una vista independiente inspirada en la maqueta de Zenli. La grilla ubica los turnos, horarios no disponibles y preparaciones por hora real. La vista personal diferencia los días sin atención a partir de las franjas configuradas.
 - El ingreso abre directamente la agenda. El panel «Solicitudes pendientes» es informativo mientras los turnos se gestionan de forma privada. La ruta `/demo` está inactiva.
+- Administración puede alternar en la misma sesión entre la agenda general y la de una profesional. Si la cuenta administradora tiene perfil profesional propio, el selector lo identifica como «Mi agenda».
 - En `/admin` se gestionan los espacios con nombre y detalle, el alta de profesionales y la preparación de los servicios. El formulario de cuenta administradora permite vincular o crear un perfil profesional y el de profesionales permite dar permisos de administración.
 - La agenda muestra la selección y el nombre del espacio cuando hay varios activos. Con uno solo, lo asigna en forma automática.
 - En `/admin` se editan las franjas de cada profesional. Se pueden combinar días semanales con vigencia y fechas puntuales. La agenda respeta las franjas cuando está habilitada la restricción. El modo manual conserva los controles de ocupación.

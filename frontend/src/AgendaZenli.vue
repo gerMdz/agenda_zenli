@@ -22,7 +22,7 @@ const calendario = new Intl.DateTimeFormat('sv-SE', { timeZone: zona })
 const reloj = new Intl.DateTimeFormat('es-AR', { timeZone: zona, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 const datos = ref(null)
 const vista = ref('semana')
-const soloMios = ref(false)
+const profesionalSeleccionada = ref('')
 const horarioHabitual = ref(null)
 const dialogo = ref(null)
 const modalAbierto = ref(false)
@@ -75,6 +75,29 @@ const encabezadoPeriodo = computed(() => {
   return `${etiquetaDia.format(inicio)} – ${etiquetaDia.format(fin)}`
 })
 
+const perfilEnVista = computed(() => usuario.value?.admin
+  ? profesionalSeleccionada.value : (usuario.value?.profesional_id ?? ''))
+const profesionalEnVista = computed(() =>
+  datos.value?.profesionales.find(persona => persona.id === perfilEnVista.value),
+)
+const tituloAgenda = computed(() => {
+  if (!usuario.value?.admin || (perfilEnVista.value && perfilEnVista.value === usuario.value.profesional_id)) return 'Mi agenda'
+  return profesionalEnVista.value ? `Agenda de ${profesionalEnVista.value.nombre}` : 'Agenda general'
+})
+
+async function cargarHorarioEnVista() {
+  const perfil = perfilEnVista.value
+  horarioHabitual.value = null
+  if (!perfil) return
+  try {
+    const consulta = usuario.value.admin ? '?profesional=' + encodeURIComponent(perfil) : ''
+    const contenido = await api('/api/admin/agenda/turnos/horario-habitual' + consulta)
+    if (perfilEnVista.value === perfil) horarioHabitual.value = contenido.horario ?? null
+  } catch {
+    // La grilla sigue disponible cuando no se puede cargar el horario habitual.
+  }
+}
+
 function esPropio(turno) {
   return turno.equipo.includes(usuario.value?.profesional_id)
 }
@@ -91,7 +114,7 @@ const turnosVisibles = computed(() => {
     esPreparacion: true, equipo: datos.value?.turnos.find(turno => turno.id === item.turno_id)?.equipo ?? [], servicio: 'Preparación del espacio',
   }))
   return [...(datos.value?.turnos ?? []), ...bloqueos, ...preparaciones]
-    .filter(turno => !soloMios.value || esPropio(turno))
+    .filter(turno => !perfilEnVista.value || turno.equipo.includes(perfilEnVista.value))
     .sort((a, b) => new Date(a.inicio) - new Date(b.inicio))
 })
 
@@ -123,7 +146,7 @@ const franjasHabituales = computed(() => {
 
 function sinAtencion(clave, semana) {
   const horario = horarioHabitual.value
-  if ((usuario.value?.admin && !soloMios.value) || !horario?.por_franjas) return false
+  if (!perfilEnVista.value || !horario?.por_franjas) return false
   if (horario.excepciones.some(item => item.tipo === 'especial' && item.fecha === clave)) return false
   return !horario.franjas.some(franja => Number(franja.dia_semana) === semana && vigente(franja, clave))
 }
@@ -280,7 +303,7 @@ function abrirModal() {
 
 function abrirNuevoBloqueo() {
   bloqueoNuevo.value = {
-    profesional: usuario.value.profesional_id ?? (datos.value.profesionales.length === 1 ? datos.value.profesionales[0].id : ''),
+    profesional: perfilEnVista.value || usuario.value.profesional_id || (datos.value.profesionales.length === 1 ? datos.value.profesionales[0].id : ''),
     fecha: fecha.value, todo_el_dia: false, hora_inicio: '', hora_fin: '',
   }
   error.value = ''
@@ -329,7 +352,8 @@ function limpiarTurno() {
   senaPagada.value = false
   senaImporte.value = ''
   varias.value = false
-  equipo.value = usuario.value.profesional_id ? [usuario.value.profesional_id] : []
+  const perfil = perfilEnVista.value || usuario.value.profesional_id
+  equipo.value = perfil ? [perfil] : []
   espacio.value = datos.value.espacios.length === 1 ? datos.value.espacios[0].id : ''
 }
 
@@ -439,12 +463,7 @@ onMounted(() => ejecutar(async () => {
   }
   usuario.value = sesion.usuario
   csrf.value = sesion.csrf
-  if (usuario.value.profesional_id) {
-    api('/api/admin/agenda/turnos/horario-habitual')
-      .then(contenido => { horarioHabitual.value = contenido.horario ?? null })
-      .catch(() => { horarioHabitual.value = null })
-  }
-  await Promise.all([cargarDia(), api('/api/admin/agenda/mensajes').then(contenido => { bandeja.value = contenido })])
+  await Promise.all([cargarDia(), cargarHorarioEnVista(), api('/api/admin/agenda/mensajes').then(contenido => { bandeja.value = contenido })])
 }))
 </script>
 
@@ -474,7 +493,7 @@ onMounted(() => ejecutar(async () => {
         <section class="panel panel-calendario" aria-labelledby="titulo-agenda">
           <div class="barra cabecera-calendario">
             <div>
-              <h1 id="titulo-agenda">{{ usuario.admin && !soloMios ? 'Agenda general' : 'Mi agenda' }}</h1>
+              <h1 id="titulo-agenda">{{ tituloAgenda }}</h1>
               <p>{{ encabezadoPeriodo }}</p>
             </div>
             <div class="selector-vista" aria-label="Vista de calendario">
@@ -490,8 +509,14 @@ onMounted(() => ejecutar(async () => {
             </div>
             <label>Ir a fecha <input :value="fecha" type="date" :disabled="ocupado" @change="cambiarFecha($event.target.value)"></label>
           </div>
-          <label v-if="usuario.admin && usuario.profesional_id" class="opcion">
-            <input v-model="soloMios" type="checkbox"> Mostrar solo mis turnos
+          <label v-if="usuario.admin" class="selector-profesional">
+            Vista de agenda
+            <select v-model="profesionalSeleccionada" :disabled="ocupado" @change="cargarHorarioEnVista">
+              <option value="">Agenda general</option>
+              <option v-for="persona in datos.profesionales" :key="persona.id" :value="persona.id">
+                {{ persona.id === usuario.profesional_id ? `Mi agenda · ${persona.nombre}` : persona.nombre }}
+              </option>
+            </select>
           </label>
           <CalendarioHoras v-if="vista !== 'mes'" :dias="dias" :fecha="fecha" :zona="zona" :ocupado="ocupado"
             @seleccionar="fecha = $event" @ver-turno="verEnAgenda" />
@@ -544,7 +569,7 @@ onMounted(() => ejecutar(async () => {
           <div class="panel acciones-rapidas">
             <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno"><span aria-hidden="true">＋</span> Nuevo turno</button>
             <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
-            <a v-if="usuario.admin" href="/admin#horarios-profesionales" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
+            <a v-if="usuario.admin" :href="perfilEnVista ? `/admin?profesional=${perfilEnVista}#horarios-profesionales` : '/admin#horarios-profesionales'" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
           </div>
           <section class="panel solicitudes" aria-labelledby="titulo-solicitudes">
             <h2 id="titulo-solicitudes">Solicitudes pendientes</h2>
@@ -557,7 +582,7 @@ onMounted(() => ejecutar(async () => {
             </dl>
           </section>
           <section v-if="horarioHabitual?.por_franjas" class="panel" aria-labelledby="titulo-horario">
-            <h2 id="titulo-horario">Mi horario habitual</h2>
+            <h2 id="titulo-horario">{{ perfilEnVista === usuario.profesional_id ? 'Mi horario habitual' : 'Horario habitual' }}</h2>
             <dl v-if="franjasHabituales.length" class="resumen">
               <div v-for="(franja, indice) in franjasHabituales" :key="indice">
                 <dt>{{ diasSemana[franja.dia_semana - 1] }}</dt><dd>{{ franja.hora_inicio.slice(0, 5) }}–{{ franja.hora_fin.slice(0, 5) }}</dd>
@@ -781,7 +806,8 @@ button:disabled { opacity: .55; }
 .mensajes p { white-space: pre-wrap; overflow-wrap: anywhere; }
 [role=alert] { background: #f9e3df; padding: .65rem; }
 [role=status] { padding: .45rem; }
-.cabecera-calendario, .controles-calendario { margin-bottom: .8rem; }
+.cabecera-calendario, .controles-calendario, .selector-profesional { margin-bottom: .8rem; }
+.selector-profesional { width: min(100%, 19rem); }
 .calendario { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; margin-block: .8rem 1rem; }
 .celda { display: grid; align-content: start; gap: .25rem; width: 100%; min-height: 4rem; padding: .4rem; text-align: left; color: #15372a; border-color: #ddd4bd; background: #fffdf7; overflow-wrap: anywhere; }
 .celda[aria-pressed=true] { outline: 2px solid #214d3a; outline-offset: -2px; }

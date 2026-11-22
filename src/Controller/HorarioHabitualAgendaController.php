@@ -8,14 +8,26 @@ use App\Administracion\HorariosProfesionales;
 use App\Administracion\SesionAdministrativa;
 use DateTimeInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Attribute\Route;
 
 final readonly class HorarioHabitualAgendaController
 {
     #[Route('/api/admin/agenda/turnos/horario-habitual', methods: ['GET'])]
-    public function consultar(SesionAdministrativa $sesion, HorariosProfesionales $horarios): JsonResponse
+    public function consultar(Request $peticion, SesionAdministrativa $sesion, HorariosProfesionales $horarios): JsonResponse
     {
-        $id = $sesion->actual()['profesional_id'];
+        $usuario = $sesion->actual();
+        $id = $usuario['profesional_id'];
+        if ($peticion->query->has('profesional')) {
+            if (!$usuario['admin']) {
+                throw new HttpException(403, 'Solo administración puede consultar el horario de otra profesional.');
+            }
+            $id = $peticion->query->getString('profesional');
+            if (preg_match('/\A[1-9][0-9]{0,17}\z/', $id) !== 1) {
+                throw new HttpException(422, 'Elegí una profesional válida.');
+            }
+        }
         $horario = $id === null ? null : $horarios->consultar($id);
         if ($horario !== null) {
             unset($horario['revision']);
