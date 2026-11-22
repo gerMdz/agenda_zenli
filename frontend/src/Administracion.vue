@@ -226,7 +226,7 @@ function ingresar() {
   return ejecutar(async () => {
     try {
       aplicarSesion(await api('/api/admin/sesion', { method: 'POST', datos: { email: email.value, clave: clave.value } }))
-      await cargarPanel()
+      if (usuario.value) window.location.replace('/admin/agenda')
     } finally {
       clave.value = ''
     }
