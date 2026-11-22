@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 
 /** Espacio físico de atención (tabla `recursos`). */
@@ -25,4 +26,16 @@ class Espacio
 
     #[ORM\Column(type: 'boolean')]
     public bool $activo = true;
+
+    #[ORM\Column(name: 'creado_por', type: 'bigint', nullable: true)]
+    public int|string|null $creadoPor = null;
+
+    #[ORM\Column(name: 'creado_en', type: 'instante', nullable: true)]
+    public ?DateTimeImmutable $creadoEn = null;
+
+    #[ORM\Column(name: 'actualizado_por', type: 'bigint', nullable: true)]
+    public int|string|null $actualizadoPor = null;
+
+    #[ORM\Column(name: 'actualizado_en', type: 'instante', nullable: true)]
+    public ?DateTimeImmutable $actualizadoEn = null;
 }

@@ -34,10 +34,10 @@ if (!preg_match('~\A/tmp/zenli-agenda-pg\.[A-Za-z0-9]+\z~', $socket) || !is_file
 }
 $db = DriverManager::getConnection(['driver' => 'pdo_pgsql', 'host' => $socket, 'user' => 'zenli_pruebas', 'dbname' => 'postgres']);
 $db->executeStatement("CREATE TABLE usuarios (id BIGINT PRIMARY KEY, email TEXT, password_hash TEXT, roles JSONB, activo BOOLEAN DEFAULT true)");
-$db->executeStatement("CREATE TABLE profesionales (id BIGINT PRIMARY KEY, nombre TEXT NOT NULL, activa BOOLEAN NOT NULL DEFAULT true, usuario_id BIGINT)");
+$db->executeStatement("CREATE TABLE profesionales (id BIGINT PRIMARY KEY, nombre TEXT NOT NULL, activa BOOLEAN NOT NULL DEFAULT true, usuario_id BIGINT, actualizado_por BIGINT, actualizado_en TIMESTAMPTZ)");
 $hash = password_hash('prueba', PASSWORD_DEFAULT);
 $db->executeStatement("INSERT INTO usuarios VALUES (1, 'admin@example.test', ?, '[\"ROLE_ADMIN\"]', true), (2, 'prof@example.test', ?, '[]', true)", [$hash, $hash]);
-$db->executeStatement("INSERT INTO profesionales VALUES (1, 'Nataly', true, 2), (2, 'Micaela', true, NULL), (3, 'Inactiva', false, NULL)");
+$db->executeStatement("INSERT INTO profesionales (id, nombre, activa, usuario_id) VALUES (1, 'Nataly', true, 2), (2, 'Micaela', true, NULL), (3, 'Inactiva', false, NULL)");
 $migracion = new Version20261120000200($db, new NullLogger());
 $migracion->up(new Schema());
 foreach ($migracion->getSql() as $sql) $db->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());

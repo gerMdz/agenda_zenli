@@ -26,6 +26,12 @@ class PromocionPortada
     #[ORM\Column(type: 'boolean')]
     public bool $eliminado = false;
 
+    #[ORM\Column(name: 'creado_por', length: 100, nullable: true)]
+    public ?string $creadoPor = null;
+
+    #[ORM\Column(name: 'creado_en', type: 'instante', nullable: true)]
+    public ?DateTimeImmutable $creadoEn = null;
+
     #[ORM\Column(name: 'actualizado_por', length: 100)]
     public string $actualizadoPor;
 

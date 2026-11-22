@@ -82,7 +82,7 @@ final readonly class AgendaAdministrativaController
     public function guardarEspacio(Request $peticion, ?string $id = null): JsonResponse
     {
         try {
-            $this->agenda->guardarEspacio($peticion->toArray(), $id);
+            $this->agenda->guardarEspacio($peticion->toArray(), $id, $this->sesion->actual()['id']);
         } catch (JsonException|InvalidArgumentException $error) {
             return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del espacio.' : $error->getMessage()], 422);
         } catch (HttpException $error) {
@@ -96,7 +96,7 @@ final readonly class AgendaAdministrativaController
     public function guardarPreparacion(Request $peticion): JsonResponse
     {
         try {
-            $this->agenda->guardarPreparacion($peticion->toArray());
+            $this->agenda->guardarPreparacion($peticion->toArray(), $this->sesion->actual()['id']);
         } catch (JsonException) {
             return $this->respuesta(['error' => 'Revisá los datos de preparación.'], 422);
         } catch (InvalidArgumentException $error) {
@@ -204,7 +204,7 @@ final readonly class AgendaAdministrativaController
         }
         try {
             $datos = $peticion->toArray();
-            $id = $this->perfiles->crear($datos['nombre'] ?? null);
+            $id = $this->perfiles->crear($datos['nombre'] ?? null, $this->sesion->actual()['id']);
         } catch (JsonException) {
             return $this->respuesta(['error' => 'Revisá los datos del perfil profesional.'], 422);
         } catch (InvalidArgumentException $error) {
@@ -218,12 +218,13 @@ final readonly class AgendaAdministrativaController
     #[Route('/profesionales/{id}/estado', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT'])]
     public function modificarProfesional(Request $peticion, string $id): JsonResponse
     {
+        $autor = $this->sesion->actual()['id'];
         try {
             $datos = $peticion->toArray();
             if (str_ends_with($peticion->getPathInfo(), '/estado')) {
-                $this->perfiles->cambiarEstado($id, $datos['activa'] ?? null);
+                $this->perfiles->cambiarEstado($id, $datos['activa'] ?? null, $autor);
             } else {
-                $this->perfiles->renombrar($id, $datos['nombre'] ?? null);
+                $this->perfiles->renombrar($id, $datos['nombre'] ?? null, $autor);
             }
         } catch (JsonException|InvalidArgumentException $error) {
             return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del perfil profesional.' : $error->getMessage()], 422);

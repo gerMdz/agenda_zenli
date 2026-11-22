@@ -34,7 +34,8 @@ final readonly class HorariosProfesionales
     public function consultar(string $id): array
     {
         $perfil = $this->entidades->createQuery(<<<'DQL'
-            SELECT p.horariosRevision AS revision, p.horarioPorFranjas AS por_franjas
+            SELECT p.horariosRevision AS revision, p.horarioPorFranjas AS por_franjas,
+                   p.horariosActualizadoPor AS actualizado_por, p.horariosActualizadoEn AS actualizado_en
             FROM App\Entity\ProfesionalHorarios p WHERE p.id = :id AND p.activa = true
             DQL)->setParameter('id', $id)->getOneOrNullResult();
         if ($perfil === null) {
@@ -52,9 +53,18 @@ final readonly class HorariosProfesionales
             FROM App\Entity\HorarioEspecial e WHERE e.profesionalId = :id
             DQL)->setParameter('id', $id)->getArrayResult());
         $bloqueos = $this->entidades->createQuery(<<<'DQL'
-            SELECT b.inicio AS inicio, b.fin AS fin FROM App\Entity\Bloqueo b
+            SELECT b.inicio AS inicio, b.fin AS fin, b.creadoPor AS creado_por, b.creadoEn AS creado_en
+            FROM App\Entity\Bloqueo b
             WHERE b.profesional = :id AND b.gestionHorarios = true
             DQL)->setParameter('id', $id)->getArrayResult();
+
+        $autores = new NombresAutores($this->conexion);
+        $ids = [$perfil['actualizado_por']];
+        foreach ($bloqueos as $bloqueo) {
+            $ids[] = $bloqueo['creado_por'];
+        }
+        $mapa = $autores->resolver($ids);
+
         $zona = new DateTimeZone(self::ZONA);
         foreach ($bloqueos as $bloqueo) {
             $fin = self::textoHora($bloqueo['fin']->setTimezone($zona));
@@ -62,6 +72,8 @@ final readonly class HorariosProfesionales
                 'tipo' => 'bloqueo', 'fecha' => $bloqueo['inicio']->setTimezone($zona)->format('Y-m-d'),
                 'hora_inicio' => self::textoHora($bloqueo['inicio']->setTimezone($zona)),
                 'hora_fin' => $fin === '00:00:00' ? '24:00:00' : $fin,
+                'creado_por' => $autores->etiqueta($bloqueo['creado_por'], $mapa),
+                'creado_en' => NombresAutores::instante($bloqueo['creado_en']),
             ];
         }
         usort($excepciones, static fn (array $a, array $b): int => [$a['fecha'], $a['hora_inicio'], $a['tipo']] <=> [$b['fecha'], $b['hora_inicio'], $b['tipo']]);
@@ -71,6 +83,7 @@ final readonly class HorariosProfesionales
             'por_franjas' => $perfil['por_franjas'] ?? $franjas !== [],
             'franjas' => $franjas,
             'excepciones' => $excepciones,
+            'auditoria' => $autores->ultimaModificacion($perfil['actualizado_por'], $perfil['actualizado_en'], $mapa),
         ];
     }
 
@@ -99,6 +112,8 @@ final readonly class HorariosProfesionales
             $perfil = $this->perfil($id);
             $perfil->horarioPorFranjas = $modo;
             ++$perfil->horariosRevision;
+            $perfil->horariosActualizadoPor = $autor;
+            $perfil->horariosActualizadoEn = new DateTimeImmutable();
 
             // Se reemplazan todas las filas; las eliminaciones se confirman antes de insertar las nuevas.
             $anteriores = $this->entidades->createQuery('SELECT f FROM App\Entity\FranjaHoraria f WHERE f.profesionalId = :id')
@@ -165,7 +180,10 @@ final readonly class HorariosProfesionales
                 $this->entidades->flush();
             }
             $this->verificarTurnosExistentes($id);
-            ++$this->perfil($id)->horariosRevision;
+            $perfil = $this->perfil($id);
+            ++$perfil->horariosRevision;
+            $perfil->horariosActualizadoPor = $autor;
+            $perfil->horariosActualizadoEn = new DateTimeImmutable();
         });
     }
 
@@ -206,6 +224,7 @@ final readonly class HorariosProfesionales
         $bloqueo->fin = $instante($datos['hora_fin']);
         $bloqueo->gestionHorarios = true;
         $bloqueo->creadoPor = $autor;
+        $bloqueo->creadoEn = new DateTimeImmutable();
 
         return $bloqueo;
     }

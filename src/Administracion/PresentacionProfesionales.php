@@ -25,17 +25,36 @@ final readonly class PresentacionProfesionales
 
     public function configuracion(): array
     {
-        $modo = $this->entidades->createQuery('SELECT c.modo FROM App\Entity\ConfiguracionPresentacionProfesionales c WHERE c.id = 1')
-            ->getOneOrNullResult(Query::HYDRATE_SINGLE_SCALAR);
+        $config = $this->entidades->createQuery('SELECT c.modo AS modo, c.actualizadoPor AS actualizado_por, c.actualizadoEn AS actualizado_en FROM App\Entity\ConfiguracionPresentacionProfesionales c WHERE c.id = 1')
+            ->getOneOrNullResult();
         $profesionales = $this->entidades->createQuery(<<<'DQL'
-            SELECT p.id AS id, p.nombre AS nombre, p.activa AS activa, p.visiblePortada AS visible_portada, i.imagenVersion AS imagen_version
+            SELECT p.id AS id, p.nombre AS nombre, p.activa AS activa, p.visiblePortada AS visible_portada,
+                   p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en,
+                   i.imagenVersion AS imagen_version, i.actualizadoPor AS imagen_actualizado_por, i.actualizadoEn AS imagen_actualizado_en
             FROM App\Entity\ProfesionalPortada p
             LEFT JOIN App\Entity\ImagenPresentacionProfesional i WITH i.profesionalId = p.id
             DQL.' '.self::ORDEN)->getArrayResult();
 
+        $autores = new NombresAutores($this->entidades->getConnection());
+        $ids = [$config['actualizado_por'] ?? null];
+        foreach ($profesionales as $p) {
+            $ids[] = $p['actualizado_por'];
+            $ids[] = $p['imagen_actualizado_por'];
+        }
+        $mapa = $autores->resolver($ids);
+
         return [
-            'modo' => $modo ?: 'ocultos',
-            'profesionales' => array_map(static fn (array $p): array => ['id' => (string) $p['id']] + $p, $profesionales),
+            'modo' => ($config['modo'] ?? null) ?: 'ocultos',
+            'auditoria' => $config === null ? null : $autores->ultimaModificacion($config['actualizado_por'], $config['actualizado_en'], $mapa),
+            'profesionales' => array_map(static fn (array $p): array => [
+                'id' => (string) $p['id'],
+                'nombre' => $p['nombre'],
+                'activa' => $p['activa'],
+                'visible_portada' => $p['visible_portada'],
+                'imagen_version' => $p['imagen_version'],
+                'auditoria' => $autores->ultimaModificacion($p['actualizado_por'], $p['actualizado_en'], $mapa),
+                'imagen_auditoria' => $autores->ultimaModificacion($p['imagen_actualizado_por'], $p['imagen_actualizado_en'], $mapa),
+            ], $profesionales),
         ];
     }
 
@@ -62,7 +81,10 @@ final readonly class PresentacionProfesionales
             throw new InvalidArgumentException('Ingresá un nombre de hasta 120 caracteres.');
         }
         TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $nombre, $autor): void {
-            $this->profesional($id)->nombre = trim($nombre);
+            $profesional = $this->profesional($id);
+            $profesional->nombre = trim($nombre);
+            $profesional->actualizadoPor = $autor;
+            $profesional->actualizadoEn = new DateTimeImmutable();
             $this->auditar($autor);
         });
     }
@@ -73,7 +95,10 @@ final readonly class PresentacionProfesionales
             throw new InvalidArgumentException('Elegí una visibilidad válida.');
         }
         TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $visible, $autor): void {
-            $this->profesional($id)->visiblePortada = $visible;
+            $profesional = $this->profesional($id);
+            $profesional->visiblePortada = $visible;
+            $profesional->actualizadoPor = $autor;
+            $profesional->actualizadoEn = new DateTimeImmutable();
             $this->auditar($autor);
         });
     }
@@ -97,7 +122,12 @@ final readonly class PresentacionProfesionales
                 throw new InvalidArgumentException('La profesional no se puede mover en esa dirección.');
             }
             [$lista[$indice], $lista[$destino]] = [$lista[$destino], $lista[$indice]];
+            $ahora = new DateTimeImmutable();
             foreach ($lista as $orden => $profesional) {
+                if ($profesional->ordenPortada !== $orden || $orden === $indice || $orden === $destino) {
+                    $profesional->actualizadoPor = $autor;
+                    $profesional->actualizadoEn = $ahora;
+                }
                 $profesional->ordenPortada = $orden;
             }
             $this->auditar($autor);

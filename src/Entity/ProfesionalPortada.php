@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 
 /** Vista de `profesionales` con los datos de su presentación en portada. */
@@ -25,4 +26,10 @@ class ProfesionalPortada
 
     #[ORM\Column(name: 'orden_portada', type: 'integer', nullable: true)]
     public ?int $ordenPortada = null;
+
+    #[ORM\Column(name: 'actualizado_por', type: 'bigint', nullable: true)]
+    public int|string|null $actualizadoPor = null;
+
+    #[ORM\Column(name: 'actualizado_en', type: 'instante', nullable: true)]
+    public ?DateTimeImmutable $actualizadoEn = null;
 }

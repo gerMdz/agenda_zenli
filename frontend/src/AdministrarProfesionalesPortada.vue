@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { resumenAuditoria } from './formatoAuditoria.js'
 
 const props = defineProps({ csrf: { type: String, required: true } })
 const emit = defineEmits(['nombre-actualizado'])
@@ -158,6 +159,7 @@ onBeforeUnmount(limpiarImagen)
           <option value="imagenes">Nombres e imágenes</option>
         </select>
         <small id="ayuda-modo-profesionales">Solo se muestran profesionales activas y visibles. El modo global prevalece sobre la visibilidad individual. Si falta alguna imagen, se muestran solo nombres hasta completar todas.</small>
+        <small v-if="resumenAuditoria(configuracion.auditoria, true)">Configuración: {{ resumenAuditoria(configuracion.auditoria, true) }}</small>
       </div>
       <ul class="lista-servicios">
         <li v-for="(profesional, index) in configuracion.profesionales" :key="profesional.id" :class="{ oculto: !profesional.activa || !profesional.visible_portada }">
@@ -167,6 +169,8 @@ onBeforeUnmount(limpiarImagen)
               <strong>{{ profesional.nombre }}</strong>
               <small v-if="!profesional.activa">Inactiva</small>
               <small>{{ profesional.visible_portada ? 'Visible en portada' : 'Oculta en portada' }}</small>
+              <small v-if="resumenAuditoria(profesional.auditoria, true)">Perfil: {{ resumenAuditoria(profesional.auditoria, true) }}</small>
+              <small v-if="resumenAuditoria(profesional.imagen_auditoria, true)">Imagen: {{ resumenAuditoria(profesional.imagen_auditoria, true) }}</small>
               <span class="badge" :class="{ 'sin-imagen': !profesional.imagen_version }">{{ profesional.imagen_version ? 'con imagen' : 'sin imagen' }}</span>
             </div>
           </div>

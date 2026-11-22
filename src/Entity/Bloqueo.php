@@ -35,6 +35,9 @@ class Bloqueo
     #[ORM\Column(name: 'creado_por', type: 'bigint', nullable: true)]
     public int|string|null $creadoPor = null;
 
+    #[ORM\Column(name: 'creado_en', type: 'instante', nullable: true)]
+    public ?DateTimeImmutable $creadoEn = null;
+
     #[ORM\Column(name: 'gestion_horarios', type: 'boolean')]
     public bool $gestionHorarios = false;
 }

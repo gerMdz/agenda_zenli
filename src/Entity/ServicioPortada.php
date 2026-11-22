@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
@@ -31,11 +32,17 @@ class ServicioPortada
     #[ORM\Column(name: 'imagen_version', length: 64, nullable: true)]
     public ?string $imagenVersion = null;
 
+    #[ORM\Column(name: 'creado_por', length: 100, nullable: true)]
+    public ?string $creadoPor = null;
+
+    #[ORM\Column(name: 'creado_en', type: 'instante', nullable: true)]
+    public ?DateTimeImmutable $creadoEn = null;
+
     #[ORM\Column(name: 'actualizado_por', length: 100)]
     public string $actualizadoPor;
 
-    #[ORM\Column(name: 'actualizado_en', type: 'string')]
-    public string $actualizadoEn;
+    #[ORM\Column(name: 'actualizado_en', type: 'instante')]
+    public DateTimeImmutable $actualizadoEn;
 
     #[ORM\Column(name: 'duracion_minima', type: 'integer', nullable: true)]
     public ?int $duracionMinima = null;

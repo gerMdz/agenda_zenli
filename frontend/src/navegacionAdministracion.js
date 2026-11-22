@@ -18,7 +18,13 @@ export const gruposMenu = [
       { id: 'configuracion-agenda', nombre: 'Guía de configuración' },
     ],
   },
-  { nombre: 'Acceso', enlaces: [{ id: 'cuentas', nombre: 'Cuentas administradoras' }] },
+  {
+    nombre: 'Acceso',
+    enlaces: [
+      { id: 'cuentas', nombre: 'Cuentas administradoras' },
+      { id: 'auditoria', nombre: 'Auditoría' },
+    ],
+  },
 ]
 export const secciones = gruposMenu.flatMap(grupo => grupo.enlaces)
 

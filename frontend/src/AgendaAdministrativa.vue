@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import LayoutAdministracion from './LayoutAdministracion.vue'
 import EntradaHora from './EntradaHora.vue'
+import { formatearFechaHora, formatearRangoTurno, importePesos } from './formatoAuditoria.js'
 
 function seccionDeAgenda() {
   return window.location.hash === '#mensajes' ? 'mensajes' : 'agenda'
@@ -32,6 +33,14 @@ const dialogoPreparacion = ref(null)
 const preparacionEditada = ref(null)
 const inicioPreparacion = ref('')
 const finPreparacion = ref('')
+const dialogoHistorial = ref(null)
+const historialTurno = ref(null)
+const cargandoHistorial = ref(false)
+const errorHistorial = ref('')
+const dialogoHistorialPeriodo = ref(null)
+const historialPeriodo = ref(null)
+const cargandoPeriodo = ref(false)
+const errorPeriodo = ref('')
 const bloqueoNuevo = ref({ profesional: '', fecha: '', todo_el_dia: false, hora_inicio: '', hora_fin: '' })
 const nombreDia = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
 const tituloMes = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -385,6 +394,64 @@ function salir() {
   })
 }
 
+async function abrirHistorialTurno(turnoId) {
+  if (!usuario.value?.admin) return
+  errorHistorial.value = ''
+  historialTurno.value = null
+  cargandoHistorial.value = true
+  await nextTick()
+  dialogoHistorial.value?.showModal()
+  try {
+    historialTurno.value = await api(`/api/admin/auditoria/turnos/${turnoId}`)
+  } catch (fallo) {
+    errorHistorial.value = fallo.message
+  } finally {
+    cargandoHistorial.value = false
+  }
+}
+
+function cerrarHistorialTurno() {
+  if (dialogoHistorial.value?.open) dialogoHistorial.value.close()
+  historialTurno.value = null
+  errorHistorial.value = ''
+}
+
+async function abrirHistorialPeriodo() {
+  if (!usuario.value?.admin) return
+  errorPeriodo.value = ''
+  historialPeriodo.value = null
+  cargandoPeriodo.value = true
+  await nextTick()
+  dialogoHistorialPeriodo.value?.showModal()
+  try {
+    const { inicio, fin } = periodo.value
+    historialPeriodo.value = await api(`/api/admin/auditoria/turnos?por=turno&desde=${claveDia(inicio)}&hasta=${claveDia(fin)}`)
+  } catch (fallo) {
+    errorPeriodo.value = fallo.message
+  } finally {
+    cargandoPeriodo.value = false
+  }
+}
+
+function cerrarHistorialPeriodo() {
+  if (dialogoHistorialPeriodo.value?.open) dialogoHistorialPeriodo.value.close()
+  historialPeriodo.value = null
+  errorPeriodo.value = ''
+}
+
+function verHistorialDesdePeriodo(turnoId) {
+  cerrarHistorialPeriodo()
+  abrirHistorialTurno(turnoId)
+}
+
+function claseBadgeHistorial(evento) {
+  if (evento.tipo === 'CANCELADO') return 'cancelado'
+  if (evento.cambio_sena) return 'sena'
+  if (evento.tipo === 'CREADO') return 'creado'
+  if (evento.tipo === 'PREP_EDITADA' || evento.tipo === 'PREP_ELIMINADA') return 'preparacion'
+  return 'editado'
+}
+
 onMounted(() => ejecutar(async () => {
   document.title = 'Agenda · Zenli'
   window.addEventListener('hashchange', actualizarSeccion)
@@ -420,6 +487,7 @@ onMounted(() => ejecutar(async () => {
                 :class="{ secundario: vista !== opcion.id }" :disabled="ocupado" @click="cambiarVista(opcion.id)">{{ opcion.nombre }}</button>
             </div>
             <div class="acciones">
+              <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado" @click="abrirHistorialPeriodo">Historial y cancelados</button>
               <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">+ Horario no disponible de profesional</button>
               <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno">+ Nuevo turno</button>
             </div>
@@ -474,6 +542,7 @@ onMounted(() => ejecutar(async () => {
                 <button type="button" class="secundario" :disabled="ocupado" @click="eliminarPreparacion(turno)">Eliminar</button>
               </div>
               <div v-else-if="turno.editable" class="acciones">
+                <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado" @click="abrirHistorialTurno(turno.id)">Historial</button>
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
               </div>
@@ -575,6 +644,83 @@ onMounted(() => ejecutar(async () => {
             </form>
         </dialog>
 
+        <dialog v-if="usuario.admin" ref="dialogoHistorial" aria-labelledby="titulo-historial-turno" @close="cerrarHistorialTurno">
+          <div class="barra">
+            <h2 id="titulo-historial-turno">Historial del turno</h2>
+            <button type="button" class="secundario" @click="cerrarHistorialTurno">Cerrar</button>
+          </div>
+          <p v-if="cargandoHistorial" role="status">Cargando historial…</p>
+          <p v-if="errorHistorial" role="alert">{{ errorHistorial }}</p>
+          <template v-if="historialTurno">
+            <p class="resumen-turno-modal">
+              <strong>{{ historialTurno.turno.cliente }}</strong> · {{ historialTurno.turno.servicio }} ·
+              {{ formatearRangoTurno(historialTurno.turno.inicio, historialTurno.turno.fin) }}
+              <template v-if="historialTurno.turno.profesionales"> · {{ historialTurno.turno.profesionales }}</template>
+            </p>
+            <p class="resumen-turno-modal">
+              <span class="badge-historial" :class="historialTurno.turno.cancelado ? 'cancelado' : 'creado'">
+                {{ historialTurno.turno.cancelado ? 'Cancelado' : 'Activo' }}
+              </span>
+              Seña: {{ historialTurno.turno.sena_pagada ? 'pagada' : 'no pagada' }}
+              <template v-if="historialTurno.turno.sena_importe_centavos != null"> · $ {{ importePesos(historialTurno.turno.sena_importe_centavos) }}</template>
+            </p>
+            <ol class="linea-historial">
+              <li v-for="ev in historialTurno.eventos" :key="ev.id">
+                <div class="fila-evento">
+                  <span class="badge-historial" :class="claseBadgeHistorial(ev)">{{ ev.etiqueta }}</span>
+                  <strong>{{ ev.resumen }}</strong>
+                </div>
+                <small>Por <strong>{{ ev.autor || 'Sin dato' }}</strong> · {{ formatearFechaHora(ev.fecha) }}</small>
+                <ul v-if="ev.cambios?.length" class="cambios-historial">
+                  <li v-for="(cambio, indice) in ev.cambios" :key="indice">{{ cambio }}</li>
+                </ul>
+              </li>
+            </ol>
+          </template>
+        </dialog>
+
+        <dialog v-if="usuario.admin" ref="dialogoHistorialPeriodo" aria-labelledby="titulo-historial-periodo" @close="cerrarHistorialPeriodo">
+          <div class="barra">
+            <h2 id="titulo-historial-periodo">Historial y cancelados · {{ encabezadoPeriodo }}</h2>
+            <button type="button" class="secundario" @click="cerrarHistorialPeriodo">Cerrar</button>
+          </div>
+          <p v-if="cargandoPeriodo" role="status">Cargando historial del período…</p>
+          <p v-if="errorPeriodo" role="alert">{{ errorPeriodo }}</p>
+          <template v-if="historialPeriodo">
+            <h3>Turnos cancelados del período ({{ historialPeriodo.cancelados.length }})</h3>
+            <p v-if="!historialPeriodo.cancelados.length">No hay turnos cancelados en este período.</p>
+            <ul v-else class="lista-periodo">
+              <li v-for="item in historialPeriodo.cancelados" :key="item.id">
+                <div>
+                  <strong>{{ item.cliente }} · {{ item.servicio }}</strong>
+                  <small>{{ formatearRangoTurno(item.inicio, item.fin) }}<template v-if="item.profesionales"> · {{ item.profesionales }}</template></small>
+                  <small>Cancelado<template v-if="item.cancelado_por"> por <strong>{{ item.cancelado_por }}</strong></template><template v-if="item.cancelado_en"> el {{ formatearFechaHora(item.cancelado_en) }}</template></small>
+                  <small>Seña: {{ item.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="item.sena_importe_centavos != null"> · $ {{ importePesos(item.sena_importe_centavos) }}</template></small>
+                </div>
+                <button type="button" class="secundario" @click="verHistorialDesdePeriodo(item.id)">Ver historial</button>
+              </li>
+            </ul>
+            <h3>Actividad de turnos del período ({{ historialPeriodo.eventos.length }})</h3>
+            <p v-if="!historialPeriodo.eventos.length">No hay movimientos registrados para turnos de este período.</p>
+            <ul v-else class="lista-periodo">
+              <li v-for="ev in historialPeriodo.eventos" :key="ev.id">
+                <div>
+                  <div class="fila-evento">
+                    <span class="badge-historial" :class="claseBadgeHistorial(ev)">{{ ev.etiqueta }}</span>
+                    <strong>{{ ev.resumen }}</strong>
+                  </div>
+                  <small>Por <strong>{{ ev.autor || 'Sin dato' }}</strong> · {{ formatearFechaHora(ev.fecha) }}</small>
+                  <small>{{ ev.turno.cliente }} · {{ ev.turno.servicio }} · {{ formatearRangoTurno(ev.turno.inicio, ev.turno.fin) }}</small>
+                </div>
+                <button type="button" class="secundario" @click="verHistorialDesdePeriodo(ev.turno.id)">Ver turno</button>
+              </li>
+            </ul>
+            <div class="barra pie-historial">
+              <a class="enlace-accion" href="/admin#auditoria">Ver auditoría completa ↗</a>
+            </div>
+          </template>
+        </dialog>
+
         <section v-show="seccionAgenda === 'mensajes'" id="mensajes" class="panel" aria-labelledby="titulo-mensajes">
             <div class="barra">
               <h2 id="titulo-mensajes">Bandeja de mensajes</h2>
@@ -657,6 +803,21 @@ button:disabled { opacity: .55; }
 dialog { max-height: 88dvh; width: min(calc(100% - 1.5rem), 38rem); padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
 dialog::backdrop { background: #071b13a8; }
 dialog form { margin-top: .7rem; }
+dialog h3 { margin: 1rem 0 .4rem; font-family: Georgia, serif; font-size: 1rem; }
+.resumen-turno-modal { font-size: .9rem; margin-bottom: .4rem; }
+.linea-historial, .lista-periodo { list-style: none; padding: 0; margin: .6rem 0; }
+.linea-historial > li { display: grid; gap: .2rem; padding: .55rem 0 .55rem .75rem; border-left: 3px solid #d5c8aa; border-bottom: 1px solid #efe7d5; }
+.lista-periodo > li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: .6rem; padding: .6rem 0; border-bottom: 1px solid #e4dac3; }
+.lista-periodo small { display: block; color: #526255; font-size: .8rem; }
+.fila-evento { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.cambios-historial { margin: .2rem 0 0; padding-left: 1.1rem; font-size: .84rem; color: #2c4a3c; }
+.badge-historial { display: inline-block; padding: .1rem .42rem; border-radius: .3rem; font-size: .72rem; font-weight: 700; }
+.badge-historial.creado { background: #e4efdf; color: #194832; }
+.badge-historial.sena { background: #f4e6c4; color: #6c460d; }
+.badge-historial.cancelado { background: #f9e3df; color: #75271f; }
+.badge-historial.editado { background: #e5ecf4; color: #1e4266; }
+.badge-historial.preparacion { background: #efe7dc; color: #5e4422; }
+.pie-historial { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid #e4dac3; }
 @media (max-width: 42rem) {
   .celda { font-size: .72rem; padding: .25rem; }
   .resumen-dia { display: none; }

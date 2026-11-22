@@ -21,6 +21,9 @@ class PoliticaReserva
     #[ORM\Column(type: 'json', options: ['jsonb' => true])]
     public mixed $valor;
 
+    #[ORM\Column(name: 'actualizado_por', type: 'bigint', nullable: true)]
+    public int|string|null $actualizadoPor = null;
+
     #[ORM\Column(name: 'actualizado_en', type: 'instante')]
     public DateTimeImmutable $actualizadoEn;
 }

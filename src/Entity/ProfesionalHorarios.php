@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 
 /** Vista de `profesionales` con el modo y la revisión de sus horarios. */
@@ -23,4 +24,10 @@ class ProfesionalHorarios
 
     #[ORM\Column(name: 'horarios_revision', type: 'integer')]
     public int $horariosRevision = 0;
+
+    #[ORM\Column(name: 'horarios_actualizado_por', type: 'bigint', nullable: true)]
+    public int|string|null $horariosActualizadoPor = null;
+
+    #[ORM\Column(name: 'horarios_actualizado_en', type: 'instante', nullable: true)]
+    public ?DateTimeImmutable $horariosActualizadoEn = null;
 }

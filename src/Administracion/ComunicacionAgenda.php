@@ -93,10 +93,15 @@ final readonly class ComunicacionAgenda
                     throw new InvalidArgumentException('Elegí el correo de una cuenta administradora activa.');
                 }
             } else {
+                $ahora = new \DateTimeImmutable();
                 $usuario = new UsuarioAdministrativo();
                 $usuario->email = $email;
                 $usuario->passwordHash = $hash;
                 $usuario->roles = $admin ? [UsuariosAdministrativos::ROL] : [];
+                $usuario->creadoPor = $autor;
+                $usuario->creadoEn = $ahora;
+                $usuario->actualizadoPor = $autor;
+                $usuario->actualizadoEn = $ahora;
                 $this->entidades->persist($usuario);
                 // La profesional referencia la cuenta: debe existir antes de vincularla.
                 $this->entidades->flush();
@@ -105,8 +110,8 @@ final readonly class ComunicacionAgenda
             $this->auditoria->registrar('CUENTA_VINCULADA', $usuario->id, $autor);
             $cuenta = $this->entidades->getReference(UsuarioPerfil::class, $usuario->id);
             if ($profesional === null) {
-                $perfil = new Profesional(trim($nombre));
-                $perfil->vincularCuenta($cuenta);
+                $perfil = new Profesional(trim($nombre), $autor);
+                $perfil->vincularCuenta($cuenta, $autor);
                 $this->entidades->persist($perfil);
 
                 return;
@@ -117,7 +122,7 @@ final readonly class ComunicacionAgenda
             if ($perfil === null || !$perfil->activa() || $perfil->usuario() !== null) {
                 throw new InvalidArgumentException('La profesional no está disponible o ya tiene una cuenta.');
             }
-            $perfil->vincularCuenta($cuenta);
+            $perfil->vincularCuenta($cuenta, $autor);
         });
     }
 

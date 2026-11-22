@@ -143,21 +143,53 @@ final readonly class AgendaAdministrativa
                 'id' => (string) $p['id'], 'nombre' => $p['nombre'], 'tiene_cuenta' => $p['usuario'] === null ? 0 : 1,
                 'admin' => $p['roles'] !== null && UsuarioAdministrativo::rolesAdministrativos($p['roles']) ? 1 : 0,
             ], $profesionales),
-            'espacios' => $this->espacios(),
+            'espacios' => $this->espacios(true),
             'preparacion' => $this->preparacion(),
+            'preparacion_auditoria' => $this->auditoriaPreparacion(),
         ];
     }
 
-    private function espacios(): array
+    private function espacios(bool $conAuditoria = false): array
     {
-        return array_map(
-            static fn (array $e): array => ['id' => (string) $e['id']] + $e,
-            $this->entidades->createQuery('SELECT e.id AS id, e.nombre AS nombre, e.detalle AS detalle FROM App\Entity\Espacio e WHERE e.activo = true ORDER BY e.nombre, e.id')
-                ->getArrayResult(),
-        );
+        $columnas = 'e.id AS id, e.nombre AS nombre, e.detalle AS detalle';
+        if ($conAuditoria) {
+            $columnas .= ', e.creadoPor AS creado_por, e.creadoEn AS creado_en, e.actualizadoPor AS actualizado_por, e.actualizadoEn AS actualizado_en';
+        }
+        $filas = $this->entidades->createQuery("SELECT $columnas FROM App\\Entity\\Espacio e WHERE e.activo = true ORDER BY e.nombre, e.id")
+            ->getArrayResult();
+        if (!$conAuditoria) {
+            return array_map(static fn (array $e): array => ['id' => (string) $e['id']] + $e, $filas);
+        }
+        $autores = new NombresAutores($this->entidades->getConnection());
+        $ids = [];
+        foreach ($filas as $e) {
+            $ids[] = $e['creado_por'];
+            $ids[] = $e['actualizado_por'];
+        }
+        $mapa = $autores->resolver($ids);
+
+        return array_map(static fn (array $e): array => [
+            'id' => (string) $e['id'],
+            'nombre' => $e['nombre'],
+            'detalle' => $e['detalle'],
+            'auditoria' => $autores->auditoria($e['creado_por'], $e['creado_en'], $e['actualizado_por'], $e['actualizado_en'], $mapa),
+        ], $filas);
     }
 
-    public function guardarEspacio(array $datos, ?string $id): void
+    private function auditoriaPreparacion(): ?array
+    {
+        $fila = $this->entidades->createQuery('SELECT p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en FROM App\Entity\PoliticaReserva p WHERE p.clave = :clave')
+            ->setParameter('clave', self::POLITICA)->getOneOrNullResult();
+        if ($fila === null) {
+            return null;
+        }
+        $autores = new NombresAutores($this->entidades->getConnection());
+        $mapa = $autores->resolver([$fila['actualizado_por']]);
+
+        return $autores->ultimaModificacion($fila['actualizado_por'], $fila['actualizado_en'], $mapa);
+    }
+
+    public function guardarEspacio(array $datos, ?string $id, ?string $autor = null): void
     {
         $nombre = $datos['nombre'] ?? null;
         $detalle = $datos['detalle'] ?? '';
@@ -165,9 +197,12 @@ final readonly class AgendaAdministrativa
             || !is_string($detalle) || preg_match('/\A[^\x00]{0,1000}\z/u', trim($detalle)) !== 1) {
             throw new InvalidArgumentException('Ingresá un nombre y un detalle de hasta 1000 caracteres.');
         }
+        $ahora = new DateTimeImmutable();
         if ($id === null) {
             $espacio = new Espacio();
             $espacio->codigo = 'ESP_'.bin2hex(random_bytes(12));
+            $espacio->creadoPor = $autor;
+            $espacio->creadoEn = $ahora;
             $this->entidades->persist($espacio);
         } else {
             $espacio = $this->entidades->createQuery('SELECT e FROM App\Entity\Espacio e WHERE e.id = :id')
@@ -176,10 +211,12 @@ final readonly class AgendaAdministrativa
         }
         $espacio->nombre = trim($nombre);
         $espacio->detalle = trim($detalle);
+        $espacio->actualizadoPor = $autor;
+        $espacio->actualizadoEn = $ahora;
         $this->entidades->flush();
     }
 
-    public function guardarPreparacion(array $datos): void
+    public function guardarPreparacion(array $datos, ?string $autor = null): void
     {
         if (($datos['modo'] ?? null) === 'general') {
             $politica = ['modo' => 'general', 'minutos' => self::minutos($datos['minutos'] ?? null, 0)];
@@ -196,7 +233,7 @@ final readonly class AgendaAdministrativa
             throw new InvalidArgumentException('Elegí cómo se define la preparación.');
         }
 
-        TransaccionEntidades::ejecutar($this->entidades, function () use ($politica): void {
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($politica, $autor): void {
             // Reemplaza al ON CONFLICT: dos primeras configuraciones simultáneas no pueden duplicar la clave.
             $this->entidades->getConnection()->executeStatement('LOCK TABLE politicas_reservas IN SHARE ROW EXCLUSIVE MODE');
             $registro = $this->entidades->createQuery('SELECT p FROM App\Entity\PoliticaReserva p WHERE p.clave = :clave')
@@ -207,6 +244,7 @@ final readonly class AgendaAdministrativa
                 $this->entidades->persist($registro);
             }
             $registro->valor = $politica;
+            $registro->actualizadoPor = $autor;
             $registro->actualizadoEn = new DateTimeImmutable();
         });
     }
@@ -286,7 +324,7 @@ final readonly class AgendaAdministrativa
                 }
                 $inicioProfesional = $inicio;
                 foreach ($anterior['ocupaciones_profesionales'] ?? [] as $ocupacionProfesional) {
-                    if ($ocupacionProfesional->profesional->id() === $profesional && $ocupacionProfesional->inicio < $inicio) {
+                    if ($ocupacionProfesional->profesional->id() === $profesional && $ocupacionProfesional->inicio < $anterior['turno']->inicio) {
                         if ($inicio != $anterior['turno']->inicio) {
                             throw new TurnoNoDisponible('El turno tiene ocupaciones históricas; no se pueden desplazar automáticamente.');
                         }

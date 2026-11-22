@@ -57,6 +57,12 @@ final readonly class AdministracionController
         return $this->sesion();
     }
 
+    #[Route('/portada', methods: ['GET'])]
+    public function consultarPortada(): JsonResponse
+    {
+        return $this->respuesta($this->portada->consultarAdministracion());
+    }
+
     #[Route('/portada/modo', methods: ['PATCH'])]
     public function cambiarModoPortada(Request $peticion): JsonResponse
     {
@@ -73,7 +79,7 @@ final readonly class AdministracionController
 
         $this->portada->cambiarModo($soloImagen, $usuario['id']);
 
-        return $this->respuesta(['solo_imagen' => $soloImagen]);
+        return $this->respuesta(['solo_imagen' => $soloImagen, 'auditoria' => $this->portada->consultarAdministracion()['auditoria']]);
     }
 
     #[Route('/portada/visibilidad', methods: ['PATCH'])]
@@ -89,8 +95,9 @@ final readonly class AdministracionController
             return $this->error('Elegí una sección y visibilidad válidas.', 422);
         }
         $this->portada->cambiarVisibilidad($datos['seccion'], $datos['visible'], $usuario['id']);
+        $portada = $this->portada->consultarAdministracion();
 
-        return $this->respuesta(['visibilidad' => $this->portada->consultar()['visibilidad']]);
+        return $this->respuesta(['visibilidad' => $portada['visibilidad'], 'auditoria' => $portada['auditoria']]);
     }
 
     #[Route('/portada', methods: ['POST'])]
@@ -117,7 +124,7 @@ final readonly class AdministracionController
             return $this->error($error->getMessage(), 422);
         }
 
-        return $this->respuesta($this->portada->consultar());
+        return $this->respuesta($this->portada->consultarAdministracion());
     }
 
     #[Route('/usuarios', methods: ['GET'])]

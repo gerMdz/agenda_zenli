@@ -44,6 +44,7 @@ foreach ($migracion->getSql() as $consulta) {
 }
 $ordenInicial = $conexion->fetchFirstColumn('SELECT nombre FROM promociones_portada ORDER BY orden, id');
 if ($ordenInicial !== ['Eliminada', 'Oculta', 'Antigua']) throw new RuntimeException('La migración debe preservar el orden previo.');
+$conexion->executeStatement('ALTER TABLE promociones_portada ADD creado_por VARCHAR(100), ADD creado_en TIMESTAMPTZ');
 App\Doctrine\InstanteType::registrar();
 $configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
 $configuracion->enableNativeLazyObjects(true);
@@ -144,6 +145,9 @@ $promociones->eliminar($ids[0], 'admin');
 $promociones->guardar(null, ['nombre' => 'Cuarta', 'descripcion' => 'Descripción'], 'admin');
 $verificar(array_column($promociones->listar(), 'nombre') === ['Tercera', 'Segunda', 'Cuarta'], 'Una promoción nueva debe agregarse al final y excluir eliminadas.');
 
+$conexion->executeStatement("CREATE TABLE usuarios (id BIGINT PRIMARY KEY, email TEXT)");
+$conexion->executeStatement("CREATE TABLE profesionales (id BIGINT PRIMARY KEY, usuario_id BIGINT, nombre TEXT)");
+$conexion->executeStatement("INSERT INTO usuarios VALUES (1, 'admin@example.test')");
 require __DIR__.'/soporte-seguridad.php';
 $controller = new App\Controller\PromocionesController($promociones, sesionDePrueba(administradoraDePrueba()));
 $sesion = new Symfony\Component\HttpFoundation\Session\Session(new Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage());

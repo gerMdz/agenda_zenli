@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 
 /** Historial de un turno interno. `creado_en` lo asigna PostgreSQL. */
@@ -26,4 +27,7 @@ class EventoTurnoAdministrativo
 
     #[ORM\Column(name: 'estado_anterior', type: 'json', options: ['jsonb' => true])]
     public array $estadoAnterior;
+
+    #[ORM\Column(name: 'creado_en', type: 'instante', insertable: false, updatable: false, generated: 'INSERT')]
+    public ?DateTimeImmutable $creadoEn = null;
 }

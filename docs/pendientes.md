@@ -30,10 +30,10 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 - La lectura y escritura de las imágenes de servicios y de la portada sigue en SQL nativo (`bytea`). Doctrine no carga columnas en forma diferida: mapearlas en `ServicioPortada` cargaría todas las imágenes en cada listado. Decidir si se usa una entidad separada para la imagen, como en presentación de profesionales.
 - Varias entidades parciales comparten tabla (`profesionales`: 4; `usuarios`: 2). Se leen con `HINT_REFRESH`, pero conviene unificarlas antes de que una misma petición modifique la misma fila desde dos entidades.
 - Tras desplegar, confirmar que `eventos_acceso` registre la IP pública real y no una dirección 172.x de Docker (`SELECT tipo, host(ip) FROM eventos_acceso ORDER BY id DESC LIMIT 5`).
-- Definir cuánto tiempo se conservan `eventos_acceso` (contiene direcciones IP, que son datos personales) y mostrar la auditoría en el panel.
+- Definir cuánto tiempo se conservan `eventos_acceso` (contiene direcciones IP, que son datos personales) y decidir si conviene mostrar los accesos en el panel.
 - La demora por cuenta todavía permite que alguien que conozca un correo mantenga demorado su ingreso con un intento por período. El desbloqueo desde el panel lo alivia, pero no lo impide.
 - Las sesiones se guardan en archivos dentro del contenedor: cada despliegue cierra todas las sesiones abiertas. Evaluar guardarlas en PostgreSQL si molesta.
-- Auditoría de autoría (`creado_por`/`actualizado_por`) en las tablas que todavía no la tienen, y consulta del historial de turnos (señas y cancelaciones) desde el panel. `eventos_turnos_administrativos` ya guarda autor, fecha y estado anterior de cada edición y cancelación.
+- Validar en navegador las vistas nuevas de «Auditoría» (`/admin#auditoria`), el historial de turnos en `/admin/agenda` y las etiquetas de autoría en cada sección del panel antes del despliegue.
 - La lista de contactos de mensajes muestra a las profesionales el correo de las administradoras sin perfil profesional. Decidir si se reemplaza por un nombre.
 - Si se agregan procesos de larga duración (Messenger, workers), reiniciar el EntityManager después de un `flush` fallido.
 

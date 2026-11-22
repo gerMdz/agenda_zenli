@@ -5,7 +5,9 @@ import LayoutAdministracion from './LayoutAdministracion.vue'
 import EntradaHora from './EntradaHora.vue'
 import PromocionesAdministracion from './PromocionesAdministracion.vue'
 import AdministrarProfesionalesPortada from './AdministrarProfesionalesPortada.vue'
+import AuditoriaAdministracion from './AuditoriaAdministracion.vue'
 import { secciones } from './navegacionAdministracion.js'
+import { formatearFechaHora, resumenAuditoria } from './formatoAuditoria.js'
 
 function seccionDeUrl() {
   const id = window.location.hash.slice(1)
@@ -45,6 +47,7 @@ const seccionesPortada = [
   { id: 'consultas', nombre: 'Consultas' },
 ]
 const imagenGuardada = ref(null)
+const portadaAuditoria = ref(null)
 const imagenTemporal = ref(null)
 const entradaArchivo = ref(null)
 const restaurar = ref(false)
@@ -151,6 +154,7 @@ function aplicarSesion(sesion) {
     altaClave.value = ''
     cuenta.value.clave = ''
     ajustesAgenda.value = null
+    portadaAuditoria.value = null
     perfilesProfesionales.value = []
     horarioProfesional.value = null
     profesionalHorario.value = ''
@@ -168,7 +172,7 @@ async function cargarPanel() {
     return
   }
   const [portada, listado, svcs, ajustes, perfiles] = await Promise.all([
-    api('/api/portada'),
+    api('/api/admin/portada'),
     api('/api/admin/usuarios'),
     api('/api/admin/servicios'),
     api('/api/admin/agenda/configuracion'),
@@ -195,6 +199,7 @@ function aplicarPortada(portada) {
   soloImagen.value = portada.solo_imagen === true
   visibilidad.value = { ...visibilidad.value, ...portada.visibilidad }
   imagenGuardada.value = portada.imagen
+  portadaAuditoria.value = portada.auditoria ?? null
   restaurar.value = false
 }
 
@@ -272,6 +277,7 @@ function cambiarModoPortada() {
       datos: { solo_imagen: !soloImagen.value },
     })
     soloImagen.value = modo.solo_imagen === true
+    if ('auditoria' in modo) portadaAuditoria.value = modo.auditoria
     mensaje.value = soloImagen.value
       ? 'Sitio bajado. La portada pública muestra solo la imagen.'
       : 'Sitio subido. La portada completa está visible.'
@@ -284,6 +290,7 @@ function cambiarVisibilidadSeccion(seccion) {
       method: 'PATCH', datos: { seccion, visible: !visibilidad.value[seccion] },
     })
     visibilidad.value = resultado.visibilidad
+    if ('auditoria' in resultado) portadaAuditoria.value = resultado.auditoria
     mensaje.value = 'Visibilidad de la portada actualizada.'
   })
 }
@@ -716,6 +723,7 @@ async function guardarConfiguracionServicio() {
       },
     })
     servicios.value = resultado.servicios
+    servicioEditando.value = resultado.servicios.find(servicio => servicio.id === servicioEditando.value.id)
     editarMensaje.value = 'Configuración de agenda guardada.'
   } catch (fallo) {
     editarError.value = fallo.message
@@ -795,7 +803,9 @@ onBeforeUnmount(() => {
       <div v-if="usuario?.admin" class="paneles">
         <PromocionesAdministracion v-if="seccionActiva.id === 'promociones'" :csrf="csrf" />
         <div v-if="seccionActiva.id === 'equipo-portada'" class="panel"><AdministrarProfesionalesPortada :csrf="csrf" @nombre-actualizado="ejecutar(recargarEquipo)" /></div>
+        <AuditoriaAdministracion v-if="seccionActiva.id === 'auditoria'" :csrf="csrf" />
         <section v-show="seccionActiva.id === 'portada'" class="panel" aria-labelledby="titulo-seccion-admin">
+          <p v-if="resumenAuditoria(portadaAuditoria, true)" class="meta-auditoria">{{ resumenAuditoria(portadaAuditoria, true) }}</p>
           <p id="estado-portada">{{ soloImagen ? 'Estado público: solo imagen' : 'Estado público: portada completa' }}</p>
           <button type="button" class="secundario" aria-describedby="estado-portada ayuda-modo" :disabled="ocupado" @click="cambiarModoPortada">
             {{ soloImagen ? 'Subir sitio' : 'Bajar sitio' }}
@@ -840,7 +850,7 @@ onBeforeUnmount(() => {
           </div>
           <ul class="lista">
             <li v-for="cuenta in usuarios" :key="cuenta.id">
-              <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}<template v-if="cuenta.profesional"> · {{ cuenta.profesional }}</template><template v-if="cuenta.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(cuenta.demora_hasta) }}</template></small></div>
+              <div><strong>{{ cuenta.email }}</strong><small>{{ cuenta.activo ? 'Activa' : 'Desactivada' }}<template v-if="cuenta.profesional"> · {{ cuenta.profesional }}</template><template v-if="cuenta.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(cuenta.demora_hasta) }}</template></small><small v-if="resumenAuditoria(cuenta.auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(cuenta.auditoria, true) }}</small></div>
               <div class="acciones">
                 <button v-if="cuenta.demora_hasta" type="button" class="secundario" :disabled="ocupado" @click="desbloquearCuenta(cuenta.id, cuenta.email)">Desbloquear</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoCuenta(cuenta)">Editar</button>
@@ -900,7 +910,7 @@ onBeforeUnmount(() => {
           <section v-show="seccionActiva.id === 'espacios'" class="panel" aria-labelledby="titulo-seccion-admin">
             <ul class="lista">
               <li v-for="espacio in ajustesAgenda.espacios" :key="espacio.id">
-                <div><strong>{{ espacio.nombre }}</strong><small v-if="espacio.detalle">{{ espacio.detalle }}</small></div>
+                <div><strong>{{ espacio.nombre }}</strong><small v-if="espacio.detalle">{{ espacio.detalle }}</small><small v-if="resumenAuditoria(espacio.auditoria)" class="meta-auditoria">{{ resumenAuditoria(espacio.auditoria) }}</small></div>
                 <button type="button" class="secundario" :disabled="ocupado" @click="editarEspacio(espacio)">Editar</button>
               </li>
             </ul>
@@ -925,7 +935,7 @@ onBeforeUnmount(() => {
             </div>
             <ul class="lista">
               <li v-for="persona in perfilesProfesionales" :key="persona.id">
-                <div><strong>{{ persona.nombre }}</strong><small>{{ persona.activa ? (persona.admin ? 'Profesional y administradora' : persona.tiene_cuenta ? 'Profesional' : 'Sin cuenta') : 'Dada de baja' }}<template v-if="persona.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(persona.demora_hasta) }}</template></small></div>
+                <div><strong>{{ persona.nombre }}</strong><small>{{ persona.activa ? (persona.admin ? 'Profesional y administradora' : persona.tiene_cuenta ? 'Profesional' : 'Sin cuenta') : 'Dada de baja' }}<template v-if="persona.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(persona.demora_hasta) }}</template></small><small v-if="resumenAuditoria(persona.auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(persona.auditoria, true) }}</small></div>
                 <div class="acciones">
                   <button v-if="persona.demora_hasta" type="button" class="secundario" :disabled="ocupado" @click="desbloquearCuenta(persona.usuario_id, persona.nombre)">Desbloquear</button>
                   <button v-if="persona.activa && !persona.tiene_cuenta" type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('cuenta', persona.id)">Vincular cuenta</button>
@@ -983,6 +993,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="horarioProfesional" class="resumen-horarios">
               <p>{{ horarioProfesional.por_franjas ? 'Turnos limitados a las franjas cargadas.' : 'Modo manual: las franjas cargadas no limitan los turnos.' }}</p>
+              <p v-if="resumenAuditoria(horarioProfesional.auditoria)" class="meta-auditoria">Horarios: {{ resumenAuditoria(horarioProfesional.auditoria) }}</p>
               <h3>Franjas cargadas</h3>
               <ul class="lista resumen-semanal">
                 <li v-for="(dia, indiceDia) in resumenSemanal" :key="dia.dia" class="dia-semanal">
@@ -1004,6 +1015,7 @@ onBeforeUnmount(() => {
                 <li v-for="(excepcion, indice) in horarioProfesional.excepciones" :key="indice">
                   <div><strong>{{ excepcion.tipo === 'especial' ? 'Horario especial' : 'Horario no disponible' }} · {{ excepcion.fecha }}</strong>
                     <small>{{ excepcion.todo_el_dia ? 'Todo el día' : `${excepcion.hora_inicio}–${excepcion.hora_fin}` }}</small>
+                    <small v-if="excepcion.creado_por || excepcion.creado_en" class="meta-auditoria">Cargado<template v-if="excepcion.creado_por"> por {{ excepcion.creado_por }}</template><template v-if="excepcion.creado_en"> el {{ formatearFechaHora(excepcion.creado_en) }}</template></small>
                   </div>
                 </li>
               </ul>
@@ -1071,6 +1083,7 @@ onBeforeUnmount(() => {
           </section>
 
           <section v-show="seccionActiva.id === 'preparacion'" class="panel" aria-labelledby="titulo-seccion-admin">
+            <p v-if="resumenAuditoria(ajustesAgenda.preparacion_auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(ajustesAgenda.preparacion_auditoria, true) }}</p>
             <form @submit.prevent="guardarPreparacionAgenda">
               <p class="ayuda-preparacion">Estos minutos se reservan para preparar el espacio después de cada turno.</p>
               <fieldset>
@@ -1110,6 +1123,7 @@ onBeforeUnmount(() => {
                   <small>{{ servicio.descripcion_corta }}</small>
                   <small v-if="servicio.duracion_minima == null || servicio.profesionales_requeridos == null">Configuración de agenda incompleta</small>
                   <small v-else>Mínimo: {{ servicio.duracion_minima }} min · Profesionales: {{ servicio.profesionales_requeridos }}</small>
+                  <small v-if="resumenAuditoria(servicio.auditoria)" class="meta-auditoria">{{ resumenAuditoria(servicio.auditoria) }}</small>
                   <span v-if="servicio.imagen_version" class="badge">con imagen</span>
                   <span v-else class="badge sin-imagen">sin imagen</span>
                 </div>
@@ -1153,7 +1167,7 @@ onBeforeUnmount(() => {
           <dialog ref="dialogoServicio" class="modal-servicio" aria-labelledby="titulo-editar-servicio" @close="cancelarEdicion" @cancel="ocupado && $event.preventDefault()">
             <template v-if="servicioEditando">
             <div class="modal-cabecera">
-              <div><span class="modal-etiqueta">SERVICIOS DE ZENLI</span><h2 id="titulo-editar-servicio">Editar servicio</h2><p>{{ servicioEditando.nombre }}</p></div>
+              <div><span class="modal-etiqueta">SERVICIOS DE ZENLI</span><h2 id="titulo-editar-servicio">Editar servicio</h2><p>{{ servicioEditando.nombre }}</p><small v-if="resumenAuditoria(servicioEditando.auditoria)" class="meta-auditoria">{{ resumenAuditoria(servicioEditando.auditoria) }}</small></div>
               <button type="button" class="cerrar-modal" aria-label="Cerrar edición" :disabled="ocupado" @click="cancelarEdicion">✕</button>
             </div>
             <div class="modal-avisos" aria-live="polite">
@@ -1241,6 +1255,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .vista-previa { width: 100%; aspect-ratio: 2; object-fit: cover; border-radius: .5rem; background: #08271c; }
 .acciones { display: flex; flex-wrap: wrap; gap: .5rem; }
 small { font-size: .79rem; color: #526255; }
+.meta-auditoria { font-size: .78rem; color: #526255; margin-top: .15rem; }
 .lista { margin: .75rem 0 0; padding: 0; list-style: none; }
 .lista li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem 0; border-bottom: 1px solid #e4dac3; font-size: .88rem; }
 .lista li div { min-width: 0; overflow-wrap: anywhere; }

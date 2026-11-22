@@ -51,6 +51,8 @@ $migracion->up(new Schema());
 foreach ($migracion->getSql() as $consulta) {
     $conexion->executeStatement($consulta->getStatement(), $consulta->getParameters(), $consulta->getTypes());
 }
+$conexion->executeStatement('ALTER TABLE servicios_portada ADD creado_por VARCHAR(100), ADD creado_en TIMESTAMPTZ');
+App\Doctrine\InstanteType::registrar();
 $configuracion = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../src/Entity'], true);
 $configuracion->enableNativeLazyObjects(true);
 $entidades = new EntityManager($conexion, $configuracion);
@@ -172,8 +174,8 @@ try {
 $verificar($portada->consultar()['direccion'] === '', 'Un dato inválido no debe modificar la configuración.');
 fwrite(STDOUT, "Configuración pública verificada.\n");
 
-$conexion->executeStatement("ALTER TABLE usuarios ADD email TEXT, ADD password_hash TEXT, ADD roles JSONB, ADD activo BOOLEAN DEFAULT true");
-$conexion->executeStatement("CREATE TABLE profesionales (id BIGINT, usuario_id BIGINT, activa BOOLEAN)");
+$conexion->executeStatement("ALTER TABLE usuarios ADD email TEXT, ADD password_hash TEXT, ADD roles JSONB, ADD activo BOOLEAN DEFAULT true, ADD creado_por BIGINT, ADD creado_en TIMESTAMPTZ, ADD actualizado_por BIGINT, ADD actualizado_en TIMESTAMPTZ");
+$conexion->executeStatement("CREATE TABLE profesionales (id BIGINT, usuario_id BIGINT, nombre TEXT, activa BOOLEAN)");
 $hash = password_hash('clave de prueba', PASSWORD_DEFAULT);
 $conexion->executeStatement("UPDATE usuarios SET email = 'admin@example.test', password_hash = ?, roles = '[\"ROLE_ADMIN\"]' WHERE id = 1", [$hash]);
 require __DIR__.'/soporte-seguridad.php';

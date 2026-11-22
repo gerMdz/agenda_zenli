@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { resumenAuditoria } from './formatoAuditoria.js'
 
 const props = defineProps({ csrf: { type: String, required: true } })
 const promociones = ref([])
@@ -125,7 +126,7 @@ onBeforeUnmount(limpiarImagen)
     <div class="cabecera"><h2 id="titulo-promociones-admin">Promociones de la portada</h2><button type="button" class="secundario" :disabled="ocupado" @click="editar()">+ Nueva promoción</button></div>
     <ul class="lista">
       <li v-for="(promocion, index) in promociones" :key="promocion.id" :class="{ oculto: !promocion.visible }">
-        <div class="promocion-info"><span class="promocion-orden">{{ index + 1 }}</span><div class="promocion-detalle"><strong>{{ promocion.nombre }}</strong><small>{{ promocion.descripcion }}</small><span :class="['badge', { 'sin-imagen': !promocion.imagen_version }]">{{ promocion.imagen_version ? 'con imagen' : 'sin imagen' }}</span></div></div>
+        <div class="promocion-info"><span class="promocion-orden">{{ index + 1 }}</span><div class="promocion-detalle"><strong>{{ promocion.nombre }}</strong><small>{{ promocion.descripcion }}</small><small v-if="resumenAuditoria(promocion.auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(promocion.auditoria, true) }}</small><span :class="['badge', { 'sin-imagen': !promocion.imagen_version }]">{{ promocion.imagen_version ? 'con imagen' : 'sin imagen' }}</span></div></div>
         <div class="promocion-acciones">
           <button type="button" class="secundario icono" :disabled="ocupado || index === 0" title="Mover arriba" :aria-label="`Mover ${promocion.nombre} arriba`" @click="moverPromocion(promocion.id, -1)">↑</button>
           <button type="button" class="secundario icono" :disabled="ocupado || index === promociones.length - 1" title="Mover abajo" :aria-label="`Mover ${promocion.nombre} abajo`" @click="moverPromocion(promocion.id, 1)">↓</button>
@@ -138,7 +139,7 @@ onBeforeUnmount(limpiarImagen)
     <p v-if="!promociones.length" class="vacio">No hay promociones. Creá la primera.</p>
     <dialog ref="dialogo" aria-labelledby="titulo-promocion-dialogo" @close="cerrarFormulario" @cancel="ocupado && $event.preventDefault()">
     <div class="modal-cabecera">
-      <div><span class="modal-etiqueta">PROMOCIONES DE ZENLI</span><h2 id="titulo-promocion-dialogo">{{ editando ? 'Editar promoción' : 'Nueva promoción' }}</h2><p v-if="editando">{{ editando.nombre }}</p></div>
+      <div><span class="modal-etiqueta">PROMOCIONES DE ZENLI</span><h2 id="titulo-promocion-dialogo">{{ editando ? 'Editar promoción' : 'Nueva promoción' }}</h2><p v-if="editando">{{ editando.nombre }}</p><small v-if="editando && resumenAuditoria(editando.auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(editando.auditoria, true) }}</small></div>
       <button type="button" class="cerrar-modal" aria-label="Cerrar formulario" :disabled="ocupado" @click="cerrarFormulario">✕</button>
     </div>
     <div class="modal-avisos" aria-live="polite"><p v-if="error" class="error inline" role="alert">{{ error }}</p><p v-if="mensaje" class="mensaje" role="status">{{ mensaje }}</p></div>

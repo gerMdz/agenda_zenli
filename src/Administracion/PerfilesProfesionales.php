@@ -13,11 +13,11 @@ final readonly class PerfilesProfesionales
     {
     }
 
-    public function crear(mixed $nombre): string
+    public function crear(mixed $nombre, ?string $autor = null): string
     {
         $nombre = self::nombre($nombre);
 
-        return $this->perfiles->crear($nombre);
+        return $this->perfiles->crear($nombre, $autor);
     }
 
     /** `demora_hasta` indica una demora de ingreso vigente de la cuenta vinculada (ISO 8601) o null. */
@@ -29,17 +29,17 @@ final readonly class PerfilesProfesionales
         return array_map(static fn (array $p): array => $p + ['demora_hasta' => $demoras[$p['usuario_id'] ?? ''] ?? null], $perfiles);
     }
 
-    public function renombrar(string $id, mixed $nombre): void
+    public function renombrar(string $id, mixed $nombre, ?string $autor = null): void
     {
-        $this->perfiles->renombrar($id, self::nombre($nombre));
+        $this->perfiles->renombrar($id, self::nombre($nombre), $autor);
     }
 
-    public function cambiarEstado(string $id, mixed $activa): void
+    public function cambiarEstado(string $id, mixed $activa, ?string $autor = null): void
     {
         if (!is_bool($activa)) {
             throw new InvalidArgumentException('Indicá si la profesional está activa.');
         }
-        $this->perfiles->cambiarEstado($id, $activa);
+        $this->perfiles->cambiarEstado($id, $activa, $autor);
     }
 
     private static function nombre(mixed $nombre): string

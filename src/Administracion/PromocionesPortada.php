@@ -20,16 +20,33 @@ final readonly class PromocionesPortada
     {
         $columnas = 'p.id AS id, p.nombre AS nombre, p.descripcion AS descripcion, p.imagenVersion AS imagen_version, p.orden AS orden';
         if (!$publicas) {
-            $columnas .= ', p.visible AS visible, p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en';
+            $columnas .= ', p.visible AS visible, p.creadoPor AS creado_por, p.creadoEn AS creado_en, p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en';
         }
         $dql = "SELECT $columnas FROM App\\Entity\\PromocionPortada p WHERE p.eliminado = false";
         if ($publicas) {
             $dql .= ' AND p.visible = true';
         }
         $filas = $this->entidades->createQuery($dql.' ORDER BY p.orden, p.id')->getArrayResult();
-        foreach ($filas as &$fila) {
-            if (isset($fila['actualizado_en']) && $fila['actualizado_en'] instanceof \DateTimeInterface) {
-                $fila['actualizado_en'] = $fila['actualizado_en']->format('Y-m-d H:i:s.uP');
+        if (!$publicas) {
+            $autores = new NombresAutores($this->entidades->getConnection());
+            $ids = [];
+            foreach ($filas as $fila) {
+                $ids[] = $fila['creado_por'] ?? null;
+                $ids[] = $fila['actualizado_por'] ?? null;
+            }
+            $mapa = $autores->resolver($ids);
+            foreach ($filas as &$fila) {
+                $fila['auditoria'] = $autores->auditoria(
+                    $fila['creado_por'] ?? null,
+                    $fila['creado_en'] ?? null,
+                    $fila['actualizado_por'] ?? null,
+                    $fila['actualizado_en'] ?? null,
+                    $mapa,
+                );
+                unset($fila['creado_por'], $fila['creado_en']);
+                if (isset($fila['actualizado_en']) && $fila['actualizado_en'] instanceof \DateTimeInterface) {
+                    $fila['actualizado_en'] = $fila['actualizado_en']->format('Y-m-d H:i:s.uP');
+                }
             }
         }
         return $filas;
@@ -81,11 +98,14 @@ final readonly class PromocionesPortada
             $this->entidades->getConnection()->transactional(function () use ($nombre, $descripcion, $autor, $imagen): void {
                 $this->entidades->getConnection()->executeStatement('LOCK TABLE promociones_portada IN SHARE ROW EXCLUSIVE MODE');
                 $maximo = $this->entidades->createQuery('SELECT MAX(p.orden) FROM App\Entity\PromocionPortada p WHERE p.eliminado = false')->getSingleScalarResult();
+                $ahora = new DateTimeImmutable();
                 $promocion = new PromocionPortada();
                 $promocion->nombre = $nombre;
                 $promocion->descripcion = $descripcion;
+                $promocion->creadoPor = $autor;
+                $promocion->creadoEn = $ahora;
                 $promocion->actualizadoPor = $autor;
-                $promocion->actualizadoEn = new DateTimeImmutable();
+                $promocion->actualizadoEn = $ahora;
                 $promocion->orden = $maximo === null ? 0 : (int) $maximo + 1;
                 if ($imagen !== null) {
                     [$promocion->imagen, $promocion->imagenTipo, $promocion->imagenVersion] = $imagen;

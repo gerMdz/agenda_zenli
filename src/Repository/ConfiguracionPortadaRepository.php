@@ -18,6 +18,18 @@ final readonly class ConfiguracionPortadaRepository
         return $this->entidades->createQuery('SELECT p.telefono AS telefono, p.imagenVersion AS imagen_version, p.instagram AS instagram, p.facebook AS facebook, p.direccion AS direccion, p.horarios AS horarios, p.soloImagen AS solo_imagen, p.serviciosVisible AS servicios_visible, p.promocionesVisible AS promociones_visible, p.ubicacionVisible AS ubicacion_visible, p.horariosVisible AS horarios_visible, p.consultasVisible AS consultas_visible FROM App\Entity\ConfiguracionPortada p WHERE p.id = 1')->getOneOrNullResult() ?? [];
     }
 
+    public function consultarAuditoria(): ?array
+    {
+        $fila = $this->entidades->createQuery('SELECT p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en FROM App\Entity\ConfiguracionPortada p WHERE p.id = 1')->getOneOrNullResult();
+        if ($fila === null) {
+            return null;
+        }
+        $autores = new \App\Administracion\NombresAutores($this->entidades->getConnection());
+        $mapa = $autores->resolver([$fila['actualizado_por']]);
+
+        return $autores->ultimaModificacion($fila['actualizado_por'], $fila['actualizado_en'], $mapa);
+    }
+
     public function imagen(string $version): array|false
     {
         return $this->entidades->getConnection()->fetchAssociative("SELECT encode(imagen, 'base64') AS contenido, imagen_tipo FROM configuracion_portada WHERE id = 1 AND imagen_version = ?", [$version]);

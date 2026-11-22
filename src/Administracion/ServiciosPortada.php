@@ -20,17 +20,16 @@ final class ServiciosPortada
         $this->conexion = $entidades->getConnection();
     }
 
-    /** @return list<array{id: int, nombre: string, descripcion_corta: string, detalle: string, orden: int, visible: bool, imagen_version: ?string, actualizado_por: string, actualizado_en: string}> */
     public function listar(): array
     {
-        return array_map($this->fila(...), $this->consulta());
+        return $this->mapearFilas($this->consulta());
     }
 
-    /** @return array{id: int, nombre: string, descripcion_corta: string, detalle: string, orden: int, visible: bool, imagen_version: ?string, actualizado_por: string, actualizado_en: string}|false */
     public function obtener(int $id)
     {
         $servicio = $this->buscar($id);
-        return $servicio === null ? false : $this->fila($servicio);
+
+        return $servicio === null ? false : $this->mapearFilas([$servicio])[0];
     }
 
     /** @return list<array{id: int, nombre: string, descripcion_corta: string, detalle: string, orden: int, imagen_version: ?string}> */
@@ -94,7 +93,7 @@ final class ServiciosPortada
             $servicio->detalle = $detalle;
             $servicio->orden = $nuevoOrden;
             $servicio->imagenVersion = $version;
-            $this->auditar($servicio, $autor);
+            $this->auditar($servicio, $autor, true);
             $this->entidades->persist($servicio);
             $this->entidades->flush();
             if ($contenido !== null) {
@@ -199,7 +198,7 @@ final class ServiciosPortada
                 }
             }
             $this->entidades->flush();
-            return array_map($this->fila(...), $lista);
+            return $this->mapearFilas($lista);
         });
     }
 
@@ -246,7 +245,21 @@ final class ServiciosPortada
         return $servicio;
     }
 
-    private function fila(ServicioPortada $servicio, bool $publica = false): array
+    /** @param list<ServicioPortada> $servicios */
+    private function mapearFilas(array $servicios): array
+    {
+        $autores = new NombresAutores($this->conexion);
+        $ids = [];
+        foreach ($servicios as $servicio) {
+            $ids[] = $servicio->creadoPor;
+            $ids[] = $servicio->actualizadoPor;
+        }
+        $mapa = $autores->resolver($ids);
+
+        return array_map(fn (ServicioPortada $servicio): array => $this->fila($servicio, false, $autores, $mapa), $servicios);
+    }
+
+    private function fila(ServicioPortada $servicio, bool $publica = false, ?NombresAutores $autores = null, array $mapa = []): array
     {
         $fila = [
             'id' => $servicio->id, 'nombre' => $servicio->nombre,
@@ -258,17 +271,30 @@ final class ServiciosPortada
         ];
         if (!$publica) {
             $fila += [
-                'visible' => $servicio->visible, 'actualizado_por' => $servicio->actualizadoPor,
-                'actualizado_en' => $servicio->actualizadoEn,
+                'visible' => $servicio->visible,
+                'actualizado_por' => $servicio->actualizadoPor,
+                'actualizado_en' => $servicio->actualizadoEn->format('Y-m-d H:i:s.uP'),
+                'auditoria' => ($autores ?? new NombresAutores($this->conexion))->auditoria(
+                    $servicio->creadoPor,
+                    $servicio->creadoEn,
+                    $servicio->actualizadoPor,
+                    $servicio->actualizadoEn,
+                    $mapa,
+                ),
             ];
         }
         return $fila;
     }
 
-    private function auditar(ServicioPortada $servicio, string $autor): void
+    private function auditar(ServicioPortada $servicio, string $autor, bool $creacion = false): void
     {
+        $ahora = new DateTimeImmutable();
+        if ($creacion) {
+            $servicio->creadoPor = $autor;
+            $servicio->creadoEn = $ahora;
+        }
         $servicio->actualizadoPor = $autor;
-        $servicio->actualizadoEn = (new DateTimeImmutable())->format('Y-m-d H:i:s.uP');
+        $servicio->actualizadoEn = $ahora;
     }
 
     private function guardarImagen(int $id, ?string $contenido, ?string $tipo): void

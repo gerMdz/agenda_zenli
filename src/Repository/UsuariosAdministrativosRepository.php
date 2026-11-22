@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Administracion\NombresAutores;
 use App\Entity\ProfesionalCuentaAdministrativa;
 use App\Entity\UsuarioAdministrativo;
 use App\Seguridad\AuditoriaAccesos;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 
@@ -19,18 +21,30 @@ final readonly class UsuariosAdministrativosRepository
     public function listar(): array
     {
         $filas = $this->entidades->createQueryBuilder()
-            ->select('u.id AS id, u.email AS email, u.activo AS activo, u.roles AS roles, p.nombre AS profesional')
+            ->select('u.id AS id, u.email AS email, u.activo AS activo, u.roles AS roles, p.nombre AS profesional, u.creadoPor AS creado_por, u.creadoEn AS creado_en, u.actualizadoPor AS actualizado_por, u.actualizadoEn AS actualizado_en')
             ->from(UsuarioAdministrativo::class, 'u')
             ->leftJoin(ProfesionalCuentaAdministrativa::class, 'p', 'WITH', 'p.usuario = u AND p.activa = true')
             ->orderBy('u.email')
             ->getQuery()->getArrayResult();
 
+        $autores = new NombresAutores($this->entidades->getConnection());
+        $ids = [];
+        foreach ($filas as $fila) {
+            $ids[] = $fila['creado_por'];
+            $ids[] = $fila['actualizado_por'];
+        }
+        $mapa = $autores->resolver($ids);
+
         $resultado = [];
         foreach ($filas as $fila) {
             if (array_is_list($fila['roles']) ? in_array('ROLE_ADMIN', $fila['roles'], true) : array_key_exists('ROLE_ADMIN', $fila['roles'])) {
-                unset($fila['roles']);
-                $fila['id'] = (string) $fila['id'];
-                $resultado[] = $fila;
+                $resultado[] = [
+                    'id' => (string) $fila['id'],
+                    'email' => $fila['email'],
+                    'activo' => $fila['activo'],
+                    'profesional' => $fila['profesional'],
+                    'auditoria' => $autores->auditoria($fila['creado_por'], $fila['creado_en'], $fila['actualizado_por'], $fila['actualizado_en'], $mapa),
+                ];
             }
         }
 
@@ -40,10 +54,15 @@ final readonly class UsuariosAdministrativosRepository
     public function crear(string $email, string $hash, ?string $autor = null): void
     {
         $this->entidades->getConnection()->transactional(function () use ($email, $hash, $autor): void {
+            $ahora = new DateTimeImmutable();
             $usuario = new UsuarioAdministrativo();
             $usuario->email = $email;
             $usuario->passwordHash = $hash;
             $usuario->roles = ['ROLE_ADMIN'];
+            $usuario->creadoPor = $autor;
+            $usuario->creadoEn = $ahora;
+            $usuario->actualizadoPor = $autor;
+            $usuario->actualizadoEn = $ahora;
             $this->entidades->persist($usuario);
             $this->entidades->flush();
             $this->auditoria->registrar('CUENTA_CREADA', $usuario->id, $autor);
@@ -84,6 +103,8 @@ final readonly class UsuariosAdministrativosRepository
                 $usuario->passwordHash = $hash;
                 $this->auditoria->registrar('CLAVE_CAMBIADA', $usuario->id, $autor);
             }
+            $usuario->actualizadoPor = $autor;
+            $usuario->actualizadoEn = new DateTimeImmutable();
             $this->entidades->flush();
 
             return true;

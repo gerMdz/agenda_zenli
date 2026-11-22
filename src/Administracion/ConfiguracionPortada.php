@@ -35,6 +35,12 @@ final readonly class ConfiguracionPortada
         ];
     }
 
+    /** Solo para administración: incluye último autor y fecha de modificación. */
+    public function consultarAdministracion(): array
+    {
+        return $this->consultar() + ['auditoria' => $this->repositorio->consultarAuditoria()];
+    }
+
     public function cambiarVisibilidad(string $seccion, bool $visible, string $autor): void
     {
         if (!in_array($seccion, self::SECCIONES, true)) {
