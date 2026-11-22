@@ -28,6 +28,11 @@ const vista = ref('semana')
 const profesionalSeleccionada = ref('')
 const menuPerfil = ref(null)
 const horarioHabitual = ref(null)
+const dialogoDisponibilidad = ref(null)
+const disponibilidadAbierta = ref(false)
+const fechaDisponibilidad = ref('')
+const profesionalDisponibilidad = ref('')
+const disponibilidad = ref(null)
 const dialogo = ref(null)
 const modalAbierto = ref(false)
 const dialogoBloqueo = ref(null)
@@ -164,11 +169,23 @@ const franjasHabituales = computed(() => {
   )
 })
 
-function sinAtencion(clave, semana) {
+function minutosDeFranja(hora) {
+  const [h, m, segundos = 0] = hora.split(':').map(Number)
+  return h * 60 + m + segundos / 60
+}
+
+function franjasAtencion(clave, semana, turnos) {
+  if (!perfilEnVista.value) return null
+  if (turnos.some(turno => turno.bloqueado && turno.todo_el_dia)) return []
   const horario = horarioHabitual.value
-  if (!perfilEnVista.value || !horario?.por_franjas) return false
-  if (horario.excepciones.some(item => item.tipo === 'especial' && item.fecha === clave)) return false
-  return !horario.franjas.some(franja => Number(franja.dia_semana) === semana && vigente(franja, clave))
+  if (!horario) return null
+
+  const especiales = horario.excepciones.filter(item => item.tipo === 'especial' && item.fecha === clave)
+  if (!especiales.length && !horario.por_franjas) return null
+  const franjas = especiales.length ? especiales : horario.franjas.filter(franja =>
+    Number(franja.dia_semana) === semana && vigente(franja, clave),
+  )
+  return franjas.map(franja => ({ inicio: minutosDeFranja(franja.hora_inicio), fin: minutosDeFranja(franja.hora_fin) }))
 }
 
 const dias = computed(() => {
@@ -181,7 +198,7 @@ const dias = computed(() => {
     const preparaciones = turnos.filter(turno => turno.esPreparacion).length
     resultado.push({
       clave, numero: dia.getUTCDate(), nombre: nombreDia.format(dia), turnos, bloqueos,
-      sinAtencion: sinAtencion(clave, dia.getUTCDay() || 7),
+      franjasAtencion: franjasAtencion(clave, dia.getUTCDay() || 7, turnos),
       citas: turnos.length - bloqueos - preparaciones, propios: turnos.filter(turno => !turno.bloqueado && !turno.esPreparacion && esPropio(turno)).length,
     })
   }
@@ -319,6 +336,30 @@ function cambiarEquipo() {
 function abrirModal() {
   dialogo.value.showModal()
   modalAbierto.value = true
+}
+
+function abrirDisponibilidad() {
+  fechaDisponibilidad.value = fecha.value
+  profesionalDisponibilidad.value = perfilEnVista.value || usuario.value.profesional_id || ''
+  disponibilidad.value = null
+  error.value = ''
+  dialogoDisponibilidad.value.showModal()
+  disponibilidadAbierta.value = true
+  if (profesionalDisponibilidad.value) consultarDisponibilidad()
+}
+
+function consultarDisponibilidad() {
+  disponibilidad.value = null
+  return ejecutar(async () => {
+    const filtros = new URLSearchParams({ fecha: fechaDisponibilidad.value })
+    if (usuario.value.admin) filtros.set('profesional', profesionalDisponibilidad.value)
+    disponibilidad.value = await api(`/api/admin/agenda/turnos/disponibilidad?${filtros}`)
+  })
+}
+
+function horaHueco(fin) {
+  const instante = new Date(fin)
+  return calendario.format(instante) > fechaDisponibilidad.value ? '24:00' : reloj.format(instante)
 }
 
 function abrirNuevoBloqueo() {
@@ -520,7 +561,7 @@ onMounted(() => ejecutar(async () => {
     <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda">
     <main id="turnos">
       <h1 v-if="seccionAgenda === 'mensajes'">Mensajes privados</h1>
-      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada" role="alert">{{ error }}</p>
+      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
       <p v-if="!datos && ocupado" role="status">Cargando agenda…</p>
 
@@ -553,6 +594,7 @@ onMounted(() => ejecutar(async () => {
             <button v-for="dia in dias" :key="dia.clave" type="button" class="celda"
               :class="{ propia: dia.propios }" :aria-pressed="fecha === dia.clave" :disabled="ocupado" @click="fecha = dia.clave">
               <strong>{{ dia.numero }}</strong>
+              <small v-if="dia.franjasAtencion?.length === 0" class="mes-sin-atencion"><span aria-hidden="true">◷</span> Sin atención</small>
               <small v-if="dia.citas">{{ dia.citas }} {{ dia.citas === 1 ? 'turno' : 'turnos' }}</small>
               <small v-if="dia.bloqueos" class="marca-bloqueo">{{ dia.bloqueos }} {{ dia.bloqueos === 1 ? 'horario no disponible' : 'horarios no disponibles' }}</small>
               <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
@@ -563,6 +605,7 @@ onMounted(() => ejecutar(async () => {
             <li><i class="muestra-equipo"></i> Equipo incompleto</li>
             <li><i class="muestra-bloqueo"></i> Horario no disponible</li>
             <li><i class="muestra-preparacion"></i> Preparación</li>
+            <li v-if="perfilEnVista && dias.some(dia => dia.franjasAtencion !== null)"><i class="muestra-sin-atencion"></i> Sin atención</li>
           </ul>
           <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
           <p v-if="!turnosDia.length">No hay turnos ni horarios no disponibles para este día.</p>
@@ -596,6 +639,9 @@ onMounted(() => ejecutar(async () => {
           <div class="panel acciones-rapidas">
             <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno"><span aria-hidden="true">＋</span> Nuevo turno</button>
             <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
+            <button type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
+              {{ !usuario.admin || (perfilEnVista && perfilEnVista === usuario.profesional_id) ? 'Ver mi disponibilidad' : 'Ver disponibilidad' }}
+            </button>
             <a v-if="usuario.admin" :href="perfilEnVista ? `/admin?profesional=${perfilEnVista}#horarios-profesionales` : '/admin#horarios-profesionales'" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
           </div>
           <section class="panel solicitudes" aria-labelledby="titulo-solicitudes">
@@ -619,6 +665,42 @@ onMounted(() => ejecutar(async () => {
           </section>
         </aside>
         </div>
+
+        <dialog ref="dialogoDisponibilidad" aria-labelledby="titulo-disponibilidad"
+          @close="disponibilidadAbierta = false" @cancel="ocupado && $event.preventDefault()">
+          <div class="barra">
+            <h2 id="titulo-disponibilidad">Disponibilidad</h2>
+            <button type="button" class="secundario" :disabled="ocupado" @click="dialogoDisponibilidad.close()">Cerrar</button>
+          </div>
+          <p v-if="error && disponibilidadAbierta" role="alert">{{ error }}</p>
+          <form @submit.prevent="consultarDisponibilidad">
+            <label v-if="usuario.admin">Profesional
+              <select v-model="profesionalDisponibilidad" :disabled="ocupado" required @change="disponibilidad = null">
+                <option disabled value="">Elegí una profesional</option>
+                <option v-for="persona in datos.profesionales" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
+              </select>
+            </label>
+            <label>Fecha <input v-model="fechaDisponibilidad" type="date" :disabled="ocupado" required @change="disponibilidad = null"></label>
+            <button :disabled="ocupado">Consultar</button>
+          </form>
+          <p v-if="ocupado" role="status">Buscando horarios libres…</p>
+          <div v-if="disponibilidad" class="resultado-disponibilidad" aria-live="polite">
+            <p v-if="!disponibilidad.hay_franjas">No hay franjas de atención configuradas para ese día.</p>
+            <p v-else-if="!disponibilidad.espacios.length">No hay espacios activos.</p>
+            <p v-else-if="!disponibilidad.espacios.some(espacio => espacio.huecos.length)">No quedan horarios libres para ese día.</p>
+            <template v-else>
+              <section v-for="espacio in disponibilidad.espacios" :key="espacio.id">
+                <h3 v-if="disponibilidad.espacios.length > 1">{{ espacio.nombre }}</h3>
+                <p v-if="!espacio.huecos.length">Sin horarios libres.</p>
+                <ul v-else class="huecos">
+                  <li v-for="hueco in espacio.huecos" :key="hueco.inicio">
+                    {{ reloj.format(new Date(hueco.inicio)) }}–{{ horaHueco(hueco.fin) }}
+                  </li>
+                </ul>
+              </section>
+            </template>
+          </div>
+        </dialog>
 
         <dialog ref="dialogoPreparacion" aria-labelledby="titulo-preparacion" @close="preparacionEditada = null" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
@@ -800,6 +882,8 @@ onMounted(() => ejecutar(async () => {
 .leyenda li { display: inline-flex; align-items: center; gap: .32rem; }
 .leyenda i { width: .9rem; height: .65rem; border-radius: .2rem; }
 .muestra-turno { background: #a9cfae; }.muestra-equipo { background: #e7cb89; }.muestra-bloqueo { background: #deb4b6; }.muestra-preparacion { background: #ccbbd6; }
+.muestra-sin-atencion { background: repeating-linear-gradient(135deg, #f0eee7 0 3px, #d7d4ca 3px 4px); border: 1px solid #cfcbbf; }
+.mes-sin-atencion { color: #59655e; }
 .turnos li:focus { outline: 2px solid #916119; outline-offset: 1px; }
 @media (max-width: 75rem) {
   .tablero { grid-template-columns: minmax(0, 1fr); }
@@ -855,6 +939,10 @@ button:disabled { opacity: .55; }
 .detalle-dia { margin-top: 1rem; }
 dialog { max-height: 88dvh; width: min(calc(100% - 1.5rem), 38rem); padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
 dialog::backdrop { background: #071b13a8; }
+.resultado-disponibilidad { margin-top: 1rem; }
+.resultado-disponibilidad h3 { font-size: .95rem; margin: .65rem 0 .3rem; }
+.huecos { display: flex; flex-wrap: wrap; gap: .45rem; list-style: none; padding: 0; margin: .45rem 0; }
+.huecos li { padding: .4rem .65rem; border-radius: .3rem; background: #e5f2e6; color: #15372a; font-variant-numeric: tabular-nums; }
 dialog form { margin-top: .7rem; }
 @media (max-width: 42rem) {
   .celda { font-size: .72rem; padding: .25rem; }

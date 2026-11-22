@@ -163,7 +163,8 @@ async function cargarSesion() {
 }
 
 async function cargarPanel() {
-  if (usuario.value && !usuario.value.admin) {
+  const seccionDirecta = secciones.some(seccion => '#' + seccion.id === window.location.hash)
+  if (usuario.value && (!usuario.value.admin || !seccionDirecta)) {
     window.location.replace('/admin/agenda')
     return
   }
@@ -226,7 +227,7 @@ function ingresar() {
   return ejecutar(async () => {
     try {
       aplicarSesion(await api('/api/admin/sesion', { method: 'POST', datos: { email: email.value, clave: clave.value } }))
-      if (usuario.value) window.location.replace('/admin/agenda')
+      if (usuario.value) await cargarPanel()
     } finally {
       clave.value = ''
     }

@@ -564,3 +564,20 @@ try {
 } catch (TurnoNoDisponible) {
 }
 fwrite(STDOUT, "PostgreSQL: excepciones por fecha y bloqueos sin cliente verificados.\n");
+
+$interna->cargar(array_replace($turnoOcasional, [
+    'espacio' => '102', 'inicio' => '2099-06-18T09:20', 'profesionales' => ['104'],
+]), '101');
+$conexion->executeStatement(<<<'SQL'
+    INSERT INTO bloqueos (recurso_id, inicio, fin) VALUES (102, '2099-06-18 09:00-03', '2099-06-18 09:10-03')
+    SQL);
+$libres = $horarios->disponibilidad($ocasional, '2099-06-18');
+verificar($libres['hay_franjas'], 'El horario especial define la franja del día.');
+$porSala = array_column($libres['espacios'], 'huecos', 'id');
+$horas = static fn (array $huecos): array => array_map(static fn (array $hueco): array =>
+    array_map(static fn (string $instante): string => (new DateTimeImmutable($instante))
+        ->setTimezone(new DateTimeZone('America/Argentina/Mendoza'))->format('H:i'), $hueco), $huecos);
+verificar($horas($porSala[102]) === [['inicio' => '09:10', 'fin' => '09:20']], 'El espacio descuenta su bloqueo y el turno de otra profesional.');
+verificar($horas($porSala[103]) === [['inicio' => '09:00', 'fin' => '10:00']], 'Otro espacio sigue libre, descontando la ocupación y el bloqueo de la profesional.');
+verificar(!$horarios->disponibilidad('104', '2099-06-19')['hay_franjas'], 'El modo manual no anuncia disponibilidad sin franjas.');
+fwrite(STDOUT, "PostgreSQL: huecos privados por profesional y espacio verificados.\n");

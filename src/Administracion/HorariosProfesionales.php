@@ -23,6 +23,37 @@ final readonly class HorariosProfesionales
 {
     private const ZONA = 'America/Argentina/Mendoza';
 
+    private const FRANJAS_SQL = <<<'SQL'
+    WITH periodo AS (SELECT CAST(? AS timestamp) AS inicio, CAST(? AS timestamp) AS fin),
+         dias AS (
+             SELECT generate_series(date_trunc('day', inicio), date_trunc('day', fin - interval '1 microsecond'), interval '1 day')::date AS dia
+             FROM periodo
+         ),
+         perfil AS (
+             SELECT p.id, COALESCE(p.horario_por_franjas, EXISTS (
+                 SELECT 1 FROM horarios_profesionales h WHERE h.profesional_id = p.id
+             )) AS restringido
+             FROM profesionales p WHERE p.id = ? AND p.activa
+         ),
+         especiales AS (
+             SELECT e.fecha AS dia, e.hora_inicio, e.hora_fin
+             FROM horarios_profesionales_especiales e JOIN dias d ON d.dia = e.fecha
+             JOIN perfil p ON p.id = e.profesional_id
+         ),
+         franjas AS (
+             SELECT dia, hora_inicio, hora_fin FROM especiales
+             UNION ALL
+             SELECT d.dia, h.hora_inicio, h.hora_fin FROM dias d
+             JOIN horarios_profesionales h ON h.dia_semana = extract(isodow FROM d.dia)
+             JOIN perfil p ON p.id = h.profesional_id AND p.restringido
+             WHERE h.vigente_desde <= d.dia AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= d.dia)
+               AND NOT EXISTS (SELECT 1 FROM especiales e WHERE e.dia = d.dia)
+             UNION ALL
+             SELECT d.dia, TIME '00:00', TIME '24:00' FROM dias d CROSS JOIN perfil p
+             WHERE CAST(? AS boolean) AND NOT p.restringido AND NOT EXISTS (SELECT 1 FROM especiales e WHERE e.dia = d.dia)
+         )
+    SQL;
+
     private Connection $conexion;
 
     public function __construct(private EntityManagerInterface $entidades)
@@ -232,38 +263,10 @@ final readonly class HorariosProfesionales
         $zona = new DateTimeZone(self::ZONA);
         $inicioLocal = $inicio->setTimezone($zona)->format('Y-m-d H:i:s.u');
         $finLocal = $fin->setTimezone($zona)->format('Y-m-d H:i:s.u');
-        $resultado = $this->conexion->fetchOne(<<<'SQL'
-            WITH periodo AS (SELECT CAST(? AS timestamp) AS inicio, CAST(? AS timestamp) AS fin),
-                 dias AS (
-                     SELECT generate_series(date_trunc('day', inicio), date_trunc('day', fin - interval '1 microsecond'), interval '1 day')::date AS dia
-                     FROM periodo
-                 ),
-                 perfil AS (
-                     SELECT p.id, COALESCE(p.horario_por_franjas, EXISTS (
-                         SELECT 1 FROM horarios_profesionales h WHERE h.profesional_id = p.id
-                     )) AS restringido
-                     FROM profesionales p WHERE p.id = ? AND p.activa
-                 ),
-                 especiales AS (
-                     SELECT e.fecha AS dia, e.hora_inicio, e.hora_fin
-                     FROM horarios_profesionales_especiales e JOIN dias d ON d.dia = e.fecha
-                     JOIN perfil p ON p.id = e.profesional_id
-                 ),
-                 franjas AS (
-                     SELECT dia, hora_inicio, hora_fin FROM especiales
-                     UNION ALL
-                     SELECT d.dia, h.hora_inicio, h.hora_fin FROM dias d
-                     JOIN horarios_profesionales h ON h.dia_semana = extract(isodow FROM d.dia)
-                     JOIN perfil p ON p.id = h.profesional_id AND p.restringido
-                     WHERE h.vigente_desde <= d.dia AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= d.dia)
-                       AND NOT EXISTS (SELECT 1 FROM especiales e WHERE e.dia = d.dia)
-                     UNION ALL
-                     SELECT d.dia, TIME '00:00', TIME '24:00' FROM dias d CROSS JOIN perfil p
-                     WHERE NOT p.restringido AND NOT EXISTS (SELECT 1 FROM especiales e WHERE e.dia = d.dia)
-                 ),
-                 cobertura AS (
-                     SELECT range_agg(tsrange(dia + hora_inicio, dia + hora_fin, '[)')) AS franjas FROM franjas
-                 )
+        $resultado = $this->conexion->fetchOne(self::FRANJAS_SQL.', '.<<<'SQL'
+            cobertura AS (
+                SELECT range_agg(tsrange(dia + hora_inicio, dia + hora_fin, '[)')) AS franjas FROM franjas
+            )
             SELECT (COALESCE(c.franjas @> tsrange(periodo.inicio, periodo.fin, '[)'), false)
                     AND NOT EXISTS (
                         SELECT 1 FROM bloqueos b WHERE b.profesional_id = p.id AND b.gestion_horarios
@@ -271,9 +274,78 @@ final readonly class HorariosProfesionales
                           AND b.fin > (periodo.inicio AT TIME ZONE 'America/Argentina/Mendoza')
                     ))::int
             FROM perfil p CROSS JOIN cobertura c CROSS JOIN periodo
-            SQL, [$inicioLocal, $finLocal, $id]);
+            SQL, [$inicioLocal, $finLocal, $id, 'true']);
 
         return (int) $resultado === 1;
+    }
+
+    public function disponibilidad(string $id, string $fecha): array
+    {
+        $dia = DateTimeImmutable::createFromFormat('!Y-m-d', $fecha, new DateTimeZone(self::ZONA));
+        if ($dia === false || $dia->format('Y-m-d') !== $fecha) {
+            throw new InvalidArgumentException('Ingresá una fecha válida.');
+        }
+
+        $filas = $this->conexion->fetchAllAssociative(self::FRANJAS_SQL.', '.<<<'SQL'
+            cobertura AS (
+                SELECT COALESCE(range_agg(tstzrange(
+                    (dia + hora_inicio) AT TIME ZONE 'America/Argentina/Mendoza',
+                    (dia + hora_fin) AT TIME ZONE 'America/Argentina/Mendoza', '[)'
+                )), '{}'::tstzmultirange) AS rangos
+                FROM franjas
+            ),
+            personal AS (
+                SELECT COALESCE(range_agg(tstzrange(o.inicio, o.fin, '[)')), '{}'::tstzmultirange) AS rangos
+                FROM (
+                    SELECT inicio, fin FROM ocupaciones_profesionales WHERE profesional_id = ?
+                    UNION ALL
+                    SELECT inicio, fin FROM bloqueos WHERE profesional_id = ?
+                ) o CROSS JOIN periodo
+                WHERE o.inicio < (periodo.fin AT TIME ZONE 'America/Argentina/Mendoza')
+                  AND o.fin > (periodo.inicio AT TIME ZONE 'America/Argentina/Mendoza')
+            ),
+            espacios AS (
+                SELECT r.id, r.nombre, COALESCE(range_agg(tstzrange(o.inicio, o.fin, '[)'))
+                    FILTER (WHERE o.inicio IS NOT NULL), '{}'::tstzmultirange) AS rangos
+                FROM recursos r CROSS JOIN periodo
+                LEFT JOIN (
+                    SELECT recurso_id, inicio, fin FROM ocupaciones_recursos
+                    UNION ALL
+                    SELECT recurso_id, inicio, fin FROM bloqueos WHERE recurso_id IS NOT NULL
+                ) o ON o.recurso_id = r.id
+                   AND o.inicio < (periodo.fin AT TIME ZONE 'America/Argentina/Mendoza')
+                   AND o.fin > (periodo.inicio AT TIME ZONE 'America/Argentina/Mendoza')
+                WHERE r.activo GROUP BY r.id, r.nombre
+            )
+            SELECT e.id::text AS espacio_id, e.nombre,
+                   lower(hueco.rango) AS inicio, upper(hueco.rango) AS fin,
+                   (c.rangos <> '{}'::tstzmultirange)::int AS hay_franjas
+            FROM perfil CROSS JOIN cobertura c CROSS JOIN personal p
+            LEFT JOIN espacios e ON true
+            LEFT JOIN LATERAL unnest(c.rangos - p.rangos - e.rangos) AS hueco(rango) ON true
+            ORDER BY e.nombre, e.id, inicio
+            SQL, [$dia->format('Y-m-d H:i:s'), $dia->modify('+1 day')->format('Y-m-d H:i:s'), $id, 'false', $id, $id]);
+
+        if ($filas === []) {
+            throw new HttpException(404, 'La profesional no está disponible.');
+        }
+
+        $espacios = [];
+        foreach ($filas as $fila) {
+            if ($fila['espacio_id'] === null) {
+                continue;
+            }
+            $espacio = $fila['espacio_id'];
+            $espacios[$espacio] ??= ['id' => $espacio, 'nombre' => $fila['nombre'], 'huecos' => []];
+            if ($fila['inicio'] !== null) {
+                $espacios[$espacio]['huecos'][] = [
+                    'inicio' => (new DateTimeImmutable($fila['inicio']))->format(DATE_ATOM),
+                    'fin' => (new DateTimeImmutable($fila['fin']))->format(DATE_ATOM),
+                ];
+            }
+        }
+
+        return ['hay_franjas' => (bool) $filas[0]['hay_franjas'], 'espacios' => array_values($espacios)];
     }
 
     /** Representación de TIME que devuelve PostgreSQL: segundos completos y fracción sin ceros finales. */
