@@ -113,6 +113,7 @@ $profesional = new Cliente($kernel, '203.0.113.12');
 verificar($profesional->ingresar('pro@zenli.test', $clave) === 200, 'La profesional ingresa.');
 $agenda = [
     'GET /api/admin/agenda', 'POST /api/admin/agenda/turnos', 'PUT /api/admin/agenda/turnos/{id}', 'DELETE /api/admin/agenda/turnos/{id}',
+    'GET /api/admin/agenda/turnos/horario-habitual', 'GET /api/admin/agenda/turnos/disponibilidad',
     'PUT /api/admin/agenda/preparaciones/{id}', 'DELETE /api/admin/agenda/preparaciones/{id}',
     'GET /api/admin/agenda/mensajes', 'POST /api/admin/agenda/mensajes',
 ];
@@ -123,7 +124,7 @@ foreach ($kernel->getContainer()->get('router')->getRouteCollection() as $ruta) 
     if (!str_starts_with($plantilla, '/api/admin') || $plantilla === '/api/admin/sesion') {
         continue;
     }
-    $url = strtr($plantilla, ['{id}' => '999999', '{version}' => str_repeat('a', 64)]);
+    $url = strtr($plantilla, ['{id}' => '999999', '{version}' => str_repeat('a', 64), '{fecha}' => '2099-06-18']);
     foreach ($ruta->getMethods() as $metodo) {
         $clave_ruta = "$metodo $plantilla";
         $esAgenda = in_array($clave_ruta, $agenda, true);
@@ -147,6 +148,13 @@ sort($agenda);
 sort($agendaRevisadas);
 verificar($revisadas > 45 && $agendaRevisadas === $agenda, "La matriz debe cubrir todas las rutas ($revisadas revisadas).");
 fwrite(STDOUT, "Permisos verificados en $revisadas combinaciones de ruta y método.\n");
+
+$rutaFeriado = '/api/admin/agenda/feriados/2099-06-18';
+$agendaFeriado = '/api/admin/agenda?fecha=2099-06-18';
+verificar($admin->pedir('PUT', $rutaFeriado, ['activo' => true])[0] === 200, 'Administración marca el feriado.');
+verificar($profesional->pedir('GET', $agendaFeriado)[1]['feriados'] === ['2099-06-18'], 'La profesional ve el feriado en su agenda.');
+verificar($admin->pedir('PUT', $rutaFeriado, ['activo' => false])[0] === 200, 'Administración quita el feriado.');
+verificar($profesional->pedir('GET', $agendaFeriado)[1]['feriados'] === [], 'La agenda deja de mostrar el feriado.');
 
 // Demora creciente por cuenta y desbloqueo desde el panel y la consola.
 $intentos = static fn (string $email): array => $conexion->fetchAssociative(

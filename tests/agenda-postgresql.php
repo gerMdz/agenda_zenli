@@ -101,7 +101,7 @@ foreach ([Version20261118000100::class, Version20261118000200::class] as $clase)
     aplicarMigracion($conexion, $clase);
 }
 
-foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000', '20261119001100', '20261119001200', '20261120000100', '20261121000100', '20261121000400', '20261121000500'] as $version) {
+foreach (['20261119000100', '20261119000200', '20261119000300', '20261119000400', '20261119000500', '20261119000600', '20261119000700', '20261119000800', '20261119000900', '20261119001000', '20261119001100', '20261119001200', '20261120000100', '20261121000100', '20261121000400', '20261121000500', '20261122000100'] as $version) {
     require __DIR__.'/../migrations/Version'.$version.'.php';
     aplicarMigracion($conexion, 'DoctrineMigrations\\Version'.$version);
 }
@@ -544,7 +544,9 @@ try {
     throw new RuntimeException('El horario especial no reemplazó la franja semanal de la fecha.');
 } catch (TurnoNoDisponible) {
 }
+$interna->guardarFeriado('2099-06-18', true, '101');
 $interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-18T10:00']), '101');
+verificar($interna->consultar('2099-06-18', $ocasional)['feriados'] === ['2099-06-18'], 'El feriado se muestra en la agenda propia y permite cargar un turno.');
 $interna->cargar(array_replace($turnoOcasional, ['inicio' => '2099-06-25T15:30']), '101');
 try {
     $horarios->agregarBloqueo($ocasional, ['fecha' => '2099-06-18', 'todo_el_dia' => true], '101');
@@ -579,5 +581,8 @@ $horas = static fn (array $huecos): array => array_map(static fn (array $hueco):
         ->setTimezone(new DateTimeZone('America/Argentina/Mendoza'))->format('H:i'), $hueco), $huecos);
 verificar($horas($porSala[102]) === [['inicio' => '09:10', 'fin' => '09:20']], 'El espacio descuenta su bloqueo y el turno de otra profesional.');
 verificar($horas($porSala[103]) === [['inicio' => '09:00', 'fin' => '10:00']], 'Otro espacio sigue libre, descontando la ocupación y el bloqueo de la profesional.');
-verificar(!$horarios->disponibilidad('104', '2099-06-19')['hay_franjas'], 'El modo manual no anuncia disponibilidad sin franjas.');
+$libresManual = $horarios->disponibilidad('104', '2099-06-18');
+verificar($libresManual['jornada_manual'] && $horas(array_column($libresManual['espacios'], 'huecos', 'id')[103])[0] === ['inicio' => '00:00', 'fin' => '09:20'], 'El modo manual calcula huecos desde el inicio de la fecha sin horario especial.');
+$bloqueadoManual = $horarios->disponibilidad('104', '2099-06-19');
+verificar($bloqueadoManual['jornada_manual'] && !array_filter(array_column($bloqueadoManual['espacios'], 'huecos')), 'El bloqueo de todo el día elimina los huecos de la fecha.');
 fwrite(STDOUT, "PostgreSQL: huecos privados por profesional y espacio verificados.\n");

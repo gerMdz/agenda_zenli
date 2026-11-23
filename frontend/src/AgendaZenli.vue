@@ -194,6 +194,9 @@ function franjasAtencion(clave, semana, turnos) {
   return franjas.map(franja => ({ inicio: minutosDeFranja(franja.hora_inicio), fin: minutosDeFranja(franja.hora_fin) }))
 }
 
+const feriados = computed(() => new Set(datos.value?.feriados ?? []))
+const feriadoSeleccionado = computed(() => feriados.value.has(fecha.value))
+
 const dias = computed(() => {
   const { inicio, fin } = periodo.value
   const resultado = []
@@ -202,15 +205,26 @@ const dias = computed(() => {
     const turnos = turnosEnDia(clave)
     const bloqueos = turnos.filter(turno => turno.bloqueado).length
     const preparaciones = turnos.filter(turno => turno.esPreparacion).length
+    const feriado = feriados.value.has(clave)
     resultado.push({
-      clave, numero: dia.getUTCDate(), nombre: nombreDia.format(dia), turnos, bloqueos,
-      franjasAtencion: franjasAtencion(clave, dia.getUTCDay() || 7, turnos),
+      clave, numero: dia.getUTCDate(), nombre: nombreDia.format(dia), turnos, bloqueos, feriado,
+      franjasAtencion: feriado ? [] : franjasAtencion(clave, dia.getUTCDay() || 7, turnos),
       citas: turnos.length - bloqueos - preparaciones, propios: turnos.filter(turno => !turno.bloqueado && !turno.esPreparacion && esPropio(turno)).length,
     })
   }
   return resultado
 })
 const turnosDia = computed(() => turnosEnDia(fecha.value))
+
+function alternarFeriado() {
+  const dia = fecha.value
+  const activo = !feriadoSeleccionado.value
+  return ejecutar(async () => {
+    await api(`/api/admin/agenda/feriados/${dia}`, 'PUT', { activo })
+    await cargarDia()
+    aviso.value = activo ? 'Feriado marcado para todo el centro.' : 'Feriado quitado del calendario.'
+  })
+}
 const resumen = computed(() => {
   const items = turnosVisibles.value
   return [
@@ -602,7 +616,7 @@ onMounted(() => ejecutar(async () => {
             <button v-for="dia in dias" :key="dia.clave" type="button" class="celda"
               :class="{ propia: dia.propios }" :aria-pressed="fecha === dia.clave" :disabled="ocupado" @click="fecha = dia.clave">
               <strong>{{ dia.numero }}</strong>
-              <small v-if="dia.franjasAtencion?.length === 0" class="mes-sin-atencion"><img class="icono-loto" :src="lotoUrl" alt=""> Sin atención</small>
+              <small v-if="dia.franjasAtencion?.length === 0" class="mes-sin-atencion"><img class="icono-loto" :src="lotoUrl" alt=""> {{ dia.feriado ? 'Feriado · Sin atención' : 'Sin atención' }}</small>
               <small v-if="dia.citas">{{ dia.citas }} {{ dia.citas === 1 ? 'turno' : 'turnos' }}</small>
               <small v-if="dia.bloqueos" class="marca-bloqueo">{{ dia.bloqueos }} {{ dia.bloqueos === 1 ? 'horario no disponible' : 'horarios no disponibles' }}</small>
               <small v-if="dia.propios" class="mio">{{ dia.propios }} {{ dia.propios === 1 ? 'propio' : 'propios' }}</small>
@@ -613,9 +627,13 @@ onMounted(() => ejecutar(async () => {
             <li><i class="muestra-equipo"></i> Equipo incompleto</li>
             <li><i class="muestra-bloqueo"></i> Horario no disponible</li>
             <li><i class="muestra-preparacion"></i> Preparación</li>
-            <li v-if="perfilEnVista && dias.some(dia => dia.franjasAtencion !== null)"><i class="muestra-sin-atencion"></i> Sin atención</li>
+            <li v-if="dias.some(dia => dia.franjasAtencion !== null)"><i class="muestra-sin-atencion"></i> Sin atención</li>
           </ul>
           <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
+          <p v-if="feriadoSeleccionado">Feriado · Sin atención habitual</p>
+          <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado" @click="alternarFeriado">
+            {{ feriadoSeleccionado ? 'Quitar feriado de este día' : 'Marcar este día como feriado' }}
+          </button>
           <p v-if="!turnosDia.length">No hay turnos ni horarios no disponibles para este día.</p>
           <ul v-else class="turnos">
             <li v-for="turno in turnosDia" :key="turno.id" :id="`agenda-fila-${turno.id}`" tabindex="-1" :class="{ propio: !turno.bloqueado && esPropio(turno), bloqueado: turno.bloqueado }">
@@ -694,7 +712,8 @@ onMounted(() => ejecutar(async () => {
           </form>
           <p v-if="ocupado" role="status">Buscando horarios libres…</p>
           <div v-if="disponibilidad" class="resultado-disponibilidad" aria-live="polite">
-            <p v-if="!disponibilidad.hay_franjas">No se pueden calcular horarios libres para esta fecha. Para consultarlos, configurá franjas semanales o un horario especial en Administración → Horarios. En modo manual se usa el horario especial de la fecha.</p>
+            <p v-if="disponibilidad.jornada_manual">Modo manual: se muestran los huecos de todo el día. Confirmá el horario de atención con la profesional.</p>
+            <p v-if="!disponibilidad.hay_franjas">La profesional no tiene horario de atención configurado para esta fecha.</p>
             <p v-else-if="!disponibilidad.espacios.length">No hay espacios activos.</p>
             <p v-else-if="!disponibilidad.espacios.some(espacio => espacio.huecos.length)">No quedan horarios libres para ese día.</p>
             <template v-else>

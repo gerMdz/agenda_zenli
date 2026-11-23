@@ -20,6 +20,7 @@ use DateTimeInterface;
 use DateTimeZone;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\LockMode;
+use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 use InvalidArgumentException;
@@ -127,7 +128,27 @@ final readonly class AgendaAdministrativa
             'preparaciones' => $preparaciones,
             'turnos' => $turnos,
             'bloqueos' => $bloqueos,
+            'feriados' => $this->entidades->getConnection()->fetchFirstColumn(
+                "SELECT to_char(fecha, 'YYYY-MM-DD') FROM feriados_agenda WHERE activo AND fecha BETWEEN ? AND ? ORDER BY fecha",
+                [$dia->format('Y-m-d'), $ultimo->format('Y-m-d')],
+            ),
         ];
+    }
+
+    public function guardarFeriado(string $fecha, mixed $activo, string $autor): void
+    {
+        self::fecha($fecha, 'Y-m-d');
+        if (!is_bool($activo)) {
+            throw new InvalidArgumentException('Indicá si la fecha se marca como feriado.');
+        }
+
+        $this->entidades->getConnection()->executeStatement(<<<'SQL'
+            INSERT INTO feriados_agenda (fecha, activo, creado_por, actualizado_por)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (fecha) DO UPDATE
+            SET activo = EXCLUDED.activo, actualizado_por = EXCLUDED.actualizado_por, actualizado_en = now()
+            WHERE feriados_agenda.activo IS DISTINCT FROM EXCLUDED.activo
+            SQL, [$fecha, $activo, $autor, $autor], [ParameterType::STRING, ParameterType::BOOLEAN]);
     }
 
     public function configuracion(): array

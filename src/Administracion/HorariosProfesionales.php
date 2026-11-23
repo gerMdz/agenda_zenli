@@ -338,12 +338,13 @@ final readonly class HorariosProfesionales
             )
             SELECT e.id::text AS espacio_id, e.nombre,
                    lower(hueco.rango) AS inicio, upper(hueco.rango) AS fin,
+                   (NOT perfil.restringido AND NOT EXISTS (SELECT 1 FROM especiales))::int AS jornada_manual,
                    (c.rangos <> '{}'::tstzmultirange)::int AS hay_franjas
             FROM perfil CROSS JOIN cobertura c CROSS JOIN personal p
             LEFT JOIN espacios e ON true
             LEFT JOIN LATERAL unnest(c.rangos - p.rangos - e.rangos) AS hueco(rango) ON true
             ORDER BY e.nombre, e.id, inicio
-            SQL, [$dia->format('Y-m-d H:i:s'), $dia->modify('+1 day')->format('Y-m-d H:i:s'), $id, 'false', $id, $id]);
+            SQL, [$dia->format('Y-m-d H:i:s'), $dia->modify('+1 day')->format('Y-m-d H:i:s'), $id, 'true', $id, $id]);
 
         if ($filas === []) {
             throw new HttpException(404, 'La profesional no está disponible.');
@@ -364,7 +365,11 @@ final readonly class HorariosProfesionales
             }
         }
 
-        return ['hay_franjas' => (bool) $filas[0]['hay_franjas'], 'espacios' => array_values($espacios)];
+        return [
+            'hay_franjas' => (bool) $filas[0]['hay_franjas'],
+            'jornada_manual' => (bool) $filas[0]['jornada_manual'],
+            'espacios' => array_values($espacios),
+        ];
     }
 
     /** Representación de TIME que devuelve PostgreSQL: segundos completos y fracción sin ceros finales. */

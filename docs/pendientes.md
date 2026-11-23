@@ -17,6 +17,8 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 
 ## Retomar la agenda privada
 
+- Aplicar la migración de feriados al actualizar el entorno de destino y comprobar allí que la fecha se muestre en la agenda general y en la profesional.
+
 - La agenda abre después de iniciar sesión. «Mis horarios» y «Horarios no disponibles» son vistas de consulta del perfil propio. Las franjas semanales, las fechas puntuales y las indisponibilidades se editan desde **Administración → Horarios**.
 - Verificamos la compilación del frontend y las dos secciones en Chrome contra el Docker local. Con el perfil de prueba de Micaela vimos el 25/11/2026 como «Todo el día» y el 27/11/2026 de 13:00 a 15:00. Son datos ficticios exclusivos del entorno local.
 - En Chrome a 390 × 844 px verificamos el fondo a pantalla completa y el menú plegado al entrar. En esa resolución, el resumen y el horario habitual quedan antes de la grilla. Si en el uso diario cuesta llegar al calendario, revisar ese orden con las profesionales.

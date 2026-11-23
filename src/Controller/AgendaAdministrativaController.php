@@ -52,6 +52,18 @@ final readonly class AgendaAdministrativaController
         return $this->respuesta($this->agenda->configuracion());
     }
 
+    #[Route('/feriados/{fecha}', requirements: ['fecha' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'], methods: ['PUT'])]
+    public function guardarFeriado(Request $peticion, string $fecha): JsonResponse
+    {
+        try {
+            $this->agenda->guardarFeriado($fecha, $peticion->toArray()['activo'] ?? null, $this->sesion->actual()['id']);
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del feriado.' : $error->getMessage()], 422);
+        }
+
+        return $this->respuesta(['guardado' => true]);
+    }
+
     #[Route('/profesionales/{id}/horarios', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['GET', 'PUT'])]
     #[Route('/profesionales/{id}/bloqueos', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['POST'])]
     public function horarios(Request $peticion, string $id): JsonResponse

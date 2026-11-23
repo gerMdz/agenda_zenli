@@ -121,8 +121,8 @@ function posicion(evento) {
       <div v-for="dia in columnas" :key="'horas-' + dia.clave" class="carril" :class="{ seleccionado: dia.clave === fecha }">
         <div v-for="tramo in tramosSinAtencion(dia.franjasAtencion)" :key="tramo.inicio" class="sin-atencion"
           :class="{ 'dia-sin-atencion': dia.franjasAtencion.length === 0 }"
-          :style="posicionVertical(tramo)" :title="`Sin atención · ${textoMinutos(tramo.inicio)}–${textoMinutos(tramo.fin)}`">
-          <span v-if="dia.franjasAtencion.length === 0" class="marca-sin-atencion"><img class="icono-loto" :src="lotoUrl" alt="">Sin atención</span>
+          :style="posicionVertical(tramo)" :title="dia.feriado ? 'Feriado · Sin atención habitual' : `Sin atención · ${textoMinutos(tramo.inicio)}–${textoMinutos(tramo.fin)}`">
+          <span v-if="dia.franjasAtencion.length === 0" class="marca-sin-atencion"><img class="icono-loto" :src="lotoUrl" alt=""><span v-if="dia.feriado">Feriado</span>Sin atención</span>
           <span v-else class="solo-lectores">Sin atención de {{ textoMinutos(tramo.inicio) }} a {{ textoMinutos(tramo.fin) }}</span>
         </div>
         <button v-for="evento in dia.eventos" :key="evento.turno.id" type="button" class="tarjeta"
