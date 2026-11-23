@@ -313,8 +313,8 @@ function guardarPortada(evento) {
 
 function aplicarConfiguracionAgenda(ajustes) {
   ajustesAgenda.value = ajustes
-  modoPreparacion.value = ajustes.preparacion?.modo ?? ''
-  minutosPreparacion.value = ajustes.preparacion?.minutos ?? ''
+  modoPreparacion.value = ajustes.preparacion?.modo ?? 'predeterminado'
+  minutosPreparacion.value = ajustes.preparacion?.minutos ?? 0
   preparacionServicios.value = { ...ajustes.preparacion?.servicios }
 }
 
@@ -432,9 +432,7 @@ function cerrarDialogoProfesional() {
 
 function guardarPreparacionAgenda() {
   return ejecutar(async () => {
-    const datos = modoPreparacion.value === 'general'
-      ? { modo: modoPreparacion.value, minutos: minutosPreparacion.value }
-      : { modo: modoPreparacion.value, servicios: Object.fromEntries(Object.entries(preparacionServicios.value).filter(([, valor]) => valor !== '')) }
+    const datos = { modo: modoPreparacion.value, minutos: minutosPreparacion.value, servicios: Object.fromEntries(Object.entries(preparacionServicios.value).filter(([, valor]) => valor !== '')) }
     await api('/api/admin/agenda/preparacion', { method: 'PUT', datos })
     aplicarConfiguracionAgenda(await api('/api/admin/agenda/configuracion'))
     mensaje.value = 'Preparación guardada.'
@@ -1091,13 +1089,15 @@ onBeforeUnmount(() => {
             <form @submit.prevent="guardarPreparacionAgenda">
               <p class="ayuda-preparacion">Estos minutos se reservan para preparar el espacio después de cada turno.</p>
               <fieldset>
-                <legend>¿Todos los servicios tienen el mismo tiempo de preparación?</legend>
-                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="general" required> Sí, el mismo para todos</label>
-                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="por_servicio" required> No, se define por servicio</label>
+                <legend>Tiempo de preparación</legend>
+                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="predeterminado" required> General (0 minutos)</label>
+                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="general" required> Todos iguales</label>
+                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="por_servicio" required> Individual por servicio</label>
               </fieldset>
               <label v-if="modoPreparacion === 'general'" class="fila-preparacion"><span>Todos los servicios</span><span class="minutos-preparacion"><input v-model.number="minutosPreparacion" type="number" min="0" max="1440" required aria-label="Minutos de preparación posteriores para todos los servicios"> <span>min</span></span></label>
               <template v-if="modoPreparacion === 'por_servicio'">
-                <p>Dejá sin completar los servicios que todavía no querés agendar.</p>
+                <label class="fila-preparacion"><span>Tiempo general para servicios sin preparación individual</span><span class="minutos-preparacion"><input v-model.number="minutosPreparacion" type="number" min="0" max="1440" required> <span>min</span></span></label>
+                <p>Los servicios sin un tiempo individual utilizan el tiempo general.</p>
                 <label v-for="item in servicios" :key="item.id" class="fila-preparacion">
                   <span>{{ item.nombre }}</span><span class="minutos-preparacion"><input v-model.number="preparacionServicios[item.id]" type="number" min="0" max="1440" :aria-label="`Minutos de preparación posteriores para ${item.nombre}`"> <span>min</span></span>
                 </label>

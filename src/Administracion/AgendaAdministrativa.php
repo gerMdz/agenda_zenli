@@ -239,7 +239,9 @@ final readonly class AgendaAdministrativa
 
     public function guardarPreparacion(array $datos, ?string $autor = null): void
     {
-        if (($datos['modo'] ?? null) === 'general') {
+        if (($datos['modo'] ?? null) === 'predeterminado') {
+            $politica = ['modo' => 'predeterminado'];
+        } elseif (($datos['modo'] ?? null) === 'general') {
             $politica = ['modo' => 'general', 'minutos' => self::minutos($datos['minutos'] ?? null, 0)];
         } elseif (($datos['modo'] ?? null) === 'por_servicio' && is_array($datos['servicios'] ?? null)) {
             $servicios = [];
@@ -249,7 +251,7 @@ final readonly class AgendaAdministrativa
                     $servicios[$id] = self::minutos($valor, 0);
                 }
             }
-            $politica = ['modo' => 'por_servicio', 'servicios' => (object) $servicios];
+            $politica = ['modo' => 'por_servicio', 'minutos' => self::minutos($datos['minutos'] ?? 0, 0), 'servicios' => (object) $servicios];
         } else {
             throw new InvalidArgumentException('Elegí cómo se define la preparación.');
         }
@@ -365,7 +367,7 @@ final readonly class AgendaAdministrativa
             $turno->clienteNombre = trim($cliente);
             $turno->inicio = $inicio;
             $turno->fin = $fin;
-            $turno->profesionalesRequeridos = (int) $configuracion->profesionalesRequeridos;
+            $turno->profesionalesRequeridos = $configuracion->profesionalesRequeridos;
             $turno->senaPagada = array_key_exists('sena_pagada', $datos) ? $pagada : ($anterior !== null && $turno->senaPagada);
             if (array_key_exists('sena_importe_centavos', $datos)) {
                 $turno->senaImporteCentavos = $importe;

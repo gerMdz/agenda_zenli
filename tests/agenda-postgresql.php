@@ -226,6 +226,15 @@ $turno = [
     'servicio' => '101', 'espacio' => '102', 'profesionales' => ['101', '102'],
     'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
 ];
+$interna->guardarPreparacion(['modo' => 'por_servicio', 'minutos' => 15, 'servicios' => ['101' => 5]]);
+$fallbackId = $interna->cargar(array_replace($turno, ['servicio' => '102', 'inicio' => '2099-08-02T10:00', 'profesionales' => []]), '101');
+$fallback = $interna->consultar('2099-08-02')['preparaciones'][0];
+verificar(new DateTimeImmutable($fallback['fin']) == new DateTimeImmutable('2099-08-02 10:55 America/Argentina/Mendoza'), 'El servicio sin preparación individual usa el tiempo general.');
+$interna->cancelar($fallbackId, '101', null, 1);
+$interna->guardarPreparacion(['modo' => 'predeterminado']);
+$generalId = $interna->cargar(array_replace($turno, ['inicio' => '2099-08-02T11:00', 'profesionales' => []]), '101');
+verificar($interna->consultar('2099-08-02')['preparaciones'] === [], 'La preparación general sin configurar ocupa cero minutos.');
+$interna->cancelar($generalId, '101', null, 1);
 $interna->guardarPreparacion(['modo' => 'general', 'minutos' => 10]);
 $pruebaPreparacion = $interna->cargar(array_replace($turno, ['inicio' => '2099-08-03T10:00', 'profesionales' => ['104']]), '101');
 $preparaciones = $interna->consultar('2099-08-03')['preparaciones'] ?? [];
@@ -341,12 +350,9 @@ try {
     throw new RuntimeException('El turno sin equipo no ocupó el espacio.');
 } catch (TurnoNoDisponible) {
 }
-try {
-    $interna->cargar(array_replace($pendiente, ['servicio' => '102', 'espacio' => '103']), '101');
-    throw new RuntimeException('Se permitió un servicio incompleto.');
-} catch (InvalidArgumentException $error) {
-    verificar(str_contains($error->getMessage(), 'configurados'), 'El rechazo debe explicar la configuración faltante.');
-}
+$sinConfigId = $interna->cargar(array_replace($pendiente, ['servicio' => '102', 'espacio' => '103']), '101');
+verificar($conexion->fetchOne('SELECT profesionales_requeridos FROM turnos_administrativos WHERE id = ?', [$sinConfigId]) === null, 'El servicio sin configuración conserva la cantidad de profesionales sin definir.');
+$interna->cancelar($sinConfigId, '101', null, 1);
 $interna->cargar(array_replace($pendiente, ['profesionales' => ['104'], 'revision' => 1, 'sena_pagada' => false]), '101', null, $pendienteId);
 $parcial = $interna->consultar('2099-06-05', '104')['turnos'][0];
 verificar($parcial['equipo_incompleto'] && !$parcial['sena_pagada'], 'La asignación parcial conserva la alerta y actualiza la seña.');

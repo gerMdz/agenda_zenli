@@ -188,13 +188,12 @@ const espacioElegido = computed(() => datos.value?.espacios.find(item => item.id
 const varias = ref(false)
 const preparacion = computed(() => {
   const ajustes = datos.value?.preparacion
-  return ajustes?.modo === 'general' ? ajustes.minutos : ajustes?.servicios?.[servicio.value]
+  return ajustes?.modo === 'general' ? ajustes.minutos : (ajustes?.servicios?.[servicio.value] ?? ajustes?.minutos ?? 0)
 })
 const servicioElegido = computed(() => datos.value?.servicios.find(item => item.id === servicio.value))
 function servicioCompleto(item) {
   const ajustes = datos.value?.preparacion
-  const minutos = ajustes?.modo === 'general' ? ajustes.minutos : ajustes?.servicios?.[item.id]
-  return item.duracion_minima != null && item.profesionales_requeridos != null && minutos != null
+  return item.duracion_minima != null && item.profesionales_requeridos != null && ajustes != null
 }
 
 async function api(ruta, method = 'GET', cuerpo) {
@@ -600,11 +599,11 @@ onMounted(() => ejecutar(async () => {
               <label>Servicio
                 <select v-model="servicio" required>
                   <option disabled value="">Elegí un servicio</option>
-                  <option v-for="item in datos.servicios" :key="item.id" :value="item.id" :disabled="!servicioCompleto(item)">{{ item.nombre }}{{ servicioCompleto(item) ? '' : ' · configuración incompleta' }}</option>
+                  <option v-for="item in datos.servicios" :key="item.id" :value="item.id">{{ item.nombre }}{{ servicioCompleto(item) ? '' : ' · configuración incompleta' }}</option>
                 </select>
               </label>
-              <p v-if="servicio && preparacion == null"><template v-if="usuario.admin">Definí la preparación de este servicio en <a href="/admin#configuracion-agenda">Administración</a>.</template><template v-else>Pedile a administración que configure la preparación de este servicio.</template></p>
-              <p v-else-if="servicio">Preparación del espacio después del turno: {{ preparacion }} min.</p>
+              <p v-if="servicio">Preparación del espacio después del turno: {{ preparacion }} min.</p>
+              <p v-if="servicioElegido && !servicioCompleto(servicioElegido)">Falta configurar {{ [servicioElegido.duracion_minima == null ? 'la duración informativa' : '', servicioElegido.profesionales_requeridos == null ? 'la cantidad de profesionales' : '', !datos.preparacion ? 'la preparación general' : ''].filter(Boolean).join(', ') }}. Podés guardar el turno igualmente.</p>
               <label>Fecha del turno <input v-model="fechaTurno" type="date" required></label>
               <label>Nombre del cliente <input v-model="cliente" maxlength="150" required></label>
               <label class="opcion"><input v-model="senaPagada" type="checkbox"> Seña pagada</label>
@@ -639,7 +638,7 @@ onMounted(() => ejecutar(async () => {
                 </select>
               </label>
               <p v-if="servicioElegido && equipo.length < Number(servicioElegido.profesionales_requeridos)">Faltan profesionales: el turno quedará señalado en la agenda.</p>
-              <button :disabled="ocupado || !fechaTurno || !servicioElegido || !servicioCompleto(servicioElegido)">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
+              <button :disabled="ocupado || !fechaTurno || !servicioElegido">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
             </form>
         </dialog>
 

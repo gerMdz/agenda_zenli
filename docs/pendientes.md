@@ -48,7 +48,8 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 ## Servicios de la portada
 
 - Las imágenes de los 4 servicios iniciales deben subirse desde `/admin` para reemplazar el placeholder. El archivo `masajes.webp` (sprite de imágenes) deja de ser necesario una vez que cada servicio tiene su imagen.
-- Completar duración mínima, cantidad de profesionales y preparación de los servicios que se quieran agendar; revisar los tratamientos importados antes de mostrarlos.
+- Completar la duración informativa y la cantidad de profesionales de cada servicio cuando el centro las confirme; revisar los tratamientos importados antes de mostrarlos.
+- Revisar la configuración de preparación interna con el centro. Sin configuración se usan cero minutos y la agenda informa que falta definirla.
 - Confirmar la autorización de cada profesional antes de publicar su nombre o imagen; definir cómo se registra y revoca el consentimiento. Completar todas las imágenes para mostrarlas en conjunto.
 - Verificar en navegador la edición y baja de profesionales y la visibilidad individual. Agregar auditoría histórica de cambios de perfil y pruebas de concurrencia de la baja.
 - Revisar la reversión de la migración inicial que elimina profesionales por nombre: no es segura con nombres editables.
