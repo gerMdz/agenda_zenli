@@ -226,6 +226,14 @@ $turno = [
     'servicio' => '101', 'espacio' => '102', 'profesionales' => ['101', '102'],
     'inicio' => '2099-06-03T12:10', 'duracion' => 40, 'cliente' => 'Cliente ficticio',
 ];
+try {
+    $interna->cargar(array_replace($turno, ['duracion' => 19]), '101');
+    throw new RuntimeException('Se aceptó un turno menor de 20 minutos.');
+} catch (InvalidArgumentException $error) {
+    verificar(str_contains($error->getMessage(), '20 minutos'), 'El error explica la duración mínima.');
+}
+$minimoId = $interna->cargar(array_replace($turno, ['duracion' => 20]), '101');
+$interna->cancelar($minimoId, '101', null, 1);
 $interna->guardarPreparacion(['modo' => 'por_servicio', 'minutos' => 15, 'servicios' => ['101' => 5]]);
 $fallbackId = $interna->cargar(array_replace($turno, ['servicio' => '102', 'inicio' => '2099-08-02T10:00', 'profesionales' => []]), '101');
 $fallback = $interna->consultar('2099-08-02')['preparaciones'][0];

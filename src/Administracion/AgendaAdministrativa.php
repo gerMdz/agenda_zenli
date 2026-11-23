@@ -301,6 +301,9 @@ final readonly class AgendaAdministrativa
 
         return $this->conConcurrencia(fn (): string => TransaccionEntidades::ejecutar($this->entidades, function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe): string {
             $anterior = $editar === null ? null : $this->bloquearEditable($editar, $propia, $revision);
+            if ($duracion < 20 && ($anterior === null || $anterior['turno']->fin->getTimestamp() - $anterior['turno']->inicio->getTimestamp() !== $duracion * 60)) {
+                throw new InvalidArgumentException('La duración mínima del turno es de 20 minutos.');
+            }
             $recurso = $this->bloquearEspacio($espacio, true) ?? throw new InvalidArgumentException('Elegí un espacio activo.');
             $configuracion = $this->entidades->createQuery('SELECT s FROM App\Entity\ServicioPortada s WHERE s.id = :id')
                 ->setParameter('id', $servicio)->setLockMode(LockMode::PESSIMISTIC_READ)

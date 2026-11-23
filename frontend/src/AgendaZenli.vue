@@ -322,7 +322,7 @@ async function api(ruta, method = 'GET', cuerpo) {
     throw new Error('Ingresá nuevamente para ver la agenda.')
   }
   const contenido = await respuesta.json().catch(() => null)
-  if (!respuesta.ok || !contenido) throw new Error(contenido?.error || 'No se pudo completar la operación.')
+  if (!respuesta.ok || !contenido) throw new Error(contenido?.error || `La solicitud no se completó. El servidor respondió con el código ${respuesta.status}. Volvé a intentar y, si persiste, consultá el registro del servidor.`)
   return contenido
 }
 
@@ -428,7 +428,7 @@ function limpiarTurno() {
   editando.value = null
   cliente.value = ''
   hora.value = ''
-  duracion.value = ''
+  duracion.value = 20
   senaPagada.value = false
   senaImporte.value = ''
   varias.value = false
@@ -790,7 +790,7 @@ onMounted(() => ejecutar(async () => {
               <div class="barra">
                 <label>Hora (24 horas) <EntradaHora v-model="hora" required /></label>
                 <label>Duración (min)
-                  <input v-model.number="duracion" type="number" min="1" max="1440" step="1" list="duraciones-AgendaZenli" required>
+                  <input v-model.number="duracion" type="number" :min="editando && Number(editando.duracion) < 20 ? Number(editando.duracion) : 20" max="1440" step="1" list="duraciones-AgendaZenli" required>
                 </label>
                 <datalist id="duraciones-AgendaZenli">
                   <option v-for="minutos in [20, 30, 45, 60, 90]" :key="minutos" :value="minutos"></option>
