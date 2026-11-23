@@ -1,7 +1,7 @@
 # Preguntas pendientes para Zenli
 
 1. Días y franjas reales de Nataly y Micaela (los horarios publicados son generales).
-2. Precio, duración y descripción definitiva de cada servicio; tiempos de preparación/limpieza.
+2. Precio, duración y descripción definitiva de cada servicio; tiempos de preparación/limpieza. El centro ya ofrece servicios exprés de 20 minutos, que pueden cargarse con esa duración en la agenda interna.
 3. En masaje en pareja, ¿una o dos profesionales atienden las sesiones consecutivas? ¿Cómo se asignan? ¿Son 30+30 minutos sin pausa?
 4. Equipamiento físico real y capacidad efectiva del único espacio.
 5. Política concreta para confirmación automática vs manual y reglas por tratamiento.

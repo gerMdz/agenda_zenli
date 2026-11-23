@@ -612,12 +612,11 @@ onMounted(() => ejecutar(async () => {
               <div class="barra">
                 <label>Hora (24 horas) <EntradaHora v-model="hora" required /></label>
                 <label>Duración (min)
-                  <select v-model.number="duracion" required>
-                    <option disabled value="">Elegí una duración</option>
-                    <option v-if="editando && ![30, 45, 60, 90].includes(Number(editando.duracion))" :value="Number(editando.duracion)">{{ editando.duracion }} (duración anterior)</option>
-                    <option v-for="minutos in [30, 45, 60, 90]" :key="minutos" :value="minutos">{{ minutos }}</option>
-                  </select>
+                  <input v-model.number="duracion" type="number" min="1" max="1440" step="1" list="duraciones-AgendaAdministrativa" required>
                 </label>
+                <datalist id="duraciones-AgendaAdministrativa">
+                  <option v-for="minutos in [20, 30, 45, 60, 90]" :key="minutos" :value="minutos"></option>
+                </datalist>
               </div>
               <label v-if="datos.espacios.length > 1">Espacio
                 <select v-model="espacio" required>
