@@ -17,7 +17,21 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 
 ## Retomar la agenda privada
 
-- Aplicar la migración de feriados al actualizar el entorno de destino y comprobar allí que la fecha se muestre en la agenda general y en la profesional.
+### Punto de partida desde otra PC
+
+1. Actualizá `main` desde `origin/main` con `git pull --ff-only`. Si todavía no tenés el repositorio en esa PC, cloná `gerMdz/agenda_zenli`. El commit `ac3e69e` incluye los feriados, el cálculo diario de disponibilidad y los cambios visuales anteriores.
+2. Levantá el entorno de desarrollo y verificá que responda. Revisá y aplicá las migraciones a esa base local, incluida `Version20261122000100` de feriados.
+
+   ```sh
+   docker compose up --build -d
+   curl --fail http://127.0.0.1:8080/health
+   docker compose exec --user www-data app php bin/console doctrine:migrations:migrate
+   ```
+
+3. Si la base local es nueva, creá una cuenta con `docker compose exec --user www-data app php bin/console zenli:admin:crear admin@ejemplo.com`. Entrá a `http://127.0.0.1:8080/admin`. Cada PC tiene su propio volumen de PostgreSQL. Git sincroniza el código, y los datos locales se recuperan por separado si se necesitan.
+4. En la agenda, marcá un feriado de prueba y comprobá que aparezca el loto en la vista general y en la de una profesional. Cargá un turno válido ese día, consultá la disponibilidad de esa fecha y quitá la marca. Probá también una fecha sin horario especial para una profesional en modo manual.
+
+La compilación del frontend y las pruebas de agenda y permisos pasaron en PostgreSQL 17 temporal. Queda pendiente la comprobación anterior en el navegador del nuevo entorno. Para el uso interno con datos reales, el próximo paso es cargar los horarios confirmados de cada profesional.
 
 - La agenda abre después de iniciar sesión. «Mis horarios» y «Horarios no disponibles» son vistas de consulta del perfil propio. Las franjas semanales, las fechas puntuales y las indisponibilidades se editan desde **Administración → Horarios**.
 - Verificamos la compilación del frontend y las dos secciones en Chrome contra el Docker local. Con el perfil de prueba de Micaela vimos el 25/11/2026 como «Todo el día» y el 27/11/2026 de 13:00 a 15:00. Son datos ficticios exclusivos del entorno local.
