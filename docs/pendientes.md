@@ -17,6 +17,12 @@ No transformar preguntas pendientes en reglas asumidas por defecto sin aprobaci�
 
 ## Retomar la agenda privada
 
+### Cierre operativo de la agenda interna
+
+1. Verificar en PostgreSQL el alta, la edición, la cancelación, la preparación, el alcance por profesional y la concurrencia. La suite de agenda pasó en PostgreSQL 17 temporal, incluido el caso de dos altas internas simultáneas sobre el mismo espacio.
+2. Repetir el ciclo desde `/admin/agenda` con datos de prueba y cuentas de administración y profesional. Confirmar que al mover un turno se libera su horario anterior, que un destino ocupado conserva el turno original y que al cancelar se libera también su preparación. Revisar el flujo en pantalla chica.
+3. Corregir los problemas observados y repetir los casos afectados. Para el uso cotidiano, cargar las franjas confirmadas de cada profesional y sus excepciones, y verificar la disponibilidad con ambas cuentas.
+
 ### Punto de partida desde otra PC
 
 1. Actualizá `main` desde `origin/main` con `git pull --ff-only`. Si todavía no tenés el repositorio en esa PC, cloná `gerMdz/agenda_zenli`. El commit `ac3e69e` incluye los feriados, el cálculo diario de disponibilidad y los cambios visuales anteriores.
