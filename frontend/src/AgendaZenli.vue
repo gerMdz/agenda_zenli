@@ -779,7 +779,7 @@ onMounted(() => ejecutar(async () => {
               <label>Servicio
                 <select v-model="servicio" required>
                   <option disabled value="">Elegí un servicio</option>
-                  <option v-for="item in datos.servicios" :key="item.id" :value="item.id" :disabled="!servicioCompleto(item)">{{ item.nombre }}{{ servicioCompleto(item) ? '' : ' · configuración incompleta' }}</option>
+                  <option v-for="item in datos.servicios" :key="item.id" :value="item.id">{{ item.nombre }}{{ servicioCompleto(item) ? '' : ' · configuración incompleta' }}</option>
                 </select>
               </label>
               <p v-if="servicio && preparacion == null"><template v-if="usuario.admin">Definí la preparación de este servicio en <a href="/admin#configuracion-agenda">Administración</a>.</template><template v-else>Pedile a administración que configure la preparación de este servicio.</template></p>
@@ -818,7 +818,7 @@ onMounted(() => ejecutar(async () => {
                 </select>
               </label>
               <p v-if="servicioElegido && equipo.length < Number(servicioElegido.profesionales_requeridos)">Faltan profesionales: el turno quedará señalado en la agenda.</p>
-              <button :disabled="ocupado || !fechaTurno || !servicioElegido || !servicioCompleto(servicioElegido)">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
+              <button :disabled="ocupado || !fechaTurno || !servicioElegido">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
             </form>
         </dialog>
 

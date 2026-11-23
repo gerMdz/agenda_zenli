@@ -306,14 +306,8 @@ final readonly class AgendaAdministrativa
             if (!$configuracion instanceof ServicioPortada) {
                 throw new InvalidArgumentException('Elegí un servicio del catálogo.');
             }
-            if ((int) $configuracion->duracionMinima < 1 || (int) $configuracion->profesionalesRequeridos < 1) {
-                throw new InvalidArgumentException('El servicio no tiene duración mínima y profesionales requeridos configurados.');
-            }
             $politica = $this->preparacion();
-            $minutos = ($politica['modo'] ?? null) === 'general' ? $politica['minutos'] : ($politica['servicios'][$servicio] ?? null);
-            if ($minutos === null) {
-                throw new InvalidArgumentException('Configurá el tiempo de preparación de este servicio.');
-            }
+            $minutos = ($politica['modo'] ?? null) === 'general' ? $politica['minutos'] : ($politica['servicios'][$servicio] ?? $politica['minutos'] ?? 0);
 
             $fin = $inicio->modify("+$duracion minutes");
             $inicioEspacio = $inicio;

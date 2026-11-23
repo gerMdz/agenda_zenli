@@ -11,3 +11,4 @@ Leé primero `docs/decisiones.md`, `docs/modelo-datos.md`, `docs/reglas-agenda.m
 - No habilites el masaje en pareja para reserva pública hasta confirmar la asignación profesional y su configuración operativa.
 - Antes de cambios destructivos, solicitá confirmación. Ejecutá pruebas cuando sea posible e informá qué verificaste realmente.
 - Para futuras decisiones, actualizá `docs/decisiones.md` y `docs/pendientes.md`.
+- Los formularios de creación y edición deben abrirse en ventanas modales.

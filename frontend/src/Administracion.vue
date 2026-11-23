@@ -109,6 +109,7 @@ const editEliminarImagen = ref(false)
 const servicioImagenTemporal = ref(null)
 const imagenNuevaTemporal = ref(null)
 const dialogoServicio = ref(null)
+const dialogoNuevoServicio = ref(null)
 const entradaImagenEdicion = ref(null)
 const editarMensaje = ref('')
 const crearError = ref('')
@@ -578,6 +579,7 @@ function guardarUsuario() {
 
 function iniciarCreacion() {
   servicioCreando.value = true
+  dialogoNuevoServicio.value.showModal()
   nuevoNombre.value = ''
   nuevoDescCorta.value = ''
   nuevoDetalle.value = ''
@@ -588,6 +590,7 @@ function iniciarCreacion() {
 }
 
 function cancelarCreacion() {
+  if (dialogoNuevoServicio.value?.open) dialogoNuevoServicio.value.close()
   servicioCreando.value = false
   nuevoNombre.value = ''
   nuevoDescCorta.value = ''
@@ -1143,16 +1146,16 @@ onBeforeUnmount(() => {
           <p v-if="servicios.length === 0" class="vacío">No hay servicios. Creá el primero.</p>
 
           <!-- Formulario crear -->
+          <dialog ref="dialogoNuevoServicio" class="modal-servicio" aria-labelledby="titulo-nuevo-servicio" @close="cancelarCreacion" @cancel="ocupado && $event.preventDefault()">
           <form v-if="servicioCreando" class="formulario-servicio" @submit.prevent="crearServicio">
             <p v-if="crearError" class="error inline" role="alert">{{ crearError }}</p>
-            <h3>Nuevo servicio</h3>
+            <h3 id="titulo-nuevo-servicio">Nuevo servicio</h3>
             <label for="nuevo-nombre">Nombre</label>
             <input id="nuevo-nombre" v-model="nuevoNombre" type="text" maxlength="100" placeholder="Ej: Descontracturante" :disabled="ocupado" required>
             <label for="nuevo-desc">Descripción corta</label>
             <input id="nuevo-desc" v-model="nuevoDescCorta" type="text" maxlength="255" placeholder="Ej: Presión intensa y técnicas de masaje tailandés." :disabled="ocupado" required>
             <label for="nuevo-detalle">Detalle extenso <small>(opcional)</small></label>
             <textarea id="nuevo-detalle" v-model="nuevoDetalle" rows="4" placeholder="Descripción completa del masaje, beneficios, técnica…" :disabled="ocupado"></textarea>
-            <small>Después de crear el servicio, configurá su duración mínima y profesionales para poder agendarlo.</small>
             <label for="nuevo-imagen">Imagen</label>
             <div v-if="imagenNuevaTemporal" class="vista-previa-servicio">
               <img :src="imagenNuevaTemporal" alt="Vista previa">
@@ -1164,6 +1167,7 @@ onBeforeUnmount(() => {
               <button type="button" class="secundario" :disabled="ocupado" @click="cancelarCreacion">Cancelar</button>
             </div>
           </form>
+          </dialog>
 
           <dialog ref="dialogoServicio" class="modal-servicio" aria-labelledby="titulo-editar-servicio" @close="cancelarEdicion" @cancel="ocupado && $event.preventDefault()">
             <template v-if="servicioEditando">
