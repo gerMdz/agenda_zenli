@@ -32,6 +32,19 @@ async function operar(almacen, modo, operacion) {
 export const leerCopia = () => operar('copia', 'readonly', tabla => tabla.get('agenda'))
 export const guardarCopia = copia => operar('copia', 'readwrite', tabla => tabla.put(copia, 'agenda'))
 export const borrarCopia = () => operar('copia', 'readwrite', tabla => tabla.delete('agenda'))
+export async function borrarCopiaDeCuenta(cuenta) {
+  const bd = await base()
+  return new Promise((resolver, rechazar) => {
+    const transaccion = bd.transaction('copia', 'readwrite')
+    const tabla = transaccion.objectStore('copia')
+    const solicitud = tabla.get('agenda')
+    solicitud.onsuccess = () => {
+      if (solicitud.result?.usuario.id === cuenta) tabla.delete('agenda')
+    }
+    transaccion.oncomplete = resolver
+    transaccion.onabort = () => rechazar(transaccion.error)
+  })
+}
 export async function leerAltas(cuenta) {
   const altas = await operar('altas', 'readonly', tabla => tabla.index('cuenta').getAll(cuenta))
   return altas.sort((a, b) => (a.creada ?? 0) - (b.creada ?? 0))

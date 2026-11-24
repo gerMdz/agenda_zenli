@@ -7,7 +7,7 @@ import CalendarioHoras from './CalendarioHoras.vue'
 import EntradaHora from './EntradaHora.vue'
 import HorariosPersonales from './HorariosPersonales.vue'
 import {
-  avisarCambioCuenta, borrarAlta, borrarCopia, borrarDatosLocales, canalAgendaLocal,
+  avisarCambioCuenta, borrarAlta, borrarCopia, borrarCopiaDeCuenta, borrarDatosLocales, canalAgendaLocal,
   guardarAlta, guardarCopia, leerAltas, leerCopia,
 } from './agendaSinConexion.js'
 import { agendaInstalada, solicitarInstalacionAgenda } from './instalacionAgenda.js'
@@ -52,6 +52,9 @@ const copia = ref(null)
 const altas = ref([])
 const altaEnRevision = ref(null)
 const estadoCopia = ref('')
+const dialogoBorrarCopia = ref(null)
+const confirmandoBorrado = ref(false)
+let generacionCopia = 0
 let vencimientoCopia
 let reconexionSolicitada = false
 const canalSesion = canalAgendaLocal()
@@ -478,14 +481,60 @@ const rangoCopia = computed(() => copia.value
   ? `${copia.value.desde} al ${copia.value.hasta}`
   : '')
 
+const ocupacionesDelDia = computed(() => {
+  const muestra = copia.value
+  const dia = fecha.value
+  if (!muestra?.agenda.ocupaciones_espacios || dia < muestra.desde || dia > muestra.hasta) return null
+  const espacios = new Map(muestra.agenda.espacios.map(espacio => [espacio.id, { ...espacio, tramos: [] }]))
+  for (const tramo of muestra.agenda.ocupaciones_espacios) {
+    const inicio = new Date(tramo.inicio)
+    const fin = new Date(tramo.fin)
+    const primerDia = calendario.format(inicio)
+    const ultimoDia = calendario.format(new Date(fin.getTime() - 1))
+    if (primerDia > dia || ultimoDia < dia) continue
+    const desde = primerDia === dia ? reloj.format(inicio) : '00:00'
+    const hasta = calendario.format(fin) === dia ? reloj.format(fin) : '24:00'
+    espacios.get(tramo.espacio_id)?.tramos.push(`${desde}–${hasta}`)
+  }
+  return [...espacios.values()].filter(espacio => espacio.tramos.length)
+})
+
+function confirmarBorradoCopia() {
+  error.value = ''
+  confirmandoBorrado.value = true
+  dialogoBorrarCopia.value.showModal()
+}
+
+function quitarCopiaVisible() {
+  ++generacionCopia
+  copia.value = null
+  if (sinConexion.value) {
+    dialogo.value?.close()
+    datos.value = null
+    horarioHabitual.value = null
+  }
+  estadoCopia.value = 'Se borró la copia de la agenda. Los turnos pendientes siguen guardados.'
+}
+
+function borrarCacheAgenda() {
+  return ejecutar(async () => {
+    const cuenta = usuario.value.id
+    await borrarCopiaDeCuenta(cuenta)
+    quitarCopiaVisible()
+    canalSesion?.postMessage({ tipo: 'copia-borrada', cuenta })
+    dialogoBorrarCopia.value.close()
+  })
+}
+
 async function prepararCopia() {
   const cuenta = usuario.value
+  const generacion = generacionCopia
   const hoy = diaUtc(calendario.format(new Date()))
   const lunes = sumarDias(hoy, -((hoy.getUTCDay() + 6) % 7))
   const desde = claveDia(lunes)
   const hasta = claveDia(sumarDias(lunes, 30))
   try {
-    const agenda = await api(rutaAgenda(desde, hasta))
+    const agenda = await api(rutaAgenda(desde, hasta) + '&ocupacion_espacios=1')
     const horario = cuenta.profesional_id
       ? (await api('/api/admin/agenda/turnos/horario-habitual')).horario
       : null
@@ -495,12 +544,12 @@ async function prepararCopia() {
       editable: false,
     }))
     agenda.preparaciones = agenda.preparaciones.map(item => ({ ...item, editable: false }))
-    if (usuario.value !== cuenta || sinConexion.value) return
+    if (usuario.value !== cuenta || sinConexion.value || generacion !== generacionCopia) return
     const instante = Date.now()
     const muestra = { usuario: { id: cuenta.id, admin: cuenta.admin, profesional_id: cuenta.profesional_id },
       agenda, horario, desde, hasta, instante, vence: instante + 60 * 60 * 1000 }
     await guardarCopia(muestra)
-    if (usuario.value !== cuenta || sinConexion.value) return
+    if (usuario.value !== cuenta || sinConexion.value || generacion !== generacionCopia) return
     copia.value = muestra
     estadoCopia.value = ''
   } catch (fallo) {
@@ -893,6 +942,10 @@ onMounted(() => {
   window.addEventListener('offline', desconectar)
   window.addEventListener('focus', alVolver)
   canalSesion?.addEventListener('message', evento => {
+    if (evento.data?.tipo === 'copia-borrada') {
+      if (usuario.value?.id === evento.data.cuenta) quitarCopiaVisible()
+      return
+    }
     if (!usuario.value || usuario.value.id === evento.data) return
     usuario.value = null
     copia.value = null
@@ -931,6 +984,8 @@ onMounted(() => {
               {{ persona.id === usuario.profesional_id ? `Mi agenda · ${persona.nombre}` : persona.nombre }}
             </button>
           </div>
+          <button v-if="copia" type="button" :disabled="ocupado" @click="confirmarBorradoCopia">Borrar caché de agenda</button>
+          <button v-else-if="!sinConexion" type="button" :disabled="ocupado" @click="ejecutar(prepararCopia)">Descargar copia de la agenda</button>
           <button type="button" :disabled="ocupado || sinConexion" @click="salir">Cerrar sesión</button>
         </div>
       </details>
@@ -941,9 +996,23 @@ onMounted(() => {
         <strong>Sin conexión</strong>
         <p v-if="copia">Última actualización: {{ calendario.format(copia.instante) }} · {{ reloj.format(copia.instante) }} · Período descargado: {{ rangoCopia }}.</p>
         <p v-if="estadoCopia">{{ estadoCopia }}</p>
-        <button type="button" :disabled="ocupado" @click="reconectar">Intentar conectar</button>
+        <div class="acciones">
+          <button type="button" :disabled="ocupado" @click="reconectar">Intentar conectar</button>
+          <button v-if="copia" type="button" class="secundario" :disabled="ocupado" @click="confirmarBorradoCopia">Borrar caché de agenda</button>
+        </div>
       </section>
       <p v-else-if="estadoCopia" role="status">{{ estadoCopia }}</p>
+      <dialog ref="dialogoBorrarCopia" aria-labelledby="titulo-borrar-copia"
+        @close="confirmandoBorrado = false" @cancel="ocupado && $event.preventDefault()">
+        <h2 id="titulo-borrar-copia">Borrar caché de agenda</h2>
+        <p>Se borra solo la copia descargada de esta agenda en este dispositivo. Los turnos pendientes de sincronizar, los archivos de la app y las demás cachés se conservan.</p>
+        <p v-if="sinConexion">Para volver a consultar la agenda, vas a necesitar conexión.</p>
+        <p v-if="error && confirmandoBorrado" role="alert">{{ error }}</p>
+        <div class="acciones-formulario">
+          <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" autofocus @click="dialogoBorrarCopia.close()">Cancelar</button>
+          <button type="button" class="boton-formulario boton-formulario--guardar" :disabled="ocupado" @click="borrarCacheAgenda">Borrar copia</button>
+        </div>
+      </dialog>
       <section v-if="seccionAgenda === 'agenda' && altas.length" class="panel" aria-labelledby="titulo-altas-locales">
         <h2 id="titulo-altas-locales">Turnos guardados en este dispositivo</h2>
         <p>El espacio y las profesionales se comprueban al sincronizar.</p>
@@ -966,7 +1035,7 @@ onMounted(() => {
         @seleccionar="fichaId = $event" @ver-turno="abrirResultado" />
       <HorariosPersonales v-if="esSeccionPersonal" :seccion="seccionAgenda" :consultar="api" />
       <h1 v-if="seccionAgenda === 'mensajes'">Mensajes privados</h1>
-      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta && !buscandoTurnos && !turnoAsistencia" role="alert">{{ error }}</p>
+      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta && !buscandoTurnos && !turnoAsistencia && !confirmandoBorrado" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
       <p v-if="!datos && ocupado" role="status">Cargando agenda…</p>
 
@@ -1001,6 +1070,15 @@ onMounted(() => {
             </div>
             <label>Ir a fecha <input :value="fecha" type="date" :disabled="ocupado" @change="cambiarFecha($event.target.value)"></label>
           </div>
+          <section v-if="sinConexion" class="ocupacion-copiada" aria-labelledby="titulo-ocupacion-copiada">
+            <h2 id="titulo-ocupacion-copiada">Espacios ocupados · {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
+            <p>Según la última copia. La disponibilidad se vuelve a comprobar al sincronizar.</p>
+            <p v-if="!ocupacionesDelDia">La copia no incluye ocupaciones para esta fecha.</p>
+            <p v-else-if="!ocupacionesDelDia.length">La copia no registra espacios ocupados para este día.</p>
+            <ul v-else class="huecos">
+              <li v-for="espacio in ocupacionesDelDia" :key="espacio.id"><strong>{{ espacio.nombre }}</strong> · {{ espacio.tramos.join(', ') }}</li>
+            </ul>
+          </section>
           <p v-if="periodoSinCopia">La copia no cubre todo este período. Elegí una fecha descargada y usá la vista Día.</p>
           <template v-else>
           <CalendarioHoras v-if="vista !== 'mes'" :dias="dias" :fecha="fecha" :zona="zona" :ocupado="ocupado"
@@ -1387,6 +1465,8 @@ onMounted(() => {
 .leyenda i { width: .9rem; height: .65rem; border-radius: .2rem; }
 .muestra-turno { background: #a9cfae; }.muestra-equipo { background: #e7cb89; }.muestra-bloqueo { background: #deb4b6; }.muestra-preparacion { background: #ccbbd6; }
 .muestra-sin-atencion { background: repeating-linear-gradient(135deg, #f0eee7 0 3px, #d7d4ca 3px 4px); border: 1px solid #cfcbbf; }
+.ocupacion-copiada { background: #f5efe3; border: 1px solid #e4dac3; border-radius: .55rem; padding: .65rem .85rem; margin-block: .75rem; }
+.ocupacion-copiada h2, .ocupacion-copiada p { margin: .3rem 0; }
 .mes-sin-atencion { color: #59655e; }
 .icono-loto { width: 1rem; height: 1rem; vertical-align: middle; }
 .turnos li:focus { outline: 2px solid #916119; outline-offset: 1px; }

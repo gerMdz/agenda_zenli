@@ -87,3 +87,5 @@
 - La agenda tiene fichas de clientes con nombre, teléfono y correo opcionales salvo el nombre. Administración puede gestionar todas las fichas. Las profesionales ven las que crearon o las de turnos en los que participan y editan o archivan las que crearon. El historial filtra los turnos por profesional, incluidos los cancelados según su última asignación. Cada observación es visible para su autora y administración. Los turnos anteriores se vinculan eligiendo la ficha explícitamente y los nombres iguales conservan identidades separadas. Las fichas y las observaciones requieren conexión.
 
 - Desde «Nuevo turno» se puede crear una ficha en un segundo modal. La agenda conserva el borrador y selecciona la ficha al guardarla. El vínculo se confirma al guardar el turno.
+
+- En modo avión la agenda muestra, por sala y día seleccionado, los horarios ocupados de la última descarga sin identificar a clientes ni profesionales. «Borrar caché de agenda» elimina exclusivamente la copia descargada de la cuenta. Conserva la cola de turnos, la caché de archivos de la app y cualquier otra caché.

@@ -40,7 +40,7 @@ final readonly class AgendaAdministrativa
     {
     }
 
-    public function consultar(string $fecha, ?string $propia = null, ?string $hasta = null): array
+    public function consultar(string $fecha, ?string $propia = null, ?string $hasta = null, bool $incluirOcupaciones = false): array
     {
         $dia = self::fecha($fecha, 'Y-m-d');
         $ultimo = self::fecha($hasta ?? $fecha, 'Y-m-d');
@@ -118,7 +118,7 @@ final readonly class AgendaAdministrativa
             $propia,
         );
 
-        return [
+        $agenda = [
             'servicios' => array_map(static fn (array $s): array => ['id' => (string) $s['id']] + $s, $servicios),
             'profesionales' => array_map(static fn (array $p): array => [
                 'id' => (string) $p['id'], 'nombre' => $p['nombre'], 'tiene_cuenta' => $p['usuario'] === null ? 0 : 1,
@@ -133,6 +133,40 @@ final readonly class AgendaAdministrativa
                 [$dia->format('Y-m-d'), $ultimo->format('Y-m-d')],
             ),
         ];
+        if ($incluirOcupaciones) {
+            $agenda['ocupaciones_espacios'] = $this->ocupacionesEspacios($periodo['desde'], $periodo['hasta']);
+        }
+
+        return $agenda;
+    }
+
+    private function ocupacionesEspacios(DateTimeImmutable $desde, DateTimeImmutable $hasta): array
+    {
+        // Ocupaciones anónimas para orientar la consulta sin conexión, incluso en la vista profesional.
+        $filas = $this->entidades->getConnection()->fetchAllAssociative(<<<'SQL'
+            WITH periodo AS (SELECT tstzrange(CAST(? AS timestamptz), CAST(? AS timestamptz), '[)') AS rango),
+                 ocupaciones AS (
+                    SELECT recurso_id, inicio, fin FROM ocupaciones_recursos
+                    UNION ALL
+                    SELECT recurso_id, inicio, fin FROM bloqueos WHERE recurso_id IS NOT NULL
+                 ),
+                 espacios AS (
+                    SELECT r.id, range_agg(tstzrange(o.inicio, o.fin, '[)') * p.rango) AS rangos
+                    FROM ocupaciones o JOIN recursos r ON r.id = o.recurso_id AND r.activo
+                    CROSS JOIN periodo p
+                    WHERE o.inicio < upper(p.rango) AND o.fin > lower(p.rango)
+                    GROUP BY r.id
+                 )
+            SELECT e.id::text AS espacio_id, lower(tramo.rango) AS inicio, upper(tramo.rango) AS fin
+            FROM espacios e CROSS JOIN LATERAL unnest(e.rangos) AS tramo(rango)
+            ORDER BY e.id, inicio
+            SQL, [$desde->format(DATE_ATOM), $hasta->format(DATE_ATOM)]);
+
+        return array_map(static fn (array $fila): array => [
+            'espacio_id' => $fila['espacio_id'],
+            'inicio' => (new DateTimeImmutable($fila['inicio']))->format(DATE_ATOM),
+            'fin' => (new DateTimeImmutable($fila['fin']))->format(DATE_ATOM),
+        ], $filas);
     }
 
     /** @return array{turnos: list<array>, hay_mas: bool} */

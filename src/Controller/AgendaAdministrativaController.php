@@ -39,6 +39,7 @@ final readonly class AgendaAdministrativaController
                 $peticion->query->getString('fecha'),
                 self::agendaPropia($usuario),
                 $peticion->query->has('hasta') ? $peticion->query->getString('hasta') : null,
+                $peticion->query->getBoolean('ocupacion_espacios'),
             ));
         } catch (InvalidArgumentException $error) {
             return $this->respuesta(['error' => $error->getMessage()], 422);
