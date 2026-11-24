@@ -1,0 +1,15 @@
+{
+  "id": "/admin/agenda",
+  "name": "Agenda Zenli",
+  "short_name": "Agenda Zenli",
+  "lang": "es-AR",
+  "start_url": "/admin/agenda",
+  "scope": "/admin",
+  "display": "standalone",
+  "theme_color": "#123a2d",
+  "background_color": "#08251b",
+  "icons": [
+    { "src": "loto-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "loto-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
