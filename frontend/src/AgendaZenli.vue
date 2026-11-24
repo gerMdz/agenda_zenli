@@ -66,6 +66,68 @@ async function descargarAgenda() {
   }
 }
 
+const dialogoBusqueda = ref(null)
+const buscandoTurnos = ref(false)
+const nombreBuscado = ref('')
+const resultadosTurnos = ref(null)
+const dialogoAsistencia = ref(null)
+const turnoAsistencia = ref(null)
+const asistenciaNueva = ref('')
+const estadosAsistencia = { programado: 'Programado', atendido: 'Atendido', ausente: 'Ausente' }
+
+function abrirBusqueda() {
+  error.value = ''
+  buscandoTurnos.value = true
+  dialogoBusqueda.value.showModal()
+}
+
+function cerrarBusqueda() {
+  buscandoTurnos.value = false
+  nombreBuscado.value = ''
+  resultadosTurnos.value = null
+  error.value = ''
+}
+
+function buscarTurnos() {
+  return ejecutar(async () => {
+    resultadosTurnos.value = null
+    resultadosTurnos.value = await api('/api/admin/agenda/turnos/buscar', 'POST', { nombre: nombreBuscado.value })
+  })
+}
+
+function abrirResultado(turno) {
+  return ejecutar(async () => {
+    dialogoBusqueda.value.close()
+    profesionalSeleccionada.value = ''
+    vista.value = 'dia'
+    fecha.value = calendario.format(new Date(turno.inicio))
+    await Promise.all([cargarDia(), cargarHorarioEnVista()])
+    if (datos.value?.turnos.some(item => item.id === turno.id)) await verEnAgenda(fecha.value, turno.id)
+    else aviso.value = 'El turno ya no está disponible en esa fecha.'
+  })
+}
+
+async function abrirAsistencia(turno) {
+  error.value = ''
+  turnoAsistencia.value = turno
+  asistenciaNueva.value = turno.asistencia
+  await nextTick()
+  dialogoAsistencia.value.showModal()
+}
+
+function guardarAsistencia() {
+  return ejecutar(async () => {
+    const turno = turnoAsistencia.value
+    await api(`/api/admin/agenda/turnos/${turno.id}/asistencia`, 'PUT', {
+      asistencia: asistenciaNueva.value, revision: Number(turno.revision),
+    })
+    dialogoAsistencia.value.close()
+    await cargarDia()
+    await prepararCopia()
+    aviso.value = 'Asistencia actualizada.'
+  })
+}
+
 const dialogoDisponibilidad = ref(null)
 const disponibilidadAbierta = ref(false)
 const fechaDisponibilidad = ref('')
@@ -422,7 +484,7 @@ async function mostrarCopia() {
     dialogo.value?.close()
     limpiarTurno()
   }
-  for (const modal of [dialogoDisponibilidad, dialogoBloqueo, dialogoMensaje, dialogoPreparacion]) modal.value?.close()
+  for (const modal of [dialogoDisponibilidad, dialogoBloqueo, dialogoMensaje, dialogoPreparacion, dialogoBusqueda, dialogoAsistencia]) modal.value?.close()
   clearTimeout(vencimientoCopia)
   datos.value = null
   const muestra = await leerCopia().catch(() => null)
@@ -863,7 +925,7 @@ onMounted(() => {
       </section>
       <HorariosPersonales v-if="esSeccionPersonal" :seccion="seccionAgenda" :consultar="api" />
       <h1 v-if="seccionAgenda === 'mensajes'">Mensajes privados</h1>
-      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta" role="alert">{{ error }}</p>
+      <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta && !buscandoTurnos && !turnoAsistencia" role="alert">{{ error }}</p>
       <p v-if="aviso" role="status">{{ aviso }}</p>
       <p v-if="!datos && ocupado" role="status">Cargando agenda…</p>
 
@@ -871,6 +933,7 @@ onMounted(() => {
         <div v-show="seccionAgenda === 'agenda'" class="tablero">
         <section class="panel acciones-rapidas" aria-label="Acciones de agenda">
             <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno"><span aria-hidden="true">＋</span> Nuevo turno</button>
+            <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado" @click="abrirBusqueda">Buscar turnos</button>
             <button v-if="usuario.admin && !sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
             <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
               {{ !usuario.admin || (perfilEnVista && perfilEnVista === usuario.profesional_id) ? 'Ver mi disponibilidad' : 'Ver disponibilidad' }}
@@ -933,6 +996,7 @@ onMounted(() => {
                 <span v-if="turno.bloqueado" class="marca-bloqueo">Profesional no disponible</span>
                 <span v-else-if="turno.esPreparacion">Preparación del espacio</span>
                 <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
+                <small v-if="turno.asistencia" class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
                 <small v-if="turno.esPreparacion">{{ turno.espacio }}</small>
                 <small v-else><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
                 <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
@@ -944,6 +1008,7 @@ onMounted(() => {
                 <button type="button" class="secundario" :disabled="ocupado" @click="eliminarPreparacion(turno)">Eliminar</button>
               </div>
               <div v-else-if="turno.editable" class="acciones">
+                <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado" @click="abrirAsistencia(turno)">Asistencia</button>
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
               </div>
@@ -975,6 +1040,55 @@ onMounted(() => {
           </section>
         </aside>
         </div>
+
+        <dialog ref="dialogoBusqueda" aria-labelledby="titulo-busqueda-turnos"
+          @close="cerrarBusqueda" @cancel="ocupado && $event.preventDefault()">
+          <div class="barra">
+            <h2 id="titulo-busqueda-turnos">Buscar turnos</h2>
+            <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogoBusqueda.close()">Cerrar</button>
+          </div>
+          <p v-if="error && buscandoTurnos" role="alert">{{ error }}</p>
+          <form @submit.prevent="buscarTurnos">
+            <label>Nombre del cliente <input v-model="nombreBuscado" type="search" required minlength="2" maxlength="150" autocomplete="off" autofocus :disabled="ocupado"></label>
+            <button type="submit" :disabled="ocupado">Buscar</button>
+          </form>
+          <div v-if="resultadosTurnos" aria-live="polite">
+            <p v-if="!resultadosTurnos.turnos.length">No se encontraron turnos.</p>
+            <ul v-else class="turnos resultados-turnos">
+              <li v-for="turno in resultadosTurnos.turnos" :key="turno.id">
+                <div>
+                  <strong>{{ turno.cliente }}</strong>
+                  <p>{{ calendario.format(new Date(turno.inicio)) }} · {{ horarioVisible(turno) }} · {{ turno.servicio }}</p>
+                  <small class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
+                </div>
+                <button type="button" class="secundario" :disabled="ocupado" @click="abrirResultado(turno)">Ver turno</button>
+              </li>
+            </ul>
+            <p v-if="resultadosTurnos.hay_mas">Se muestran los 50 turnos más recientes. Ingresá un nombre más completo para acotar la búsqueda.</p>
+          </div>
+        </dialog>
+
+        <dialog ref="dialogoAsistencia" aria-labelledby="titulo-asistencia"
+          @close="turnoAsistencia = null" @cancel="ocupado && $event.preventDefault()">
+          <div class="barra">
+            <h2 id="titulo-asistencia">Registrar asistencia</h2>
+          </div>
+          <template v-if="turnoAsistencia">
+            <p>{{ turnoAsistencia.cliente }} · {{ horarioVisible(turnoAsistencia) }}</p>
+            <p v-if="error" role="alert">{{ error }}</p>
+            <form @submit.prevent="guardarAsistencia">
+              <label>Estado
+                <select v-model="asistenciaNueva" autofocus :disabled="ocupado">
+                  <option v-for="(etiqueta, valor) in estadosAsistencia" :key="valor" :value="valor">{{ etiqueta }}</option>
+                </select>
+              </label>
+              <div class="acciones-formulario">
+                <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogoAsistencia.close()">Cancelar</button>
+                <button type="submit" class="boton-formulario boton-formulario--guardar" :disabled="ocupado || asistenciaNueva === turnoAsistencia.asistencia">Guardar asistencia</button>
+              </div>
+            </form>
+          </template>
+        </dialog>
 
         <dialog ref="dialogoInstalacion" aria-labelledby="titulo-descargar-agenda">
           <div class="barra">
@@ -1240,6 +1354,10 @@ button { width: fit-content; padding: .6rem .8rem; border: 1px solid #214d3a; bo
 button:disabled { opacity: .55; }
 .turnos { list-style: none; padding: 0; margin: 0; }
 .turnos li { display: grid; grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr) auto; align-items: start; overflow-wrap: anywhere; gap: .6rem; padding-block: .65rem; border-top: 1px solid #e4dac3; }
+.asistencia { display: inline-block; width: fit-content; border-radius: .35rem; padding: .12rem .4rem; background: #eee8db; color: #3e493e; font-weight: 700; }
+.asistencia.atendido { background: #dceadf; color: #143c2a; }
+.asistencia.ausente { background: #f9e3df; color: #75271f; }
+.resultados-turnos p { margin: .25rem 0; }
 .detalle-turno { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem 1rem; }
 .enlace-accion { display: inline-block; padding: .6rem .8rem; border: 1px solid #214d3a; border-radius: .4rem; background: #fffaf1; color: #214d3a; text-decoration: none; }
 .enlace-accion:hover { background: #e5eee4; }

@@ -45,6 +45,7 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 - Para habilitar el uso interno con datos reales, confirmar y cargar las franjas de cada profesional, revisar sus excepciones y comprobar la agenda con una cuenta profesional y otra administradora. Mantener `/demo` y las reservas públicas desactivadas. «Solicitudes pendientes» sigue como panel informativo.
 - Verificar «Descargar app» en celulares reales con HTTPS. En Android, comprobar el diálogo de Chrome. En iPhone, seguir la guía desde Safari. En ambos, abrir el icono del loto y comprobar que lleve a la agenda después de iniciar sesión.
 - Probar en Android y iPhone la consulta en modo avión tras la primera descarga, la caducidad de la copia y la sincronización al volver a abrir la app con conexión. Las ediciones, cancelaciones y la consulta de disponibilidad en tiempo real requieren conexión. Para habilitarlo en un despliegue, aplicar la migración de identificadores de altas sincronizadas.
+- Para desplegar los estados de asistencia, aplicar la migración `Version20261124000200`. La búsqueda por nombre y el registro de asistencia se usan con conexión.
 - Los commits, el push y el despliegue los realiza Gerardo.
 
 ## Servicios de la portada

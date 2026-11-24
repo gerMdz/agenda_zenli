@@ -113,6 +113,7 @@ $profesional = new Cliente($kernel, '203.0.113.12');
 verificar($profesional->ingresar('pro@zenli.test', $clave) === 200, 'La profesional ingresa.');
 $agenda = [
     'GET /api/admin/agenda', 'POST /api/admin/agenda/turnos', 'PUT /api/admin/agenda/turnos/{id}', 'DELETE /api/admin/agenda/turnos/{id}',
+    'POST /api/admin/agenda/turnos/buscar', 'PUT /api/admin/agenda/turnos/{id}/asistencia',
     'GET /api/admin/agenda/turnos/horario-habitual', 'GET /api/admin/agenda/turnos/disponibilidad',
     'PUT /api/admin/agenda/preparaciones/{id}', 'DELETE /api/admin/agenda/preparaciones/{id}',
     'GET /api/admin/agenda/mensajes', 'POST /api/admin/agenda/mensajes',

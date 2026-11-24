@@ -124,6 +124,40 @@ final readonly class AgendaAdministrativaController
         return $this->modificarTurno($peticion);
     }
 
+    #[Route('/turnos/buscar', methods: ['POST'])]
+    public function buscarTurnos(Request $peticion): JsonResponse
+    {
+        $usuario = $this->sesion->actual();
+        try {
+            $nombre = $peticion->toArray()['nombre'] ?? null;
+            if (!is_string($nombre)) {
+                throw new InvalidArgumentException('Ingresá el nombre del cliente.');
+            }
+
+            return $this->respuesta($this->agenda->buscarTurnos($nombre, self::agendaPropia($usuario)));
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos de búsqueda.' : $error->getMessage()], 422);
+        }
+    }
+
+    #[Route('/turnos/{id}/asistencia', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT'])]
+    public function registrarAsistencia(Request $peticion, string $id): JsonResponse
+    {
+        $usuario = $this->sesion->actual();
+        try {
+            $datos = $peticion->toArray();
+            $this->agenda->registrarAsistencia($id, $datos['asistencia'] ?? null, $usuario['id'], self::agendaPropia($usuario), $datos['revision'] ?? null);
+        } catch (JsonException|InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error instanceof JsonException ? 'Revisá los datos del turno.' : $error->getMessage()], 422);
+        } catch (TurnoNoDisponible $error) {
+            return $this->respuesta(['error' => $error->getMessage()], 409);
+        } catch (HttpException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], $error->getStatusCode());
+        }
+
+        return $this->respuesta(['guardado' => true]);
+    }
+
     #[Route('/preparaciones/{id}', requirements: ['id' => '[1-9][0-9]{0,17}'], methods: ['PUT', 'DELETE'])]
     public function modificarPreparacion(Request $peticion, string $id): JsonResponse
     {

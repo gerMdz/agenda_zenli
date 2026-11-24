@@ -81,3 +81,5 @@
 - El menú de administración prioriza Agenda sobre Sitio público. En pantallas angostas, las acciones de agenda y el calendario se muestran antes del resumen.
 
 - Los formularios del panel usan un estilo común para Guardar y Cancelar. La edición de Portada y el alta y edición de Espacios se hacen en ventanas modales.
+
+- Los turnos internos nacen como Programados. Desde la hora de inicio, la profesional asignada a un turno individual o administración puede registrar Atendido o Ausente y corregir el estado. La asistencia queda auditada y conserva las ocupaciones. La búsqueda privada por nombre incluye los turnos vigentes que la cuenta puede consultar, incluidos los compartidos en los que participa.

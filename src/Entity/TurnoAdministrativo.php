@@ -40,6 +40,9 @@ class TurnoAdministrativo
     #[ORM\Column(name: 'cancelado_en', type: 'instante', nullable: true)]
     public ?DateTimeImmutable $canceladoEn = null;
 
+    #[ORM\Column(length: 12, options: ['default' => 'programado'])]
+    public string $asistencia = 'programado';
+
     #[ORM\Column(type: 'integer')]
     public int $revision = 1;
 

@@ -54,7 +54,7 @@ final readonly class AgendaAdministrativa
 
         $filas = $this->consulta(<<<DQL
             SELECT t.id AS id, t.servicioNombre AS servicio, t.clienteNombre AS cliente, t.inicio AS inicio, t.fin AS fin,
-                   t.revision AS revision, t.servicioId AS servicio_id, e.id AS espacio_id, e.nombre AS espacio,
+                   t.revision AS revision, t.asistencia AS asistencia, t.servicioId AS servicio_id, e.id AS espacio_id, e.nombre AS espacio,
                    t.profesionalesRequeridos AS profesionales_requeridos, t.senaPagada AS sena_pagada,
                    t.senaImporteCentavos AS sena_importe_centavos
             FROM App\\Entity\\OcupacionRecurso o JOIN o.turno t JOIN o.espacio e
@@ -69,7 +69,7 @@ final readonly class AgendaAdministrativa
             $turnos[] = [
                 'id' => (string) $fila['id'], 'servicio' => $fila['servicio'], 'cliente' => $fila['cliente'],
                 'inicio' => $fila['inicio']->format(DATE_ATOM), 'fin' => $fila['fin']->format(DATE_ATOM),
-                'revision' => $fila['revision'], 'servicio_id' => self::texto($fila['servicio_id']),
+                'revision' => $fila['revision'], 'asistencia' => $fila['asistencia'], 'servicio_id' => self::texto($fila['servicio_id']),
                 'espacio_id' => (string) $fila['espacio_id'], 'espacio' => $fila['espacio'], 'equipo' => $equipo,
                 'duracion' => (int) round(($fila['fin']->getTimestamp() - $fila['inicio']->getTimestamp()) / 60),
                 'profesionales' => implode(', ', $equipos[$fila['id']]['nombres'] ?? []),
@@ -133,6 +133,42 @@ final readonly class AgendaAdministrativa
                 [$dia->format('Y-m-d'), $ultimo->format('Y-m-d')],
             ),
         ];
+    }
+
+    /** @return array{turnos: list<array>, hay_mas: bool} */
+    public function buscarTurnos(string $nombre, ?string $propia): array
+    {
+        $nombre = trim($nombre);
+        if (mb_strlen($nombre) < 2 || mb_strlen($nombre) > 150 || str_contains($nombre, "\0")) {
+            throw new InvalidArgumentException('Ingresá entre 2 y 150 caracteres del nombre del cliente.');
+        }
+
+        $alcance = $propia === null ? '' : <<<'SQL'
+            AND EXISTS (SELECT 1 FROM ocupaciones_profesionales p
+                        WHERE p.turno_admin_id = t.id AND p.profesional_id = :propia)
+            SQL;
+        $parametros = ['nombre' => $nombre];
+        if ($propia !== null) {
+            $parametros['propia'] = $propia;
+        }
+        $turnos = $this->entidades->getConnection()->fetchAllAssociative(<<<SQL
+            SELECT t.id::text AS id, t.cliente_nombre AS cliente, t.servicio_nombre AS servicio,
+                   t.inicio, t.fin, t.asistencia
+            FROM turnos_administrativos t
+            WHERE t.cancelado_en IS NULL
+              AND strpos(lower(translate(t.cliente_nombre, 'áéíóúüÁÉÍÓÚÜÑ', 'aeiouuAEIOUUñ')),
+                         lower(translate(:nombre, 'áéíóúüÁÉÍÓÚÜÑ', 'aeiouuAEIOUUñ'))) > 0
+              $alcance
+            ORDER BY t.inicio DESC, t.id DESC
+            LIMIT 51
+            SQL, $parametros);
+
+        return ['turnos' => array_map(static function (array $turno): array {
+            $turno['inicio'] = (new DateTimeImmutable($turno['inicio']))->format(DATE_ATOM);
+            $turno['fin'] = (new DateTimeImmutable($turno['fin']))->format(DATE_ATOM);
+
+            return $turno;
+        }, array_slice($turnos, 0, 50)), 'hay_mas' => count($turnos) > 50];
     }
 
     public function guardarFeriado(string $fecha, mixed $activo, string $autor): void
@@ -453,6 +489,27 @@ final readonly class AgendaAdministrativa
         }));
     }
 
+    public function registrarAsistencia(string $id, mixed $asistencia, string $autor, ?string $propia, mixed $revision): void
+    {
+        if (!in_array($asistencia, ['programado', 'atendido', 'ausente'], true)) {
+            throw new InvalidArgumentException('Elegí un estado de asistencia válido.');
+        }
+
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $asistencia, $autor, $propia, $revision): void {
+            $anterior = $this->bloquearEditable($id, $propia, $revision);
+            $turno = $anterior['turno'];
+            if ($turno->asistencia === $asistencia) {
+                return;
+            }
+            if ($asistencia !== 'programado' && $turno->inicio > new DateTimeImmutable()) {
+                throw new TurnoNoDisponible('Podés registrar la asistencia desde la hora de inicio del turno.');
+            }
+            $this->registrarEvento($turno, $autor, 'ASISTENCIA', self::instantanea($anterior));
+            $turno->asistencia = $asistencia;
+            ++$turno->revision;
+        });
+    }
+
     public function cancelar(string $id, string $autor, ?string $propia, mixed $revision): void
     {
         TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $autor, $propia, $revision): void {
@@ -624,7 +681,7 @@ final readonly class AgendaAdministrativa
             'id' => $turno->id, 'servicio_id' => $turno->servicioId, 'servicio_nombre' => $turno->servicioNombre,
             'cliente_nombre' => $turno->clienteNombre, 'inicio' => $fecha($turno->inicio), 'fin' => $fecha($turno->fin),
             'creado_por' => $turno->creadoPor, 'creado_en' => $fecha($turno->creadoEn), 'cancelado_en' => $fecha($turno->canceladoEn),
-            'revision' => $turno->revision, 'profesionales_requeridos' => $turno->profesionalesRequeridos,
+            'revision' => $turno->revision, 'asistencia' => $turno->asistencia, 'profesionales_requeridos' => $turno->profesionalesRequeridos,
             'sena_pagada' => $turno->senaPagada, 'sena_importe_centavos' => $turno->senaImporteCentavos,
             'profesionales' => $anterior['profesionales'],
             'espacios' => array_map($ocupacion, $anterior['espacios']),

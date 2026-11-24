@@ -20,7 +20,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 final readonly class HistorialTurnos
 {
     private const ZONA = 'America/Argentina/Mendoza';
-    private const TIPOS_FILTRO = ['todos', 'sena', 'cancelado', 'editado', 'creado', 'preparacion'];
+    private const TIPOS_FILTRO = ['todos', 'sena', 'cancelado', 'editado', 'creado', 'preparacion', 'asistencia'];
 
     private NombresAutores $autores;
 
@@ -39,7 +39,7 @@ final readonly class HistorialTurnos
             <<<'SQL'
                 SELECT id::text AS id, servicio_id, servicio_nombre, cliente_nombre, inicio, fin,
                        creado_por::text AS creado_por, creado_en, cancelado_en, revision,
-                       profesionales_requeridos, sena_pagada, sena_importe_centavos::text AS sena_importe_centavos
+                       profesionales_requeridos, asistencia, sena_pagada, sena_importe_centavos::text AS sena_importe_centavos
                 FROM turnos_administrativos
                 WHERE id = ?
                 SQL,
@@ -221,7 +221,7 @@ final readonly class HistorialTurnos
             <<<SQL
                 SELECT t.id::text AS id, t.servicio_id, t.servicio_nombre, t.cliente_nombre, t.inicio, t.fin,
                        t.creado_por::text AS creado_por, t.creado_en, t.cancelado_en, t.revision,
-                       t.profesionales_requeridos, t.sena_pagada, t.sena_importe_centavos::text AS sena_importe_centavos
+                       t.profesionales_requeridos, t.asistencia, t.sena_pagada, t.sena_importe_centavos::text AS sena_importe_centavos
                 FROM turnos_administrativos t
                 $where
                 ORDER BY GREATEST(t.creado_en, COALESCE((SELECT MAX(e.creado_en) FROM eventos_turnos_administrativos e WHERE e.turno_id = t.id), t.creado_en)) DESC, t.id DESC
@@ -316,6 +316,7 @@ final readonly class HistorialTurnos
                 'cliente_nombre' => $turno['cliente_nombre'],
                 'inicio' => $turno['inicio'],
                 'fin' => $turno['fin'],
+                'asistencia' => $turno['asistencia'],
                 'sena_pagada' => (bool) $turno['sena_pagada'],
                 'sena_importe_centavos' => $turno['sena_importe_centavos'],
                 'profesionales' => $profesionalesPorTurno[$id] ?? [],
@@ -439,7 +440,7 @@ final readonly class HistorialTurnos
         $eventosTurno = [];
         $eventosPrep = [];
         foreach ($eventos as $indice => $evento) {
-            if (in_array($evento['tipo'], ['EDITADO', 'CANCELADO'], true)) {
+            if (in_array($evento['tipo'], ['EDITADO', 'CANCELADO', 'ASISTENCIA'], true)) {
                 $eventosTurno[] = [$indice, $evento];
             } else {
                 $eventosPrep[] = [$indice, $evento];
@@ -491,10 +492,10 @@ final readonly class HistorialTurnos
             '_orden' => 0,
         ]];
 
-        // Mapear el estado posterior de cada evento EDITADO/CANCELADO y PREP_EDITADA.
+        // Reconstruir el estado posterior de cada edición, cambio de asistencia y preparación.
         $siguienteTurno = [];
         foreach ($eventosTurno as $pos => [$indice, $evento]) {
-            if ($evento['tipo'] === 'EDITADO') {
+            if (in_array($evento['tipo'], ['EDITADO', 'ASISTENCIA'], true)) {
                 $siguienteTurno[$indice] = isset($eventosTurno[$pos + 1])
                     ? $eventosTurno[$pos + 1][1]['estado_anterior']
                     : $actual;
@@ -566,6 +567,22 @@ final readonly class HistorialTurnos
                     'resumen' => $resumen,
                     'cambios' => $cambios === [] ? ['Turno guardado sin cambios visibles'] : $cambios,
                     'cambio_sena' => $cambioSena,
+                    'autor' => $autor,
+                    'fecha' => $fecha,
+                    '_orden' => $orden,
+                ];
+            } elseif ($tipo === 'ASISTENCIA') {
+                $etiquetas = ['programado' => 'Programado', 'atendido' => 'Atendido', 'ausente' => 'Ausente'];
+                $antes = $etiquetas[$ant['asistencia'] ?? 'programado'];
+                $despues = $etiquetas[$siguienteTurno[$indice]['asistencia'] ?? 'programado'];
+                $resumen = "Asistencia: de $antes a $despues";
+                $linea[] = [
+                    'id' => 'evento-'.$evento['id'],
+                    'tipo' => 'ASISTENCIA',
+                    'etiqueta' => 'Asistencia',
+                    'resumen' => $resumen,
+                    'cambios' => [$resumen],
+                    'cambio_sena' => false,
                     'autor' => $autor,
                     'fecha' => $fecha,
                     '_orden' => $orden,
@@ -705,6 +722,7 @@ final readonly class HistorialTurnos
             'sena' => (bool) $item['cambio_sena'],
             'cancelado' => $item['tipo'] === 'CANCELADO',
             'editado' => $item['tipo'] === 'EDITADO',
+            'asistencia' => $item['tipo'] === 'ASISTENCIA',
             'creado' => $item['tipo'] === 'CREADO',
             'preparacion' => in_array($item['tipo'], ['PREP_EDITADA', 'PREP_ELIMINADA'], true),
             default => true,

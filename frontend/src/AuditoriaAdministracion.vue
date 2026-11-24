@@ -155,6 +155,7 @@ onMounted(() => {
             <option value="todos">Todos los cambios</option>
             <option value="sena">Cambios de seña</option>
             <option value="cancelado">Cancelaciones</option>
+            <option value="asistencia">Asistencia</option>
             <option value="editado">Ediciones</option>
             <option value="creado">Creaciones</option>
             <option value="preparacion">Preparaciones</option>
