@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { avisarCambioCuenta, borrarDatosLocales, leerAltas } from './agendaSinConexion.js'
 import portadaOriginal from './image/portada.webp'
 import LayoutAdministracion from './LayoutAdministracion.vue'
 import EntradaHora from './EntradaHora.vue'
@@ -233,7 +234,10 @@ function ingresar() {
   return ejecutar(async () => {
     try {
       aplicarSesion(await api('/api/admin/sesion', { method: 'POST', datos: { email: email.value, clave: clave.value } }))
-      if (usuario.value) await cargarPanel()
+      if (usuario.value) {
+        await avisarCambioCuenta(usuario.value.id).catch(() => {})
+        await cargarPanel()
+      }
     } finally {
       clave.value = ''
     }
@@ -242,7 +246,12 @@ function ingresar() {
 
 function salir() {
   return ejecutar(async () => {
+    const cuenta = usuario.value.id
+    const altas = await leerAltas(cuenta).catch(() => [])
+    if (altas.length && !window.confirm('Al cerrar sesión se borrarán los turnos pendientes de este dispositivo. ¿Cerrar sesión?')) return
+    await borrarDatosLocales(cuenta).catch(() => {})
     aplicarSesion(await api('/api/admin/sesion', { method: 'DELETE' }))
+    await avisarCambioCuenta(null).catch(() => {})
     email.value = ''
   })
 }

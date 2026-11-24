@@ -30,6 +30,9 @@ async function iniciar() {
     vista = (await import('./Administracion.vue')).default
   } else if (ruta === '/admin/agenda') {
     vista = (await import('./AgendaZenli.vue')).default
+    if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/admin/agenda-sw.js', { scope: '/admin/agenda' }).catch(console.error)
+    }
   }
 
   createApp(vista)

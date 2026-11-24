@@ -4,12 +4,20 @@ import LayoutAdministracion from './LayoutAdministracion.vue'
 import CalendarioHoras from './CalendarioHoras.vue'
 import EntradaHora from './EntradaHora.vue'
 import HorariosPersonales from './HorariosPersonales.vue'
+import {
+  avisarCambioCuenta, borrarAlta, borrarCopia, borrarDatosLocales, canalAgendaLocal,
+  guardarAlta, guardarCopia, leerAltas, leerCopia,
+} from './agendaSinConexion.js'
 import lotoUrl from './image/loto.svg?no-inline'
 
 const seccionAgenda = ref('agenda')
 const esSeccionPersonal = computed(() => ['mis-horarios', 'horarios-no-disponibles'].includes(seccionAgenda.value))
 
 function actualizarSeccion() {
+  if (sinConexion.value) {
+    seccionAgenda.value = 'agenda'
+    return
+  }
   const seccion = window.location.hash.slice(1)
   if (seccion === 'mensajes' || (usuario.value?.profesional_id && ['mis-horarios', 'horarios-no-disponibles'].includes(seccion))) {
     seccionAgenda.value = seccion
@@ -21,6 +29,11 @@ function actualizarSeccion() {
 onBeforeUnmount(() => {
   window.removeEventListener('hashchange', actualizarSeccion)
   document.removeEventListener('pointerdown', cerrarMenuFuera)
+  window.removeEventListener('online', reconectar)
+  window.removeEventListener('offline', desconectar)
+  window.removeEventListener('focus', alVolver)
+  clearTimeout(vencimientoCopia)
+  canalSesion?.close()
 })
 
 const zona = 'America/Argentina/Mendoza'
@@ -28,6 +41,14 @@ const fecha = ref(new Intl.DateTimeFormat('sv-SE', { timeZone: zona }).format(ne
 const calendario = new Intl.DateTimeFormat('sv-SE', { timeZone: zona })
 const reloj = new Intl.DateTimeFormat('es-AR', { timeZone: zona, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 const datos = ref(null)
+const sinConexion = ref(false)
+const copia = ref(null)
+const altas = ref([])
+const altaEnRevision = ref(null)
+const estadoCopia = ref('')
+let vencimientoCopia
+let reconexionSolicitada = false
+const canalSesion = canalAgendaLocal()
 const vista = ref('semana')
 const profesionalSeleccionada = ref('')
 const menuPerfil = ref(null)
@@ -101,6 +122,10 @@ const tituloAgenda = computed(() => {
 async function cargarHorarioEnVista() {
   const perfil = perfilEnVista.value
   horarioHabitual.value = null
+  if (sinConexion.value) {
+    if (perfil === usuario.value?.profesional_id) horarioHabitual.value = copia.value?.horario ?? null
+    return
+  }
   if (!perfil) return
   try {
     const consulta = usuario.value.admin ? '?profesional=' + encodeURIComponent(perfil) : ''
@@ -144,6 +169,8 @@ const turnosVisibles = computed(() => {
   }))
   return [...(datos.value?.turnos ?? []), ...bloqueos, ...preparaciones]
     .filter(turno => !perfilEnVista.value || turno.equipo.includes(perfilEnVista.value))
+    .filter(turno => !sinConexion.value || (calendario.format(new Date(turno.inicio)) <= claveDia(periodo.value.fin)
+      && calendario.format(new Date(new Date(turno.fin).getTime() - 1)) >= claveDia(periodo.value.inicio)))
     .sort((a, b) => new Date(a.inicio) - new Date(b.inicio))
 })
 
@@ -312,18 +339,188 @@ function servicioCompleto(item) {
 }
 
 async function api(ruta, method = 'GET', cuerpo) {
-  const respuesta = await fetch(ruta, {
-    method,
-    headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Zenli-CSRF': csrf.value },
-    body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
-  })
+  if (sinConexion.value) throw new Error('Esta acción requiere conexión.')
+  let respuesta
+  try {
+    respuesta = await fetch(ruta, {
+      method,
+      cache: 'no-store',
+      headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Zenli-CSRF': csrf.value },
+      body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+    })
+  } catch {
+    throw Object.assign(new Error('No se pudo conectar con la agenda.'), { red: true })
+  }
   if (respuesta.status === 401) {
+    await borrarCopia().catch(() => {})
     window.location.replace('/admin')
-    throw new Error('Ingresá nuevamente para ver la agenda.')
   }
   const contenido = await respuesta.json().catch(() => null)
-  if (!respuesta.ok || !contenido) throw new Error(contenido?.error || `La solicitud no se completó. El servidor respondió con el código ${respuesta.status}. Volvé a intentar y, si persiste, consultá el registro del servidor.`)
+  if (!respuesta.ok || !contenido) {
+    throw Object.assign(new Error(contenido?.error || 'No se pudo completar la operación.'), { estado: respuesta.status })
+  }
   return contenido
+}
+
+function rutaAgenda(desde, hasta) {
+  return `/api/admin/agenda?fecha=${desde}&hasta=${hasta}`
+}
+
+const periodoSinCopia = computed(() => sinConexion.value && copia.value
+  && (claveDia(periodo.value.inicio) < copia.value.desde || claveDia(periodo.value.fin) > copia.value.hasta))
+const rangoCopia = computed(() => copia.value
+  ? `${copia.value.desde} al ${copia.value.hasta}`
+  : '')
+
+async function prepararCopia() {
+  const cuenta = usuario.value
+  const hoy = diaUtc(calendario.format(new Date()))
+  const lunes = sumarDias(hoy, -((hoy.getUTCDay() + 6) % 7))
+  const desde = claveDia(lunes)
+  const hasta = claveDia(sumarDias(lunes, 30))
+  try {
+    const agenda = await api(rutaAgenda(desde, hasta))
+    const horario = cuenta.profesional_id
+      ? (await api('/api/admin/agenda/turnos/horario-habitual')).horario
+      : null
+    agenda.turnos = agenda.turnos.map(({ sena_importe_centavos, sena_pagada, ...turno }) => ({
+      ...turno,
+      cliente: turno.cliente.trim().split(/\s+/).map(nombre => nombre[0] + '.').join(' '),
+      editable: false,
+    }))
+    agenda.preparaciones = agenda.preparaciones.map(item => ({ ...item, editable: false }))
+    if (usuario.value !== cuenta || sinConexion.value) return
+    const instante = Date.now()
+    const muestra = { usuario: { id: cuenta.id, admin: cuenta.admin, profesional_id: cuenta.profesional_id },
+      agenda, horario, desde, hasta, instante, vence: instante + 60 * 60 * 1000 }
+    await guardarCopia(muestra)
+    if (usuario.value !== cuenta || sinConexion.value) return
+    copia.value = muestra
+    estadoCopia.value = ''
+  } catch (fallo) {
+    if (fallo.red) await mostrarCopia()
+    else estadoCopia.value = 'No se pudo actualizar la copia para usar sin conexión.'
+  }
+}
+
+async function mostrarCopia() {
+  sinConexion.value = true
+  if (editando.value) {
+    dialogo.value?.close()
+    limpiarTurno()
+  }
+  for (const modal of [dialogoDisponibilidad, dialogoBloqueo, dialogoMensaje, dialogoPreparacion]) modal.value?.close()
+  clearTimeout(vencimientoCopia)
+  datos.value = null
+  const muestra = await leerCopia().catch(() => null)
+  if (!muestra || muestra.vence <= Date.now() || (usuario.value && muestra.usuario.id !== usuario.value.id)) {
+    if (muestra?.vence <= Date.now()) await borrarCopia().catch(() => {})
+    copia.value = null
+    usuario.value = null
+    altas.value = []
+    estadoCopia.value = 'Conectate e iniciá sesión para descargar una copia de la agenda.'
+    return
+  }
+  copia.value = muestra
+  usuario.value = muestra.usuario
+  altas.value = await leerAltas(muestra.usuario.id).catch(() => [])
+  actualizarSeccion()
+  estadoCopia.value = ''
+  await cargarDia()
+  await cargarHorarioEnVista()
+  vencimientoCopia = setTimeout(mostrarCopia, muestra.vence - Date.now())
+}
+
+async function sincronizarAltas() {
+  altas.value = await leerAltas(usuario.value.id).catch(() => [])
+  let sincronizadas = 0
+  for (const alta of altas.value) {
+    if (alta.error) continue
+    try {
+      await api('/api/admin/agenda/turnos', 'POST', { ...alta.turno, operacion: alta.id })
+    } catch (fallo) {
+      if (fallo.red) throw fallo
+      if (![400, 403, 409, 422].includes(fallo.estado)) throw fallo
+      await guardarAlta({ ...alta, error: fallo.message })
+      continue
+    }
+    await borrarAlta(alta.id)
+    sincronizadas++
+  }
+  altas.value = await leerAltas(usuario.value.id).catch(() => [])
+  if (sincronizadas) aviso.value = sincronizadas === 1 ? 'Se sincronizó un turno.' : `Se sincronizaron ${sincronizadas} turnos.`
+}
+
+async function cargarEnLinea() {
+  sinConexion.value = false
+  clearTimeout(vencimientoCopia)
+  try {
+    const sesion = await api('/api/admin/sesion')
+    if (!sesion.usuario) {
+      await borrarCopia().catch(() => {})
+      window.location.replace('/admin')
+      return
+    }
+    const anterior = await leerCopia().catch(() => null)
+    if (anterior && (anterior.usuario.id !== sesion.usuario.id || anterior.usuario.admin !== sesion.usuario.admin
+        || anterior.usuario.profesional_id !== sesion.usuario.profesional_id)) {
+      await borrarCopia()
+      copia.value = null
+      datos.value = null
+    }
+    usuario.value = sesion.usuario
+    csrf.value = sesion.csrf
+    actualizarSeccion()
+    await sincronizarAltas()
+    await Promise.all([cargarDia(), cargarHorarioEnVista(), api('/api/admin/agenda/mensajes').then(contenido => { bandeja.value = contenido })])
+    await prepararCopia()
+  } catch (fallo) {
+    if (!fallo.red) throw fallo
+    await mostrarCopia()
+  }
+}
+
+function reconectar() {
+  if (ocupado.value) {
+    reconexionSolicitada = true
+    return
+  }
+  return ejecutar(cargarEnLinea)
+}
+
+function desconectar() {
+  if (!ocupado.value) return ejecutar(mostrarCopia)
+}
+
+function alVolver() {
+  if (navigator.onLine && (sinConexion.value || altas.value.some(alta => !alta.error))) return reconectar()
+  if (sinConexion.value && copia.value?.vence <= Date.now()) return desconectar()
+}
+
+async function descartarAlta(alta) {
+  if (!window.confirm('¿Descartar este turno pendiente del dispositivo?')) return
+  await ejecutar(async () => {
+    await borrarAlta(alta.id)
+    altas.value = await leerAltas(usuario.value.id)
+  })
+}
+
+function revisarAlta(alta) {
+  const item = alta.turno
+  limpiarTurno()
+  altaEnRevision.value = alta
+  const [dia, horario] = item.inicio.split('T')
+  fechaTurno.value = dia
+  hora.value = horario
+  cliente.value = item.cliente
+  servicio.value = item.servicio
+  duracion.value = item.duracion
+  espacio.value = item.espacio
+  equipo.value = [...item.profesionales]
+  varias.value = equipo.value.length > 1
+  senaPagada.value = item.sena_pagada
+  senaImporte.value = importeVisible(item.sena_importe_centavos)
+  abrirModal()
 }
 
 async function ejecutar(accion) {
@@ -334,15 +531,25 @@ async function ejecutar(accion) {
   try {
     await accion()
   } catch (fallo) {
-    error.value = fallo.message
+    if (fallo.red) await mostrarCopia()
+    else error.value = fallo.message
   } finally {
     ocupado.value = false
+    if (reconexionSolicitada) {
+      reconexionSolicitada = false
+      if (navigator.onLine) void reconectar()
+    } else if (!navigator.onLine && !sinConexion.value) void desconectar()
   }
 }
 
 async function cargarDia() {
   const { inicio, fin } = periodo.value
-  datos.value = await api(`/api/admin/agenda?fecha=${claveDia(inicio)}&hasta=${claveDia(fin)}`)
+  if (sinConexion.value) {
+    datos.value = copia.value?.agenda ?? null
+  } else {
+    datos.value = await api(rutaAgenda(claveDia(inicio), claveDia(fin)))
+  }
+  if (!datos.value) return
   if (datos.value.espacios.length === 1) espacio.value = datos.value.espacios[0].id
   if (datos.value.servicios.length === 1) servicio.value = datos.value.servicios[0].id
   if (!usuario.value.admin && !editando.value) equipo.value = [usuario.value.profesional_id]
@@ -426,6 +633,7 @@ function editarTurno(turno) {
 
 function limpiarTurno() {
   editando.value = null
+  altaEnRevision.value = null
   cliente.value = ''
   hora.value = ''
   duracion.value = 20
@@ -440,22 +648,48 @@ function limpiarTurno() {
 function guardarTurno() {
   return ejecutar(async () => {
     const anterior = editando.value
-    await api(anterior ? `/api/admin/agenda/turnos/${anterior.id}` : '/api/admin/agenda/turnos', anterior ? 'PUT' : 'POST', {
-      cliente: cliente.value,
+    const turno = {
+      cliente: cliente.value.trim(),
       servicio: servicio.value,
       espacio: espacio.value,
-      profesionales: equipo.value,
+      profesionales: [...equipo.value],
       inicio: `${fechaTurno.value}T${hora.value}`,
       duracion: duracion.value,
       sena_pagada: senaPagada.value,
       sena_importe_centavos: importeEnCentavos(senaImporte.value),
-      revision: anterior ? Number(anterior.revision) : undefined,
-    })
-    fecha.value = fechaTurno.value
+    }
+    const revisada = altaEnRevision.value
+    const dia = fechaTurno.value
+    const pendiente = sinConexion.value
+    if (anterior) {
+      await api(`/api/admin/agenda/turnos/${anterior.id}`, 'PUT', { ...turno, revision: Number(anterior.revision) })
+    } else if (pendiente || revisada) {
+      if (pendiente && (!copia.value || copia.value.vence <= Date.now())) {
+        throw new Error('La copia venció. Volvé a conectarte antes de cargar turnos.')
+      }
+      if (!turno.cliente) throw new Error('Ingresá un nombre para el turno.')
+      if (turno.inicio <= `${calendario.format(new Date())}T${reloj.format(new Date())}`) throw new Error('Elegí un horario futuro.')
+      const { sena_pagada, sena_importe_centavos, ...borrador } = turno
+      await guardarAlta({
+        id: revisada?.id ?? crypto.randomUUID(), cuenta: usuario.value.id,
+        creada: revisada?.creada ?? Date.now(), turno: borrador,
+      })
+      altas.value = await leerAltas(usuario.value.id)
+      if (!pendiente) await sincronizarAltas()
+    } else {
+      await api('/api/admin/agenda/turnos', 'POST', turno)
+    }
+    fecha.value = dia
     dialogo.value.close()
     limpiarTurno()
+    if (pendiente) {
+      aviso.value = 'Turno pendiente de sincronizar.'
+      return
+    }
     await cargarDia()
-    aviso.value = anterior ? 'Turno actualizado.' : 'Turno guardado.'
+    await prepararCopia()
+    if (!revisada) aviso.value = anterior ? 'Turno actualizado.' : 'Turno guardado.'
+
   })
 }
 
@@ -465,6 +699,7 @@ function cancelarTurno(turno) {
     await api(`/api/admin/agenda/turnos/${turno.id}`, 'DELETE', { revision: Number(turno.revision) })
     if (editando.value?.id === turno.id) limpiarTurno()
     await cargarDia()
+    await prepararCopia()
     aviso.value = 'Turno cancelado. Se liberaron sus horarios.'
   })
 }
@@ -528,25 +763,33 @@ function cerrarMensaje() {
 
 function salir() {
   return ejecutar(async () => {
+    if (altas.value.length && !window.confirm('Al cerrar sesión se borrarán los turnos pendientes de este dispositivo. ¿Cerrar sesión?')) return
+    await borrarDatosLocales(usuario.value.id).catch(() => {})
     await api('/api/admin/sesion', 'DELETE')
+    await avisarCambioCuenta(null).catch(() => {})
     window.location.replace('/admin')
   })
 }
 
-onMounted(() => ejecutar(async () => {
+onMounted(() => {
   document.title = 'Agenda · Zenli'
   window.addEventListener('hashchange', actualizarSeccion)
   document.addEventListener('pointerdown', cerrarMenuFuera)
-  const sesion = await api('/api/admin/sesion')
-  if (!sesion.usuario) {
-    window.location.replace('/admin')
-    return
-  }
-  usuario.value = sesion.usuario
-  csrf.value = sesion.csrf
-  actualizarSeccion()
-  await Promise.all([cargarDia(), cargarHorarioEnVista(), api('/api/admin/agenda/mensajes').then(contenido => { bandeja.value = contenido })])
-}))
+  window.addEventListener('online', reconectar)
+  window.addEventListener('offline', desconectar)
+  window.addEventListener('focus', alVolver)
+  canalSesion?.addEventListener('message', evento => {
+    if (!usuario.value || usuario.value.id === evento.data) return
+    usuario.value = null
+    copia.value = null
+    datos.value = null
+    altas.value = []
+    if (navigator.onLine) window.location.replace('/admin')
+    else estadoCopia.value = 'La sesión cambió. Conectate e iniciá sesión para ver la agenda.'
+  })
+  return navigator.onLine ? reconectar() : desconectar()
+})
+
 </script>
 
 <template>
@@ -574,12 +817,37 @@ onMounted(() => ejecutar(async () => {
               {{ persona.id === usuario.profesional_id ? `Mi agenda · ${persona.nombre}` : persona.nombre }}
             </button>
           </div>
-          <button type="button" :disabled="ocupado" @click="salir">Cerrar sesión</button>
+          <button type="button" :disabled="ocupado || sinConexion" @click="salir">Cerrar sesión</button>
         </div>
       </details>
     </header>
-    <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda">
+    <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda" :solo-agenda="sinConexion">
     <main id="turnos">
+      <section v-if="sinConexion" class="panel" aria-label="Conexión">
+        <strong>Sin conexión</strong>
+        <p v-if="copia">Última actualización: {{ calendario.format(copia.instante) }} · {{ reloj.format(copia.instante) }} · Período descargado: {{ rangoCopia }}.</p>
+        <p v-if="estadoCopia">{{ estadoCopia }}</p>
+        <button type="button" :disabled="ocupado" @click="reconectar">Intentar conectar</button>
+      </section>
+      <p v-else-if="estadoCopia" role="status">{{ estadoCopia }}</p>
+      <section v-if="seccionAgenda === 'agenda' && altas.length" class="panel" aria-labelledby="titulo-altas-locales">
+        <h2 id="titulo-altas-locales">Turnos guardados en este dispositivo</h2>
+        <p>El espacio y las profesionales se comprueban al sincronizar.</p>
+        <button v-if="!sinConexion && altas.some(alta => !alta.error)" type="button" :disabled="ocupado" @click="reconectar">Sincronizar ahora</button>
+        <ul class="turnos">
+          <li v-for="alta in altas" :key="alta.id">
+            <div class="detalle-turno">
+              <strong>{{ alta.turno.cliente }} · {{ alta.turno.inicio.replace('T', ' · ') }}</strong>
+              <small v-if="alta.error" class="marca-bloqueo">{{ alta.error }}</small>
+              <small v-else>Pendiente de sincronizar</small>
+            </div>
+            <div class="acciones">
+              <button v-if="alta.error" type="button" :disabled="ocupado" @click="revisarAlta(alta)">Revisar turno</button>
+              <button type="button" class="secundario" :disabled="ocupado" @click="descartarAlta(alta)">Descartar</button>
+            </div>
+          </li>
+        </ul>
+      </section>
       <HorariosPersonales v-if="esSeccionPersonal" :seccion="seccionAgenda" :consultar="api" />
       <h1 v-if="seccionAgenda === 'mensajes'">Mensajes privados</h1>
       <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta" role="alert">{{ error }}</p>
@@ -607,6 +875,8 @@ onMounted(() => ejecutar(async () => {
             </div>
             <label>Ir a fecha <input :value="fecha" type="date" :disabled="ocupado" @change="cambiarFecha($event.target.value)"></label>
           </div>
+          <p v-if="periodoSinCopia">La copia no cubre todo este período. Elegí una fecha descargada y usá la vista Día.</p>
+          <template v-else>
           <CalendarioHoras v-if="vista !== 'mes'" :dias="dias" :fecha="fecha" :zona="zona" :ocupado="ocupado"
             @seleccionar="fecha = $event" @ver-turno="verEnAgenda" />
           <div v-else class="calendario">
@@ -630,7 +900,7 @@ onMounted(() => ejecutar(async () => {
           </ul>
           <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
           <p v-if="feriadoSeleccionado">Feriado · Sin atención habitual</p>
-          <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado" @click="alternarFeriado">
+          <button v-if="usuario.admin && !sinConexion" type="button" class="secundario" :disabled="ocupado" @click="alternarFeriado">
             {{ feriadoSeleccionado ? 'Quitar feriado de este día' : 'Marcar este día como feriado' }}
           </button>
           <p v-if="!turnosDia.length">No hay turnos ni horarios no disponibles para este día.</p>
@@ -644,9 +914,9 @@ onMounted(() => ejecutar(async () => {
                 <small v-if="turno.esPreparacion">{{ turno.espacio }}</small>
                 <small v-else><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
                 <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
-                <small v-if="!turno.bloqueado && !turno.esPreparacion">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
+                <small v-if="!sinConexion && !turno.bloqueado && !turno.esPreparacion">Seña: {{ turno.sena_pagada ? 'pagada' : 'no pagada' }}<template v-if="turno.sena_importe_centavos != null"> · $ {{ importeVisible(turno.sena_importe_centavos) }}</template></small>
               </div>
-              <a v-if="turno.bloqueado && usuario.admin" class="enlace-accion" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar horario no disponible</a>
+              <a v-if="turno.bloqueado && usuario.admin && !sinConexion" class="enlace-accion" :href="`/admin?profesional=${turno.profesional_id}#horarios-profesionales`">Editar horario no disponible</a>
               <div v-else-if="turno.esPreparacion && turno.editable" class="acciones">
                 <button type="button" :disabled="ocupado" @click="editarPreparacion(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="eliminarPreparacion(turno)">Eliminar</button>
@@ -655,25 +925,26 @@ onMounted(() => ejecutar(async () => {
                 <button type="button" :disabled="ocupado" @click="editarTurno(turno)">Editar</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cancelarTurno(turno)">Cancelar turno</button>
               </div>
-              <small v-else-if="!turno.bloqueado && !turno.esPreparacion">Turno compartido · lo administra el equipo de administración</small>
+              <small v-else-if="!sinConexion && !turno.bloqueado && !turno.esPreparacion">Turno compartido · lo administra el equipo de administración</small>
             </li>
           </ul>
+          </template>
         </section>
 
         <aside class="columna-acciones" aria-label="Acciones y resumen">
           <div class="panel acciones-rapidas">
             <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno"><span aria-hidden="true">＋</span> Nuevo turno</button>
-            <button v-if="usuario.admin" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
-            <button type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
+            <button v-if="usuario.admin && !sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
+            <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
               {{ !usuario.admin || (perfilEnVista && perfilEnVista === usuario.profesional_id) ? 'Ver mi disponibilidad' : 'Ver disponibilidad' }}
             </button>
-            <a v-if="usuario.admin" :href="perfilEnVista ? `/admin?profesional=${perfilEnVista}#horarios-profesionales` : '/admin#horarios-profesionales'" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
+            <a v-if="usuario.admin && !sinConexion" :href="perfilEnVista ? `/admin?profesional=${perfilEnVista}#horarios-profesionales` : '/admin#horarios-profesionales'" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
           </div>
           <section class="panel solicitudes" aria-labelledby="titulo-solicitudes">
             <h2 id="titulo-solicitudes">Solicitudes pendientes</h2>
             <p>Las reservas se gestionan desde la agenda interna.</p>
           </section>
-          <section class="panel" aria-labelledby="titulo-resumen">
+          <section v-if="!periodoSinCopia" class="panel" aria-labelledby="titulo-resumen">
             <h2 id="titulo-resumen">Resumen del período</h2>
             <dl class="resumen">
               <div v-for="item in resumen" :key="item.nombre"><dt>{{ item.nombre }}</dt><dd>{{ item.total }}</dd></div>
@@ -775,6 +1046,7 @@ onMounted(() => ejecutar(async () => {
             <p v-if="!datos.servicios.length">Creá un servicio en <a href="/admin">Administración</a> para cargar turnos.</p>
             <p v-else-if="!datos.espacios.length">Hace falta al menos un espacio activo.</p>
             <form v-else @submit.prevent="guardarTurno">
+              <p v-if="sinConexion">El turno se guardará pendiente en este dispositivo. Se confirmará cuando el servidor compruebe la disponibilidad.</p>
               <label>Servicio
                 <select v-model="servicio" required>
                   <option disabled value="">Elegí un servicio</option>
@@ -785,8 +1057,8 @@ onMounted(() => ejecutar(async () => {
               <p v-if="servicioElegido && !servicioCompleto(servicioElegido)">Falta configurar {{ [servicioElegido.duracion_minima == null ? 'la duración informativa' : '', servicioElegido.profesionales_requeridos == null ? 'la cantidad de profesionales' : '', !datos.preparacion ? 'la preparación general' : ''].filter(Boolean).join(', ') }}. Podés guardar el turno igualmente.</p>
               <label>Fecha del turno <input v-model="fechaTurno" type="date" required></label>
               <label>Nombre del cliente <input v-model="cliente" maxlength="150" required></label>
-              <label class="opcion"><input v-model="senaPagada" type="checkbox"> Seña pagada</label>
-              <label>Importe de la seña (opcional) <input v-model.trim="senaImporte" type="text" inputmode="decimal" placeholder="0,00"></label>
+              <label v-if="!sinConexion && !altaEnRevision" class="opcion"><input v-model="senaPagada" type="checkbox"> Seña pagada</label>
+              <label v-if="!sinConexion && !altaEnRevision">Importe de la seña (opcional) <input v-model.trim="senaImporte" type="text" inputmode="decimal" placeholder="0,00"></label>
               <div class="barra">
                 <label>Hora (24 horas) <EntradaHora v-model="hora" required /></label>
                 <label>Duración (min)
@@ -817,11 +1089,11 @@ onMounted(() => ejecutar(async () => {
                 </select>
               </label>
               <p v-if="servicioElegido && equipo.length < Number(servicioElegido.profesionales_requeridos)">Faltan profesionales: el turno quedará señalado en la agenda.</p>
-              <button :disabled="ocupado || !fechaTurno || !servicioElegido">{{ editando ? 'Guardar cambios' : 'Cargar turno' }}</button>
+              <button :disabled="ocupado || !fechaTurno || !servicioElegido">{{ editando ? 'Guardar cambios' : (sinConexion ? 'Guardar pendiente' : 'Cargar turno') }}</button>
             </form>
         </dialog>
 
-        <section v-show="seccionAgenda === 'mensajes'" id="mensajes" class="panel" aria-labelledby="titulo-mensajes">
+        <section v-show="seccionAgenda === 'mensajes' && !sinConexion" id="mensajes" class="panel" aria-labelledby="titulo-mensajes">
             <div class="barra">
               <h2 id="titulo-mensajes">Bandeja de mensajes</h2>
               <div class="acciones">

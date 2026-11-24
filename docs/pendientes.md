@@ -44,6 +44,7 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 - En Chrome a 390 × 844 px verificamos el fondo a pantalla completa y el menú plegado al entrar. En esa resolución, el resumen y el horario habitual quedan antes de la grilla. Si en el uso diario cuesta llegar al calendario, revisar ese orden con las profesionales.
 - Para habilitar el uso interno con datos reales, confirmar y cargar las franjas de cada profesional, revisar sus excepciones y comprobar la agenda con una cuenta profesional y otra administradora. Mantener `/demo` y las reservas públicas desactivadas. «Solicitudes pendientes» sigue como panel informativo.
 - Verificar la instalación de Agenda Zenli en celulares reales cuando haya un entorno HTTPS autorizado. En Chrome para Android, abrir la agenda y usar **Instalar aplicación** desde el menú. En Safari para iPhone, usar **Compartir → Añadir a pantalla de inicio** y activar **Abrir como app web** si aparece. Abrir el icono del loto y comprobar que lleve a la agenda después de iniciar sesión.
+- Probar en Android y iPhone la consulta en modo avión tras la primera descarga, la caducidad de la copia y la sincronización al volver a abrir la app con conexión. Las ediciones, cancelaciones y la consulta de disponibilidad en tiempo real requieren conexión. Para habilitarlo en un despliegue, aplicar la migración de identificadores de altas sincronizadas.
 - Los commits, el push y el despliegue los realiza Gerardo.
 
 ## Servicios de la portada

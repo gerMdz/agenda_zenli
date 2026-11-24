@@ -299,7 +299,34 @@ final readonly class AgendaAdministrativa
             throw new InvalidArgumentException('Ingresá una seña válida en centavos.');
         }
 
-        return $this->conConcurrencia(fn (): string => TransaccionEntidades::ejecutar($this->entidades, function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe): string {
+        $operacion = $datos['operacion'] ?? null;
+        if ($operacion !== null && ($editar !== null || !is_string($operacion)
+            || preg_match('/\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/', $operacion) !== 1)) {
+            throw new InvalidArgumentException('El identificador del alta no es válido.');
+        }
+        $huella = $operacion === null ? null : hash('sha256', serialize([
+            $servicio, $espacio, $equipo, trim($cliente), $inicio->format(DATE_ATOM), $duracion, $pagada, $importe,
+        ]));
+
+        return $this->conConcurrencia(fn (): string => TransaccionEntidades::ejecutar($this->entidades, function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe, $operacion, $huella): string {
+            $conexion = $this->entidades->getConnection();
+            if ($operacion !== null) {
+                $conexion->executeQuery('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', ["alta-turno:$autor:$operacion"]);
+                $alta = $conexion->fetchAssociative(
+                    'SELECT huella, turno_id FROM altas_turnos_sincronizadas WHERE usuario_id = ? AND operacion = ?',
+                    [$autor, $operacion],
+                );
+                if ($alta !== false) {
+                    if ($alta['huella'] !== $huella) {
+                        throw new TurnoNoDisponible('Este identificador ya se usó para otro turno.');
+                    }
+
+                    return (string) $alta['turno_id'];
+                }
+                if ($inicio < new DateTimeImmutable()) {
+                    throw new TurnoNoDisponible('El horario del turno pendiente ya pasó.');
+                }
+            }
             $anterior = $editar === null ? null : $this->bloquearEditable($editar, $propia, $revision);
             if ($duracion < 20 && ($anterior === null || $anterior['turno']->fin->getTimestamp() - $anterior['turno']->inicio->getTimestamp() !== $duracion * 60)) {
                 throw new InvalidArgumentException('La duración mínima del turno es de 20 minutos.');
@@ -395,6 +422,12 @@ final readonly class AgendaAdministrativa
                 }
             }
             $this->entidades->flush();
+
+            if ($operacion !== null) {
+                $conexion->insert('altas_turnos_sincronizadas', [
+                    'usuario_id' => $autor, 'operacion' => $operacion, 'huella' => $huella, 'turno_id' => $turno->id,
+                ]);
+            }
 
             return (string) $turno->id;
         }));
