@@ -4,6 +4,7 @@ import Aura from '@primeuix/themes/aura'
 import App from './App.vue'
 import { prepararInstalacionAgenda } from './instalacionAgenda.js'
 import './base.css'
+import './botonesFormulario.css'
 
 function agregarMetadatosAgenda() {
   for (const [rel, archivo] of [

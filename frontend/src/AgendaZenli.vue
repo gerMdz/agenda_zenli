@@ -1027,20 +1027,20 @@ onMounted(() => {
         <dialog ref="dialogoPreparacion" aria-labelledby="titulo-preparacion" @close="preparacionEditada = null" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
             <h2 id="titulo-preparacion">Editar preparación del espacio</h2>
-            <button type="button" class="secundario" :disabled="ocupado" @click="dialogoPreparacion.close()">Cerrar</button>
+            <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogoPreparacion.close()">Cerrar</button>
           </div>
           <p v-if="error && preparacionEditada" role="alert">{{ error }}</p>
           <form @submit.prevent="guardarPreparacion">
             <label>Desde <input v-model="inicioPreparacion" type="datetime-local" required></label>
             <label>Hasta <input v-model="finPreparacion" type="datetime-local" required></label>
-            <button :disabled="ocupado">Guardar cambios</button>
+            <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar cambios</button>
           </form>
         </dialog>
 
         <dialog ref="dialogoBloqueo" aria-labelledby="titulo-bloqueo" @close="modoBloqueo = false" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
             <h2 id="titulo-bloqueo">Horario no disponible de una profesional</h2>
-            <button type="button" class="secundario" :disabled="ocupado" @click="dialogoBloqueo.close()">Cerrar</button>
+            <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogoBloqueo.close()">Cerrar</button>
           </div>
           <p v-if="error && modoBloqueo" role="alert">{{ error }}</p>
           <p>Este horario solo afecta a la profesional elegida; no reserva ni bloquea el espacio.</p>
@@ -1057,14 +1057,14 @@ onMounted(() => {
               <label>Desde (24 h) <EntradaHora v-model="bloqueoNuevo.hora_inicio" required /></label>
               <label>Hasta (24 h) <EntradaHora v-model="bloqueoNuevo.hora_fin" permitir-medianoche required /></label>
             </div>
-            <button :disabled="ocupado">Guardar horario no disponible</button>
+            <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar horario no disponible</button>
           </form>
         </dialog>
 
         <dialog ref="dialogo" aria-labelledby="titulo-turno" @close="modalAbierto = false" @cancel="ocupado && $event.preventDefault()">
           <div class="barra">
             <h2 id="titulo-turno">{{ editando ? 'Editar turno' : 'Nuevo turno' }}</h2>
-            <button type="button" class="secundario" :disabled="ocupado" @click="dialogo.close()">Cerrar</button>
+            <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogo.close()">Cerrar</button>
           </div>
           <p v-if="error && modalAbierto" role="alert">{{ error }}</p>
             <p v-if="!datos.servicios.length">Creá un servicio en <a href="/admin">Administración</a> para cargar turnos.</p>
@@ -1113,7 +1113,7 @@ onMounted(() => {
                 </select>
               </label>
               <p v-if="servicioElegido && equipo.length < Number(servicioElegido.profesionales_requeridos)">Faltan profesionales: el turno quedará señalado en la agenda.</p>
-              <button :disabled="ocupado || !fechaTurno || !servicioElegido">{{ editando ? 'Guardar cambios' : (sinConexion ? 'Guardar pendiente' : 'Cargar turno') }}</button>
+              <button type="submit" :disabled="ocupado || !fechaTurno || !servicioElegido" class="boton-formulario boton-formulario--guardar">{{ editando ? 'Guardar cambios' : (sinConexion ? 'Guardar pendiente' : 'Cargar turno') }}</button>
             </form>
         </dialog>
 
@@ -1127,7 +1127,7 @@ onMounted(() => {
             </div>
             <p v-if="!bandeja.contactos.length">No hay contactos disponibles para enviar mensajes.</p>
             <dialog ref="dialogoMensaje" aria-labelledby="titulo-nuevo-mensaje" @close="cerrarMensaje" @cancel="ocupado && $event.preventDefault()">
-              <div class="barra"><h2 id="titulo-nuevo-mensaje">Nuevo mensaje</h2><button type="button" class="secundario" :disabled="ocupado" @click="dialogoMensaje.close()">Cerrar</button></div>
+              <div class="barra"><h2 id="titulo-nuevo-mensaje">Nuevo mensaje</h2><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogoMensaje.close()">Cerrar</button></div>
               <p v-if="error && mensajeAbierto" role="alert">{{ error }}</p>
             <form @submit.prevent="enviarMensaje">
               <label>Para
@@ -1137,7 +1137,7 @@ onMounted(() => {
                 </select>
               </label>
               <label>Mensaje <textarea v-model="texto" maxlength="2000" rows="3" required></textarea></label>
-              <button :disabled="ocupado">Enviar mensaje</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Enviar mensaje</button>
             </form>
             </dialog>
             <p v-if="!bandeja.mensajes.length">Todavía no hay mensajes.</p>

@@ -156,9 +156,9 @@ onBeforeUnmount(limpiarImagen)
       <label v-if="editando?.imagen_version" class="casilla"><input v-model="eliminarImagen" type="checkbox" :disabled="ocupado || !!archivo"> Eliminar imagen actual</label>
       <small v-if="editando">Subí una nueva imagen para reemplazar la actual o marcá para eliminarla. JPG, PNG o WebP, hasta 4 MB y 6000 píxeles por lado.</small>
       <template v-else><small>JPG, PNG o WebP, hasta 4 MB y 6000 píxeles por lado. La imagen es opcional.</small><small>Las promociones nuevas se crean ocultas.</small></template>
-      <div class="acciones"><button :disabled="ocupado">{{ editando ? 'Guardar cambios' : 'Crear promoción' }}</button></div>
+      <div class="acciones"><button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">{{ editando ? 'Guardar cambios' : 'Crear promoción' }}</button></div>
     </form>
-    <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarFormulario">Cerrar</button></div>
+    <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrarFormulario">Cerrar</button></div>
     </dialog>
   </section>
 </template>

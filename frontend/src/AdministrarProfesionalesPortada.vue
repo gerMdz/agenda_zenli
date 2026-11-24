@@ -197,7 +197,7 @@ onBeforeUnmount(limpiarImagen)
             <label for="nombre-profesional-portada">Nombre</label>
             <input id="nombre-profesional-portada" v-model.trim="nombreEditado" maxlength="120" required :disabled="ocupado" aria-describedby="ayuda-nombre-profesional">
             <small id="ayuda-nombre-profesional">Este nombre también se usa en la agenda y en el perfil profesional.</small>
-            <div class="acciones"><button :disabled="ocupado || !nombreEditado || nombreEditado === profesionalEditando.nombre">Guardar nombre</button></div>
+            <div class="acciones"><button type="submit" :disabled="ocupado || !nombreEditado || nombreEditado === profesionalEditando.nombre" class="boton-formulario boton-formulario--guardar">Guardar nombre</button></div>
           </form>
           <form class="formulario-servicio" :key="profesionalEditando.id" @submit.prevent="guardarImagen">
             <h3>Información para la portada</h3>
@@ -209,9 +209,9 @@ onBeforeUnmount(limpiarImagen)
             <input id="imagen-profesional" ref="entradaImagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" aria-describedby="ayuda-imagen-profesional" @change="elegirImagen">
             <label v-if="profesionalEditando.imagen_version" class="casilla"><input v-model="eliminarImagen" type="checkbox" :disabled="ocupado"> Eliminar imagen actual</label>
             <small id="ayuda-imagen-profesional">JPG, PNG o WebP, hasta 4 MB de peso. Subí una nueva imagen para reemplazar la actual o marcá para eliminarla. Si marcás eliminar, no se guardará la imagen nueva.</small>
-            <div class="acciones"><button :disabled="ocupado || (!archivoEditado && !eliminarImagen)">Guardar imagen</button></div>
+            <div class="acciones"><button type="submit" :disabled="ocupado || (!archivoEditado && !eliminarImagen)" class="boton-formulario boton-formulario--guardar">Guardar imagen</button></div>
           </form>
-          <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarEdicion">Cerrar</button></div>
+          <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrarEdicion">Cerrar</button></div>
         </template>
       </dialog>
     </template>

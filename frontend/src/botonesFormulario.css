@@ -1,0 +1,26 @@
+.boton-formulario.boton-formulario--guardar,
+.boton-formulario.boton-formulario--cancelar {
+  box-sizing: border-box;
+  min-height: 2.75rem;
+  padding: .6rem .9rem;
+  border: 1px solid #214d3a;
+  border-radius: .45rem;
+  font: inherit;
+  font-weight: 650;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.boton-formulario.boton-formulario--guardar { background: #214d3a; color: #fffdfa; }
+.boton-formulario.boton-formulario--cancelar { background: #fffaf1; color: #214d3a; }
+.boton-formulario.boton-formulario--guardar:hover:not(:disabled) { background: #15372a; }
+.boton-formulario.boton-formulario--cancelar:hover:not(:disabled) { background: #e5eee4; }
+.boton-formulario:focus-visible { outline: 2px solid #8f631e; outline-offset: 3px; }
+.boton-formulario:disabled { opacity: .55; cursor: default; }
+
+.acciones-formulario {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .55rem;
+}

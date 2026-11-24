@@ -22,6 +22,8 @@ const contenidoPrincipal = ref(null)
 
 async function actualizarSeccion() {
   seccionActiva.value = seccionDeUrl()
+  if (seccionActiva.value.id !== 'portada') dialogoPortada.value?.close()
+  if (seccionActiva.value.id !== 'espacios') dialogoEspacio.value?.close()
   await nextTick()
   contenidoPrincipal.value?.focus({ preventScroll: true })
   window.scrollTo({ top: 0, behavior: 'instant' })
@@ -35,6 +37,8 @@ const mensaje = ref('')
 const error = ref('')
 const email = ref('')
 const clave = ref('')
+const dialogoPortada = ref(null)
+const portadaGuardada = ref(null)
 const telefono = ref('')
 const direccion = ref('')
 const horarios = ref('')
@@ -74,6 +78,7 @@ const profesionalEditado = ref(null)
 const perfilesProfesionales = ref([])
 const dialogoProfesional = ref(null)
 const accionProfesional = ref('')
+const dialogoEspacio = ref(null)
 const espacioEditado = ref(null)
 const espacioNombre = ref('')
 const espacioDetalle = ref('')
@@ -193,12 +198,17 @@ async function cargarPanel() {
   }
 }
 
-function aplicarPortada(portada) {
+function cargarCamposPortada(portada) {
   telefono.value = portada.telefono
   direccion.value = portada.direccion ?? ''
   horarios.value = portada.horarios ?? ''
   instagram.value = portada.instagram ?? ''
   facebook.value = portada.facebook ?? ''
+}
+
+function aplicarPortada(portada) {
+  portadaGuardada.value = portada
+  cargarCamposPortada(portada)
   soloImagen.value = portada.solo_imagen === true
   visibilidad.value = { ...visibilidad.value, ...portada.visibilidad }
   imagenGuardada.value = portada.imagen
@@ -306,6 +316,20 @@ function cambiarVisibilidadSeccion(seccion) {
   })
 }
 
+function editarPortada() {
+  cargarCamposPortada(portadaGuardada.value)
+  error.value = ''
+  mensaje.value = ''
+  dialogoPortada.value.showModal()
+}
+
+function cerrarPortada() {
+  limpiarImagenTemporal()
+  if (entradaArchivo.value) entradaArchivo.value.value = ''
+  restaurar.value = false
+  error.value = ''
+}
+
 function guardarPortada(evento) {
   const datos = new FormData(evento.currentTarget)
   if (!entradaArchivo.value.files.length) datos.delete('imagen')
@@ -314,8 +338,7 @@ function guardarPortada(evento) {
   return ejecutar(async () => {
     const portada = await api('/api/admin/portada', { method: 'POST', datos })
     aplicarPortada(portada)
-    entradaArchivo.value.value = ''
-    limpiarImagenTemporal()
+    dialogoPortada.value?.close()
     mensaje.value = 'Portada actualizada.'
   })
 }
@@ -533,9 +556,12 @@ function guardarHorario() {
 }
 
 function editarEspacio(espacio = null) {
+  error.value = ''
+  mensaje.value = ''
   espacioEditado.value = espacio?.id ?? null
   espacioNombre.value = espacio?.nombre ?? ''
   espacioDetalle.value = espacio?.detalle ?? ''
+  dialogoEspacio.value.showModal()
 }
 
 function guardarEspacio() {
@@ -545,7 +571,7 @@ function guardarEspacio() {
       method: id ? 'PUT' : 'POST',
       datos: { nombre: espacioNombre.value, detalle: espacioDetalle.value },
     })
-    editarEspacio()
+    dialogoEspacio.value?.close()
     mensaje.value = id ? 'Espacio actualizado.' : 'Espacio creado.'
   })
 }
@@ -833,28 +859,40 @@ onBeforeUnmount(() => {
               <button type="button" class="secundario" :disabled="ocupado" :aria-label="`${visibilidad[seccion.id] ? 'Ocultar' : 'Mostrar'} ${seccion.nombre}`" @click="cambiarVisibilidadSeccion(seccion.id)">{{ visibilidad[seccion.id] ? 'Ocultar' : 'Mostrar' }}</button>
             </li>
           </ul>
-          <form @submit.prevent="guardarPortada">
-            <label for="telefono">Teléfono de WhatsApp</label>
-            <input id="telefono" v-model="telefono" name="telefono" type="tel" autocomplete="tel" placeholder="+54…" :disabled="ocupado" required>
-            <label for="direccion">Dirección (opcional)</label>
-            <input id="direccion" v-model="direccion" name="direccion" type="text" maxlength="255" :disabled="ocupado">
-            <label for="horarios">Horarios generales del centro (opcional)</label>
-            <textarea id="horarios" v-model="horarios" name="horarios" rows="3" maxlength="2000" aria-describedby="ayuda-horarios" :disabled="ocupado"></textarea>
-            <small id="ayuda-horarios">Son informativos y no configuran la disponibilidad de las profesionales. Dejá vacío para ocultar el dato.</small>
-            <label for="instagram">Instagram (opcional)</label>
-            <input id="instagram" v-model.trim="instagram" name="instagram" type="url" placeholder="https://www.instagram.com/…" maxlength="2048" aria-describedby="ayuda-redes" :disabled="ocupado">
-            <label for="facebook">Facebook (opcional)</label>
-            <input id="facebook" v-model.trim="facebook" name="facebook" type="url" placeholder="https://www.facebook.com/…" maxlength="2048" aria-describedby="ayuda-redes" :disabled="ocupado">
-            <small id="ayuda-redes">Pegá el enlace completo del perfil. Dejá el campo vacío para ocultarlo.</small>
-            <label for="imagen">Imagen principal</label>
-            <img class="vista-previa" :src="vistaPrevia" alt="Vista previa de la portada">
-            <input id="imagen" ref="entradaArchivo" name="imagen" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="ayuda-imagen" :disabled="ocupado" @change="elegirImagen">
-            <small id="ayuda-imagen">JPG, PNG o WebP, hasta 4 MB de peso. La portada recorta la foto según el tamaño de pantalla.</small>
-            <div class="acciones">
-              <button :disabled="ocupado">Guardar portada</button>
-              <button v-if="imagenGuardada || imagenTemporal" type="button" class="secundario" :disabled="ocupado || restaurar" @click="restaurarImagen">Usar imagen original</button>
+          <button type="button" class="secundario editar-portada" :disabled="ocupado || !portadaGuardada" @click="editarPortada">Editar portada</button>
+          <dialog ref="dialogoPortada" class="modal-servicio" aria-labelledby="titulo-dialogo-portada"
+            @close="cerrarPortada" @cancel="ocupado && $event.preventDefault()">
+            <div class="modal-cabecera">
+              <h2 id="titulo-dialogo-portada">Editar portada</h2>
+              <button type="button" class="cerrar-modal" aria-label="Cerrar edición de portada" :disabled="ocupado" @click="dialogoPortada.close()">✕</button>
             </div>
-          </form>
+            <p v-if="error" class="error" role="alert">{{ error }}</p>
+            <form @submit.prevent="guardarPortada">
+              <label for="telefono">Teléfono de WhatsApp</label>
+              <input id="telefono" v-model="telefono" name="telefono" type="tel" autofocus autocomplete="tel" placeholder="+54…" :disabled="ocupado" required>
+              <label for="direccion">Dirección (opcional)</label>
+              <input id="direccion" v-model="direccion" name="direccion" type="text" maxlength="255" :disabled="ocupado">
+              <label for="horarios">Horarios generales del centro (opcional)</label>
+              <textarea id="horarios" v-model="horarios" name="horarios" rows="3" maxlength="2000" aria-describedby="ayuda-horarios" :disabled="ocupado"></textarea>
+              <small id="ayuda-horarios">Son informativos y no configuran la disponibilidad de las profesionales. Dejá vacío para ocultar el dato.</small>
+              <label for="instagram">Instagram (opcional)</label>
+              <input id="instagram" v-model.trim="instagram" name="instagram" type="url" placeholder="https://www.instagram.com/…" maxlength="2048" aria-describedby="ayuda-redes" :disabled="ocupado">
+              <label for="facebook">Facebook (opcional)</label>
+              <input id="facebook" v-model.trim="facebook" name="facebook" type="url" placeholder="https://www.facebook.com/…" maxlength="2048" aria-describedby="ayuda-redes" :disabled="ocupado">
+              <small id="ayuda-redes">Pegá el enlace completo del perfil. Dejá el campo vacío para ocultarlo.</small>
+              <label for="imagen">Imagen principal</label>
+              <img class="vista-previa" :src="vistaPrevia" alt="Vista previa de la portada">
+              <input id="imagen" ref="entradaArchivo" name="imagen" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="ayuda-imagen" :disabled="ocupado" @change="elegirImagen">
+              <small id="ayuda-imagen">JPG, PNG o WebP, hasta 4 MB de peso. La portada recorta la foto según el tamaño de pantalla.</small>
+              <div class="acciones">
+                <button v-if="imagenGuardada || imagenTemporal" type="button" class="secundario" :disabled="ocupado || restaurar" @click="restaurarImagen">Usar imagen original</button>
+              </div>
+              <div class="acciones-formulario">
+                <button type="button" :disabled="ocupado" @click="dialogoPortada.close()" class="boton-formulario boton-formulario--cancelar">Cancelar</button>
+                <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar portada</button>
+              </div>
+            </form>
+          </dialog>
         </section>
 
         <section v-show="seccionActiva.id === 'cuentas'" class="panel" aria-labelledby="titulo-seccion-admin">
@@ -883,7 +921,7 @@ onBeforeUnmount(() => {
             <label for="editar-clave">Nueva contraseña (opcional)</label>
             <input id="editar-clave" v-model="editarClave" type="password" autocomplete="new-password" minlength="12" maxlength="72">
             <div class="acciones">
-              <button :disabled="ocupado">Guardar cuenta</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar cuenta</button>
             </div>
           </form>
 
@@ -904,9 +942,9 @@ onBeforeUnmount(() => {
               </label>
               <label v-if="altaPerfil === 'nueva'">Nombre <input v-model.trim="altaNombre" maxlength="120" required></label>
             </template>
-            <button :disabled="ocupado || (altaProfesional && !ajustesAgenda)">Crear cuenta</button>
+            <button type="submit" :disabled="ocupado || (altaProfesional && !ajustesAgenda)" class="boton-formulario boton-formulario--guardar">Crear cuenta</button>
           </form>
-            <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarDialogoCuenta">Cancelar</button></div>
+            <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrarDialogoCuenta">Cancelar</button></div>
           </dialog>
         </section>
 
@@ -922,21 +960,32 @@ onBeforeUnmount(() => {
 
         <template v-if="ajustesAgenda">
           <section v-show="seccionActiva.id === 'espacios'" class="panel" aria-labelledby="titulo-seccion-admin">
+            <div class="panel-header">
+              <h2>Espacios de atención</h2>
+              <button type="button" :disabled="ocupado" @click="editarEspacio()">+ Nuevo espacio</button>
+            </div>
             <ul class="lista">
               <li v-for="espacio in ajustesAgenda.espacios" :key="espacio.id">
                 <div><strong>{{ espacio.nombre }}</strong><small v-if="espacio.detalle">{{ espacio.detalle }}</small><small v-if="resumenAuditoria(espacio.auditoria)" class="meta-auditoria">{{ resumenAuditoria(espacio.auditoria) }}</small></div>
                 <button type="button" class="secundario" :disabled="ocupado" @click="editarEspacio(espacio)">Editar</button>
               </li>
             </ul>
-            <form @submit.prevent="guardarEspacio">
-              <h3>{{ espacioEditado ? 'Editar espacio' : 'Nuevo espacio' }}</h3>
-              <label>Nombre <input v-model.trim="espacioNombre" maxlength="120" required></label>
-              <label>Detalle (opcional) <textarea v-model.trim="espacioDetalle" maxlength="1000" rows="3"></textarea></label>
-              <div class="acciones">
-                <button :disabled="ocupado">{{ espacioEditado ? 'Guardar cambios' : 'Crear espacio' }}</button>
-                <button v-if="espacioEditado" type="button" class="secundario" :disabled="ocupado" @click="editarEspacio()">Cancelar</button>
+            <dialog ref="dialogoEspacio" class="modal-servicio" aria-labelledby="titulo-dialogo-espacio"
+              @close="error = ''" @cancel="ocupado && $event.preventDefault()">
+              <div class="modal-cabecera">
+                <h2 id="titulo-dialogo-espacio">{{ espacioEditado ? 'Editar espacio' : 'Nuevo espacio' }}</h2>
+                <button type="button" class="cerrar-modal" aria-label="Cerrar formulario de espacio" :disabled="ocupado" @click="dialogoEspacio.close()">✕</button>
               </div>
-            </form>
+              <p v-if="error" class="error" role="alert">{{ error }}</p>
+              <form @submit.prevent="guardarEspacio">
+                <label>Nombre <input v-model.trim="espacioNombre" maxlength="120" autofocus :disabled="ocupado" required></label>
+                <label>Detalle (opcional) <textarea v-model.trim="espacioDetalle" maxlength="1000" rows="3" :disabled="ocupado"></textarea></label>
+                <div class="acciones-formulario">
+                  <button type="button" :disabled="ocupado" @click="dialogoEspacio.close()" class="boton-formulario boton-formulario--cancelar">Cancelar</button>
+                  <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">{{ espacioEditado ? 'Guardar cambios' : 'Crear espacio' }}</button>
+                </div>
+              </form>
+            </dialog>
           </section>
 
           <section v-show="seccionActiva.id === 'profesionales'" class="panel">
@@ -967,11 +1016,11 @@ onBeforeUnmount(() => {
               <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
             <form v-if="accionProfesional === 'perfil'" @submit.prevent="crearProfesional">
               <label>Nombre <input v-model.trim="nombreProfesional" maxlength="120" required></label>
-              <button :disabled="ocupado">Crear profesional</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Crear profesional</button>
             </form>
             <form v-else-if="accionProfesional === 'editar'" @submit.prevent="guardarProfesional">
               <label>Nombre <input v-model.trim="nombreProfesional" maxlength="120" required></label>
-              <button :disabled="ocupado">Guardar cambios</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar cambios</button>
             </form>
             <form v-else-if="accionProfesional === 'cuenta'" @submit.prevent="crearCuentaProfesional">
               <label>Profesional
@@ -988,9 +1037,9 @@ onBeforeUnmount(() => {
                 <label>Contraseña inicial <input v-model="cuenta.clave" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></label>
                 <label class="casilla"><input v-model="cuenta.admin" type="checkbox"> También es administradora</label>
               </template>
-              <button :disabled="ocupado">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>
             </form>
-              <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarDialogoProfesional">Cancelar</button></div>
+              <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrarDialogoProfesional">Cancelar</button></div>
             </dialog>
           </section>
 
@@ -1090,9 +1139,9 @@ onBeforeUnmount(() => {
                 <button type="button" class="secundario" @click="horarioProfesional.excepciones.splice(indice, 1)">Quitar excepción</button>
               </fieldset>
               </template>
-              <button :disabled="ocupado">Guardar horarios</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar horarios</button>
             </form>
-              <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cerrarDialogoHorario">Cancelar</button></div>
+              <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrarDialogoHorario">Cancelar</button></div>
             </dialog>
           </section>
 
@@ -1123,7 +1172,10 @@ onBeforeUnmount(() => {
                   <span>{{ modoPreparacion === 'general' ? 'Todos los servicios' : 'Servicios sin preparación individual' }}</span>
                   <span class="minutos-preparacion"><input v-model.number="minutosPreparacion" type="number" min="0" max="1440" :disabled="ocupado" required> <span>min</span></span>
                 </label>
-                <button :disabled="ocupado || !modoPreparacion">Guardar preparación</button>
+                <div class="acciones-formulario">
+                  <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogoPreparacionGeneral.close()">Cancelar</button>
+                  <button type="submit" class="boton-formulario boton-formulario--guardar" :disabled="ocupado || !modoPreparacion">Guardar preparación</button>
+                </div>
               </form>
             </dialog>
           </section>
@@ -1185,8 +1237,8 @@ onBeforeUnmount(() => {
             <input id="nuevo-nombre" v-model="nuevoNombre" type="text" maxlength="100" placeholder="Ej: Descontracturante" :disabled="ocupado" required>
             <p>Podés completar la presentación desde Sitio público cuando quieras publicarlo.</p>
             <div class="acciones">
-              <button :disabled="ocupado">Crear servicio</button>
-              <button type="button" class="secundario" :disabled="ocupado" @click="cancelarCreacion">Cancelar</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Crear servicio</button>
+              <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cancelarCreacion">Cancelar</button>
             </div>
           </form>
           </dialog>
@@ -1220,7 +1272,7 @@ onBeforeUnmount(() => {
             </label>
             <small>Subí una nueva imagen para reemplazar la actual o marcá para eliminarla.</small>
             <div class="acciones">
-              <button :disabled="ocupado">Guardar cambios</button>
+              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar cambios</button>
             </div>
           </form>
           <form v-else class="formulario-servicio configuracion-modal" @submit.prevent="guardarConfiguracionServicio">
@@ -1229,7 +1281,7 @@ onBeforeUnmount(() => {
             <label>Tiempo mínimo (minutos) <input v-model.number="editMinimo" type="number" min="1" :disabled="ocupado"></label>
             <label>Cantidad mínima de profesionales <input v-model.number="editProfesionales" type="number" min="1" :disabled="ocupado"></label>
             <small>Sin estos datos el servicio no puede agendarse. La duración mínima es informativa; se pueden elegir las cuatro duraciones.</small>
-            <button :disabled="ocupado">Guardar configuración de agenda</button>
+            <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar configuración de agenda</button>
           </form>
           <form v-if="!serviciosEnPortada && preparacionIndividual" class="formulario-servicio configuracion-modal" @submit.prevent="guardarPreparacionServicio">
             <h3>Preparación después del turno</h3>
@@ -1237,9 +1289,9 @@ onBeforeUnmount(() => {
               <input v-model.number="editPreparacionMinutos" type="number" min="0" max="1440" :disabled="ocupado">
             </label>
             <small>Si queda vacío, se usa el tiempo general ({{ ajustesAgenda.preparacion.minutos }} min).</small>
-            <button :disabled="ocupado">Guardar tiempo de preparación</button>
+            <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar tiempo de preparación</button>
           </form>
-          <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cancelarEdicion">Cerrar</button></div>
+          <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cancelarEdicion">Cancelar</button></div>
             </template>
           </dialog>
         </section>
@@ -1305,6 +1357,7 @@ small { font-size: .79rem; color: #526255; }
 .error.inline { margin: 0 0 .5rem; }
 .mensaje { background: #e4efdf; color: #194832; }
 
+.editar-portada { margin-top: 1rem; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .lista-servicios { margin: .75rem 0 0; padding: 0; list-style: none; }
 .lista-servicios li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem 0; border-bottom: 1px solid #e4dac3; font-size: .88rem; }

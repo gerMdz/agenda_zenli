@@ -79,3 +79,5 @@
 - Auditoría visible solo para administración (`ROLE_ADMIN`): los turnos internos conservan historial completo (`eventos_turnos_administrativos`), consultable desde la agenda (por turno y por período con turnos cancelados) y desde la sección «Auditoría» de `/admin` con cambios legibles de seña, horario, servicio, cliente, espacio, profesionales, preparación y cancelación. En el resto de los datos administrables (portada, servicios, promociones, presentación de profesionales, espacios, perfiles profesionales, horarios, bloqueos, preparación y cuentas) se registra y muestra únicamente quién creó y quién modificó por última vez; las rutas públicas y la vista de profesionales no exponen datos de auditoría.
 
 - El menú de administración prioriza Agenda sobre Sitio público. En pantallas angostas, las acciones de agenda y el calendario se muestran antes del resumen.
+
+- Los formularios del panel usan un estilo común para Guardar y Cancelar. La edición de Portada y el alta y edición de Espacios se hacen en ventanas modales.
