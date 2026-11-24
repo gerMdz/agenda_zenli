@@ -63,7 +63,9 @@ const accionCuenta = ref('')
 const ajustesAgenda = ref(null)
 const modoPreparacion = ref('')
 const minutosPreparacion = ref('')
-const preparacionServicios = ref({})
+const dialogoPreparacionGeneral = ref(null)
+const editPreparacionMinutos = ref('')
+const preparacionIndividual = computed(() => ajustesAgenda.value?.preparacion?.modo === 'por_servicio')
 const cuenta = ref({ profesional: '', nombre: '', email: '', clave: '', admin: false, cuenta_existente: false })
 const nombreProfesional = ref('')
 const profesionalEditado = ref(null)
@@ -324,7 +326,6 @@ function aplicarConfiguracionAgenda(ajustes) {
   ajustesAgenda.value = ajustes
   modoPreparacion.value = ajustes.preparacion?.modo ?? 'predeterminado'
   minutosPreparacion.value = ajustes.preparacion?.minutos ?? 0
-  preparacionServicios.value = { ...ajustes.preparacion?.servicios }
 }
 
 async function recargarEquipo() {
@@ -439,11 +440,19 @@ function cerrarDialogoProfesional() {
   error.value = ''
 }
 
+function abrirPreparacionGeneral() {
+  aplicarConfiguracionAgenda(ajustesAgenda.value)
+  error.value = ''
+  mensaje.value = ''
+  dialogoPreparacionGeneral.value.showModal()
+}
+
 function guardarPreparacionAgenda() {
   return ejecutar(async () => {
-    const datos = { modo: modoPreparacion.value, minutos: minutosPreparacion.value, servicios: Object.fromEntries(Object.entries(preparacionServicios.value).filter(([, valor]) => valor !== '')) }
+    const datos = { modo: modoPreparacion.value, minutos: minutosPreparacion.value }
     await api('/api/admin/agenda/preparacion', { method: 'PUT', datos })
     aplicarConfiguracionAgenda(await api('/api/admin/agenda/configuracion'))
+    dialogoPreparacionGeneral.value.close()
     mensaje.value = 'Preparación guardada.'
   })
 }
@@ -584,9 +593,8 @@ function guardarUsuario() {
 
 // --- Servicios de portada ---
 
-function iniciarCreacion() {
+async function iniciarCreacion() {
   servicioCreando.value = true
-  dialogoNuevoServicio.value.showModal()
   nuevoNombre.value = ''
   nuevoDescCorta.value = ''
   nuevoDetalle.value = ''
@@ -594,6 +602,10 @@ function iniciarCreacion() {
   imagenNuevaTemporal.value = null
   crearError.value = ''
   error.value = ''
+  mensaje.value = ''
+  await nextTick()
+  dialogoNuevoServicio.value.showModal()
+  document.getElementById('nuevo-nombre')?.focus()
 }
 
 function cancelarCreacion() {
@@ -650,6 +662,7 @@ async function iniciarEdicion(servicio) {
   editDetalle.value = servicio.detalle
   editMinimo.value = servicio.duracion_minima ?? ''
   editProfesionales.value = servicio.profesionales_requeridos ?? ''
+  editPreparacionMinutos.value = ajustesAgenda.value?.preparacion?.servicios?.[servicio.id] ?? ''
   editArchivo.value = null
   editEliminarImagen.value = false
   if (servicioImagenTemporal.value) URL.revokeObjectURL(servicioImagenTemporal.value)
@@ -736,6 +749,25 @@ async function guardarConfiguracionServicio() {
     servicios.value = resultado.servicios
     servicioEditando.value = resultado.servicios.find(servicio => servicio.id === servicioEditando.value.id)
     editarMensaje.value = 'Configuración de agenda guardada.'
+  } catch (fallo) {
+    editarError.value = fallo.message
+  } finally {
+    ocupado.value = false
+  }
+}
+
+async function guardarPreparacionServicio() {
+  if (ocupado.value) return
+  ocupado.value = true
+  editarError.value = ''
+  editarMensaje.value = ''
+  try {
+    await api('/api/admin/agenda/preparacion', {
+      method: 'PUT',
+      datos: { servicio: String(servicioEditando.value.id), minutos: editPreparacionMinutos.value === '' ? null : editPreparacionMinutos.value },
+    })
+    aplicarConfiguracionAgenda(await api('/api/admin/agenda/configuracion'))
+    editarMensaje.value = 'Tiempo de preparación guardado.'
   } catch (fallo) {
     editarError.value = fallo.message
   } finally {
@@ -1095,24 +1127,34 @@ onBeforeUnmount(() => {
 
           <section v-show="seccionActiva.id === 'preparacion'" class="panel" aria-labelledby="titulo-seccion-admin">
             <p v-if="resumenAuditoria(ajustesAgenda.preparacion_auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(ajustesAgenda.preparacion_auditoria, true) }}</p>
-            <form @submit.prevent="guardarPreparacionAgenda">
-              <p class="ayuda-preparacion">Estos minutos se reservan para preparar el espacio después de cada turno.</p>
-              <fieldset>
-                <legend>Tiempo de preparación</legend>
-                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="predeterminado" required> General (0 minutos)</label>
-                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="general" required> Todos iguales</label>
-                <label class="casilla"><input v-model="modoPreparacion" type="radio" value="por_servicio" required> Individual por servicio</label>
-              </fieldset>
-              <label v-if="modoPreparacion === 'general'" class="fila-preparacion"><span>Todos los servicios</span><span class="minutos-preparacion"><input v-model.number="minutosPreparacion" type="number" min="0" max="1440" required aria-label="Minutos de preparación posteriores para todos los servicios"> <span>min</span></span></label>
-              <template v-if="modoPreparacion === 'por_servicio'">
-                <label class="fila-preparacion"><span>Tiempo general para servicios sin preparación individual</span><span class="minutos-preparacion"><input v-model.number="minutosPreparacion" type="number" min="0" max="1440" required> <span>min</span></span></label>
-                <p>Los servicios sin un tiempo individual utilizan el tiempo general.</p>
-                <label v-for="item in servicios" :key="item.id" class="fila-preparacion">
-                  <span>{{ item.nombre }}</span><span class="minutos-preparacion"><input v-model.number="preparacionServicios[item.id]" type="number" min="0" max="1440" :aria-label="`Minutos de preparación posteriores para ${item.nombre}`"> <span>min</span></span>
+            <div class="panel-header">
+              <p class="ayuda-preparacion">Tiempo reservado para preparar el espacio después de cada turno.</p>
+              <button type="button" class="secundario" :disabled="ocupado" @click="abrirPreparacionGeneral">Editar preparación</button>
+            </div>
+            <p v-if="preparacionIndividual">Individual por servicio · {{ ajustesAgenda.preparacion.minutos }} min como tiempo general.</p>
+            <p v-else>Todos los servicios · {{ ajustesAgenda.preparacion?.minutos ?? 0 }} min.</p>
+            <p v-if="preparacionIndividual">Los tiempos individuales se editan desde <a href="#servicios">Servicios</a>.</p>
+
+            <dialog ref="dialogoPreparacionGeneral" class="modal-servicio" aria-labelledby="titulo-preparacion-general" @cancel="ocupado && $event.preventDefault()">
+              <div class="modal-cabecera">
+                <h2 id="titulo-preparacion-general">Editar preparación</h2>
+                <button type="button" class="cerrar-modal" aria-label="Cerrar preparación" :disabled="ocupado" @click="dialogoPreparacionGeneral.close()">✕</button>
+              </div>
+              <p v-if="error" class="error" role="alert">{{ error }}</p>
+              <form @submit.prevent="guardarPreparacionAgenda">
+                <fieldset :disabled="ocupado">
+                  <legend>Tiempo de preparación</legend>
+                  <label class="casilla"><input v-model="modoPreparacion" type="radio" value="predeterminado" required> General (0 minutos)</label>
+                  <label class="casilla"><input v-model="modoPreparacion" type="radio" value="general" required> Todos iguales</label>
+                  <label class="casilla"><input v-model="modoPreparacion" type="radio" value="por_servicio" required> Individual por servicio</label>
+                </fieldset>
+                <label v-if="modoPreparacion !== 'predeterminado'" class="fila-preparacion">
+                  <span>{{ modoPreparacion === 'general' ? 'Todos los servicios' : 'Servicios sin preparación individual' }}</span>
+                  <span class="minutos-preparacion"><input v-model.number="minutosPreparacion" type="number" min="0" max="1440" :disabled="ocupado" required> <span>min</span></span>
                 </label>
-              </template>
-              <button :disabled="ocupado || !modoPreparacion">Guardar preparación</button>
-            </form>
+                <button :disabled="ocupado || !modoPreparacion">Guardar preparación</button>
+              </form>
+            </dialog>
           </section>
         </template>
 
@@ -1156,9 +1198,12 @@ onBeforeUnmount(() => {
 
           <!-- Formulario crear -->
           <dialog ref="dialogoNuevoServicio" class="modal-servicio" aria-labelledby="titulo-nuevo-servicio" @close="cancelarCreacion" @cancel="ocupado && $event.preventDefault()">
+            <div v-if="servicioCreando" class="modal-cabecera">
+              <h2 id="titulo-nuevo-servicio">Nuevo servicio</h2>
+              <button type="button" class="cerrar-modal" aria-label="Cerrar alta" :disabled="ocupado" @click="cancelarCreacion">✕</button>
+            </div>
           <form v-if="servicioCreando" class="formulario-servicio" @submit.prevent="crearServicio">
             <p v-if="crearError" class="error inline" role="alert">{{ crearError }}</p>
-            <h3 id="titulo-nuevo-servicio">Nuevo servicio</h3>
             <label for="nuevo-nombre">Nombre</label>
             <input id="nuevo-nombre" v-model="nuevoNombre" type="text" maxlength="100" placeholder="Ej: Descontracturante" :disabled="ocupado" required>
             <label for="nuevo-desc">Descripción corta</label>
@@ -1218,6 +1263,14 @@ onBeforeUnmount(() => {
             <label>Cantidad mínima de profesionales <input v-model.number="editProfesionales" type="number" min="1" :disabled="ocupado"></label>
             <small>Sin estos datos el servicio no puede agendarse. La duración mínima es informativa; se pueden elegir las cuatro duraciones.</small>
             <button :disabled="ocupado">Guardar configuración de agenda</button>
+          </form>
+          <form v-if="preparacionIndividual" class="formulario-servicio configuracion-modal" @submit.prevent="guardarPreparacionServicio">
+            <h3>Preparación después del turno</h3>
+            <label>Tiempo individual (minutos)
+              <input v-model.number="editPreparacionMinutos" type="number" min="0" max="1440" :disabled="ocupado">
+            </label>
+            <small>Si queda vacío, se usa el tiempo general ({{ ajustesAgenda.preparacion.minutos }} min).</small>
+            <button :disabled="ocupado">Guardar tiempo de preparación</button>
           </form>
           <div class="modal-pie"><button type="button" class="secundario" :disabled="ocupado" @click="cancelarEdicion">Cerrar</button></div>
             </template>
@@ -1304,6 +1357,7 @@ small { font-size: .79rem; color: #526255; }
 .avisos-servicios { display: contents; }
 .avisos-servicios p { position: sticky; top: .5rem; z-index: 1; margin: 0 0 .75rem; box-shadow: 0 .25rem 1rem #15372a1a; }
 .modal-servicio { width: min(42rem, calc(100% - 2rem)); max-height: min(90svh, 60rem); padding: clamp(1.2rem, 4vw, 2rem); border: 1px solid #e4dac3; border-radius: 1.1rem; background: #fffaf1; color: #15372a; box-shadow: 0 1.5rem 5rem #08271c55; }
+.modal-servicio:not([open]) { display: none; }
 .modal-servicio::backdrop { background: #08271cb8; }
 .modal-cabecera { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #e4dac3; }
 .modal-cabecera h2 { font-size: clamp(1.6rem, 4vw, 2.1rem); margin: .25rem 0; }

@@ -239,34 +239,54 @@ final readonly class AgendaAdministrativa
 
     public function guardarPreparacion(array $datos, ?string $autor = null): void
     {
-        if (($datos['modo'] ?? null) === 'predeterminado') {
-            $politica = ['modo' => 'predeterminado'];
-        } elseif (($datos['modo'] ?? null) === 'general') {
-            $politica = ['modo' => 'general', 'minutos' => self::minutos($datos['minutos'] ?? null, 0)];
-        } elseif (($datos['modo'] ?? null) === 'por_servicio' && is_array($datos['servicios'] ?? null)) {
-            $servicios = [];
-            foreach ($this->entidades->createQuery('SELECT s.id FROM App\Entity\ServicioPortada s')->getSingleColumnResult() as $id) {
-                $valor = $datos['servicios'][$id] ?? null;
-                if ($valor !== null) {
-                    $servicios[$id] = self::minutos($valor, 0);
-                }
-            }
-            $politica = ['modo' => 'por_servicio', 'minutos' => self::minutos($datos['minutos'] ?? 0, 0), 'servicios' => (object) $servicios];
-        } else {
-            throw new InvalidArgumentException('Elegí cómo se define la preparación.');
-        }
-
-        TransaccionEntidades::ejecutar($this->entidades, function () use ($politica, $autor): void {
-            // Reemplaza al ON CONFLICT: dos primeras configuraciones simultáneas no pueden duplicar la clave.
+        TransaccionEntidades::ejecutar($this->entidades, function () use ($datos, $autor): void {
+            // Serializa los cambios de política y los ajustes individuales de cada servicio.
             $this->entidades->getConnection()->executeStatement('LOCK TABLE politicas_reservas IN SHARE ROW EXCLUSIVE MODE');
             $registro = $this->entidades->createQuery('SELECT p FROM App\Entity\PoliticaReserva p WHERE p.clave = :clave')
                 ->setParameter('clave', self::POLITICA)->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+            $actual = $registro?->valor ?? [];
+            $servicios = (array) ($actual['servicios'] ?? []);
+            if (array_key_exists('servicio', $datos)) {
+                $servicio = self::id($datos['servicio']);
+                if (($actual['modo'] ?? null) !== 'por_servicio') {
+                    throw new InvalidArgumentException('Activá la preparación individual desde Preparación.');
+                }
+                if (!array_key_exists('minutos', $datos) || $this->entidades->find(ServicioPortada::class, $servicio) === null) {
+                    throw new InvalidArgumentException('Elegí un servicio del catálogo e indicá su preparación.');
+                }
+                if ($datos['minutos'] === null) {
+                    unset($servicios[$servicio]);
+                } else {
+                    $servicios[$servicio] = self::minutos($datos['minutos'], 0);
+                }
+                $politica = $actual;
+            } else {
+                $modo = $datos['modo'] ?? null;
+                $politica = match ($modo) {
+                    'predeterminado' => ['modo' => $modo],
+                    'general' => ['modo' => $modo, 'minutos' => self::minutos($datos['minutos'] ?? null, 0)],
+                    'por_servicio' => ['modo' => $modo, 'minutos' => self::minutos($datos['minutos'] ?? 0, 0)],
+                    default => throw new InvalidArgumentException('Elegí cómo se define la preparación.'),
+                };
+                if ($modo === 'por_servicio' && array_key_exists('servicios', $datos)) {
+                    if (!is_array($datos['servicios'])) {
+                        throw new InvalidArgumentException('Revisá los tiempos de preparación por servicio.');
+                    }
+                    $servicios = [];
+                    foreach ($this->entidades->createQuery('SELECT s.id FROM App\Entity\ServicioPortada s')->getSingleColumnResult() as $id) {
+                        if (isset($datos['servicios'][$id])) {
+                            $servicios[$id] = self::minutos($datos['servicios'][$id], 0);
+                        }
+                    }
+                }
+            }
             if ($registro === null) {
                 $registro = new PoliticaReserva();
                 $registro->clave = self::POLITICA;
                 $this->entidades->persist($registro);
             }
             $registro->valor = $politica;
+            $registro->valor['servicios'] = (object) $servicios;
             $registro->actualizadoPor = $autor;
             $registro->actualizadoEn = new DateTimeImmutable();
         });
@@ -640,8 +660,13 @@ final readonly class AgendaAdministrativa
     private function preparacion(): ?array
     {
         // La hidratación escalar simple no aplica el tipo json; la de arrays sí.
-        return $this->entidades->createQuery('SELECT p.valor AS valor FROM App\Entity\PoliticaReserva p WHERE p.clave = :clave')
+        $politica = $this->entidades->createQuery('SELECT p.valor AS valor FROM App\Entity\PoliticaReserva p WHERE p.clave = :clave')
             ->setParameter('clave', self::POLITICA)->getOneOrNullResult()['valor'] ?? null;
+        if ($politica !== null && ($politica['modo'] ?? null) !== 'por_servicio') {
+            unset($politica['servicios']);
+        }
+
+        return $politica;
     }
 
     /**
