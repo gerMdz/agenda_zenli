@@ -499,6 +499,24 @@ const ocupacionesDelDia = computed(() => {
   return [...espacios.values()].filter(espacio => espacio.tramos.length)
 })
 
+// Comparamos horas de calendario de Mendoza. El campo del formulario es una hora local.
+function instanteLocal(instante) {
+  return Date.parse(`${calendario.format(instante)}T${reloj.format(instante)}Z`)
+    + instante.getUTCSeconds() * 1000 + instante.getUTCMilliseconds()
+}
+
+const conflictoEspacioSinConexion = computed(() => {
+  if (!sinConexion.value || !espacio.value || !fechaTurno.value || !hora.value) return false
+  const inicio = Date.parse(`${fechaTurno.value}T${hora.value}Z`)
+  const minutos = Number(duracion.value)
+  if (!Number.isFinite(inicio) || !(minutos > 0)) return false
+  const fin = inicio + (minutos + (Number(preparacion.value) || 0)) * 60_000
+  return copia.value?.agenda.ocupaciones_espacios?.some(tramo =>
+    tramo.espacio_id === espacio.value && instanteLocal(new Date(tramo.inicio)) < fin
+      && instanteLocal(new Date(tramo.fin)) > inicio,
+  ) ?? false
+})
+
 function confirmarBorradoCopia() {
   error.value = ''
   confirmandoBorrado.value = true
@@ -1370,6 +1388,9 @@ onMounted(() => {
                 </select>
               </label>
               <p v-if="servicioElegido && equipo.length < Number(servicioElegido.profesionales_requeridos)">Faltan profesionales: el turno quedará señalado en la agenda.</p>
+              <p v-if="conflictoEspacioSinConexion" class="aviso-ocupacion" role="status">
+                <strong>{{ espacioElegido?.nombre ?? 'El espacio seleccionado' }} ya figuraba ocupado</strong> en la última copia para el turno o su preparación. Podés elegir otro horario o guardar el turno pendiente. El servidor volverá a comprobar la disponibilidad al sincronizar.
+              </p>
               <button type="submit" :disabled="ocupado || !fechaTurno || !servicioElegido" class="boton-formulario boton-formulario--guardar">{{ editando ? 'Guardar cambios' : (sinConexion ? 'Guardar pendiente' : 'Cargar turno') }}</button>
             </form>
         </dialog>
@@ -1465,6 +1486,7 @@ onMounted(() => {
 .leyenda i { width: .9rem; height: .65rem; border-radius: .2rem; }
 .muestra-turno { background: #a9cfae; }.muestra-equipo { background: #e7cb89; }.muestra-bloqueo { background: #deb4b6; }.muestra-preparacion { background: #ccbbd6; }
 .muestra-sin-atencion { background: repeating-linear-gradient(135deg, #f0eee7 0 3px, #d7d4ca 3px 4px); border: 1px solid #cfcbbf; }
+.aviso-ocupacion { margin: 0; padding: .65rem; border: 1px solid #dbb976; border-radius: .4rem; background: #fcf0d4; color: #573b17; }
 .ocupacion-copiada { background: #f5efe3; border: 1px solid #e4dac3; border-radius: .55rem; padding: .65rem .85rem; margin-block: .75rem; }
 .ocupacion-copiada h2, .ocupacion-copiada p { margin: .3rem 0; }
 .mes-sin-atencion { color: #59655e; }

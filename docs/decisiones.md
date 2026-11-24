@@ -89,3 +89,5 @@
 - Desde «Nuevo turno» se puede crear una ficha en un segundo modal. La agenda conserva el borrador y selecciona la ficha al guardarla. El vínculo se confirma al guardar el turno.
 
 - En modo avión la agenda muestra, por sala y día seleccionado, los horarios ocupados de la última descarga sin identificar a clientes ni profesionales. «Borrar caché de agenda» elimina exclusivamente la copia descargada de la cuenta. Conserva la cola de turnos, la caché de archivos de la app y cualquier otra caché.
+
+- El alta sin conexión avisa si el turno o su preparación se superponen con la ocupación de la sala en la última copia. El aviso permite guardar un pendiente. PostgreSQL decide al sincronizar con la ocupación vigente.
