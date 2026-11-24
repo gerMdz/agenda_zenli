@@ -85,3 +85,5 @@
 - Los turnos internos nacen como Programados. Desde la hora de inicio, la profesional asignada a un turno individual o administración puede registrar Atendido o Ausente y corregir el estado. La asistencia queda auditada y conserva las ocupaciones. La búsqueda privada por nombre incluye los turnos vigentes que la cuenta puede consultar, incluidos los compartidos en los que participa.
 
 - La agenda tiene fichas de clientes con nombre, teléfono y correo opcionales salvo el nombre. Administración puede gestionar todas las fichas. Las profesionales ven las que crearon o las de turnos en los que participan y editan o archivan las que crearon. El historial filtra los turnos por profesional, incluidos los cancelados según su última asignación. Cada observación es visible para su autora y administración. Los turnos anteriores se vinculan eligiendo la ficha explícitamente y los nombres iguales conservan identidades separadas. Las fichas y las observaciones requieren conexión.
+
+- Desde «Nuevo turno» se puede crear una ficha en un segundo modal. La agenda conserva el borrador y selecciona la ficha al guardarla. El vínculo se confirma al guardar el turno.

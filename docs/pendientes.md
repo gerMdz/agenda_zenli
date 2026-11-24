@@ -47,6 +47,8 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 - Probar en Android y iPhone la consulta en modo avión tras la primera descarga, la caducidad de la copia y la sincronización al volver a abrir la app con conexión. Las ediciones, cancelaciones y la consulta de disponibilidad en tiempo real requieren conexión. Para habilitarlo en un despliegue, aplicar la migración de identificadores de altas sincronizadas.
 - Para desplegar los estados de asistencia, aplicar la migración `Version20261124000200`. La búsqueda por nombre y el registro de asistencia se usan con conexión.
 - Al desplegar las fichas, aplicar `Version20261124000300`. Vincular manualmente los turnos anteriores cuando se confirme la identidad del cliente.
+- Revisar cómo se muestra el espacio ocupado en modo avión. El calendario puede usar la última ocupación descargada como referencia y señalar cuándo fue actualizada. Al sincronizar, PostgreSQL vuelve a comprobar el espacio y todas las profesionales asignadas.
+- Agregar una opción en la app para borrar su propia caché y descargar una copia nueva. Definir qué se borra y proteger los turnos pendientes de sincronizar, con una opción explícita si se quiere descartarlos.
 - Los commits, el push y el despliegue los realiza Gerardo.
 
 ## Servicios de la portada

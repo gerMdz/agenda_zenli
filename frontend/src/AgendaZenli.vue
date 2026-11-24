@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import LayoutAdministracion from './LayoutAdministracion.vue'
 import ClientesAgenda from './ClientesAgenda.vue'
+import FichaClienteDialog from './FichaClienteDialog.vue'
 import CalendarioHoras from './CalendarioHoras.vue'
 import EntradaHora from './EntradaHora.vue'
 import HorariosPersonales from './HorariosPersonales.vue'
@@ -397,6 +398,7 @@ const aviso = ref('')
 const cliente = ref('')
 const clienteVinculado = ref(null)
 const fichasCoincidentes = ref(null)
+const nuevaFichaTurno = ref(null)
 
 function buscarFichaParaTurno() {
   return ejecutar(async () => {
@@ -509,6 +511,7 @@ async function prepararCopia() {
 
 async function mostrarCopia() {
   sinConexion.value = true
+  nuevaFichaTurno.value?.cerrar()
   clienteVinculado.value = null
   fichasCoincidentes.value = null
   if (editando.value) {
@@ -1244,6 +1247,7 @@ onMounted(() => {
                 </template>
                 <template v-else>
                   <button type="button" class="secundario" :disabled="ocupado || cliente.trim().length < 2" @click="buscarFichaParaTurno">Buscar ficha</button>
+                  <button v-if="!editando" type="button" class="secundario" :disabled="ocupado" @click="nuevaFichaTurno.abrir({ nombre: cliente.trim() })">Crear ficha</button>
                   <template v-if="fichasCoincidentes">
                     <ul v-if="fichasCoincidentes.clientes.length" class="turnos">
                       <li v-for="ficha in fichasCoincidentes.clientes" :key="ficha.id">
@@ -1291,6 +1295,8 @@ onMounted(() => {
               <button type="submit" :disabled="ocupado || !fechaTurno || !servicioElegido" class="boton-formulario boton-formulario--guardar">{{ editando ? 'Guardar cambios' : (sinConexion ? 'Guardar pendiente' : 'Cargar turno') }}</button>
             </form>
         </dialog>
+
+        <FichaClienteDialog ref="nuevaFichaTurno" :api="api" @guardada="seleccionarFichaParaTurno($event.cliente)" />
 
         <section v-show="seccionAgenda === 'mensajes' && !sinConexion" id="mensajes" class="panel" aria-labelledby="titulo-mensajes">
             <div class="barra">

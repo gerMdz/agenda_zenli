@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue'
+import FichaClienteDialog from './FichaClienteDialog.vue'
 
 const props = defineProps({
   api: { type: Function, required: true },
@@ -17,7 +18,6 @@ const aviso = ref('')
 const dialogoFicha = ref(null)
 const dialogoObservacion = ref(null)
 const dialogoArchivo = ref(null)
-const datosFicha = ref({ nombre: '', telefono: '', email: '' })
 const texto = ref('')
 const estados = { programado: 'Programado', atendido: 'Atendido', ausente: 'Ausente' }
 const fechaHora = new Intl.DateTimeFormat('es-AR', {
@@ -52,24 +52,16 @@ watch(() => props.fichaId, id => ejecutar(async () => {
 }), { immediate: true })
 
 function editar() {
-  const cliente = ficha.value?.cliente
-  datosFicha.value = { nombre: cliente?.nombre ?? '', telefono: cliente?.telefono ?? '', email: cliente?.email ?? '' }
-  error.value = ''
-  dialogoFicha.value.showModal()
+  dialogoFicha.value.abrir(ficha.value?.cliente)
 }
 
-function guardar() {
-  return ejecutar(async () => {
-    const id = ficha.value?.cliente.id
-    const resultado = await props.api(id ? ruta + '/' + id : ruta, id ? 'PUT' : 'POST', datosFicha.value)
-    dialogoFicha.value.close()
-    if (id) {
-      ficha.value = resultado
-      aviso.value = 'Ficha guardada.'
-    } else {
-      emit('seleccionar', resultado.cliente.id)
-    }
-  })
+function fichaGuardada(resultado) {
+  if (props.fichaId) {
+    ficha.value = resultado
+    aviso.value = 'Ficha guardada.'
+  } else {
+    emit('seleccionar', resultado.cliente.id)
+  }
 }
 
 function abrirObservacion() {
@@ -158,19 +150,7 @@ function cambiarArchivo() {
       <p v-if="ficha.mas_observaciones">Se muestran las últimas 100 observaciones.</p>
     </template>
 
-    <dialog ref="dialogoFicha" aria-labelledby="titulo-editar-ficha" @cancel="ocupado && $event.preventDefault()" @close="error = ''">
-      <h2 id="titulo-editar-ficha">{{ fichaId ? 'Editar ficha' : 'Nueva ficha' }}</h2>
-      <p v-if="error" role="alert">{{ error }}</p>
-      <form @submit.prevent="guardar">
-        <label>Nombre <input v-model.trim="datosFicha.nombre" required maxlength="150" autofocus :disabled="ocupado"></label>
-        <label>Teléfono (opcional) <input v-model.trim="datosFicha.telefono" type="tel" maxlength="30" :disabled="ocupado"></label>
-        <label>Correo (opcional) <input v-model.trim="datosFicha.email" type="email" maxlength="180" :disabled="ocupado"></label>
-        <div class="acciones-formulario">
-          <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="dialogoFicha.close()">Cancelar</button>
-          <button type="submit" class="boton-formulario boton-formulario--guardar" :disabled="ocupado">Guardar ficha</button>
-        </div>
-      </form>
-    </dialog>
+    <FichaClienteDialog ref="dialogoFicha" :api="api" @guardada="fichaGuardada" />
     <dialog ref="dialogoObservacion" aria-labelledby="titulo-observacion" @cancel="ocupado && $event.preventDefault()" @close="error = ''">
       <h2 id="titulo-observacion">Agregar observación</h2>
       <p v-if="error" role="alert">{{ error }}</p>
