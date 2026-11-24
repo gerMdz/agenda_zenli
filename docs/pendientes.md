@@ -43,6 +43,7 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 - Verificamos la compilación del frontend y las dos secciones en Chrome contra el Docker local. Con el perfil de prueba de Micaela vimos el 25/11/2026 como «Todo el día» y el 27/11/2026 de 13:00 a 15:00. Son datos ficticios exclusivos del entorno local.
 - En Chrome a 390 × 844 px verificamos el fondo a pantalla completa y el menú plegado al entrar. En esa resolución, el resumen y el horario habitual quedan antes de la grilla. Si en el uso diario cuesta llegar al calendario, revisar ese orden con las profesionales.
 - Para habilitar el uso interno con datos reales, confirmar y cargar las franjas de cada profesional, revisar sus excepciones y comprobar la agenda con una cuenta profesional y otra administradora. Mantener `/demo` y las reservas públicas desactivadas. «Solicitudes pendientes» sigue como panel informativo.
+- Verificar la instalación de Agenda Zenli en celulares reales cuando haya un entorno HTTPS autorizado. En Chrome para Android, abrir la agenda y usar **Instalar aplicación** desde el menú. En Safari para iPhone, usar **Compartir → Añadir a pantalla de inicio** y activar **Abrir como app web** si aparece. Abrir el icono del loto y comprobar que lleve a la agenda después de iniciar sesión.
 - Los commits, el push y el despliegue los realiza Gerardo.
 
 ## Servicios de la portada
