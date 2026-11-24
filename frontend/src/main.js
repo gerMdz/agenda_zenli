@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import PrimeVue from 'primevue/config'
 import Aura from '@primeuix/themes/aura'
 import App from './App.vue'
+import { prepararInstalacionAgenda } from './instalacionAgenda.js'
 import './base.css'
 
 function agregarMetadatosAgenda() {
@@ -24,6 +25,7 @@ async function iniciar() {
     return
   }
   let vista = App
+  if (ruta === '/admin/agenda') prepararInstalacionAgenda()
   if (ruta === '/admin' || ruta === '/admin/agenda') agregarMetadatosAgenda()
 
   if (ruta === '/admin') {

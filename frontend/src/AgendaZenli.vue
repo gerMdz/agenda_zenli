@@ -8,6 +8,7 @@ import {
   avisarCambioCuenta, borrarAlta, borrarCopia, borrarDatosLocales, canalAgendaLocal,
   guardarAlta, guardarCopia, leerAltas, leerCopia,
 } from './agendaSinConexion.js'
+import { agendaInstalada, solicitarInstalacionAgenda } from './instalacionAgenda.js'
 import lotoUrl from './image/loto.svg?no-inline'
 
 const seccionAgenda = ref('agenda')
@@ -53,6 +54,18 @@ const vista = ref('semana')
 const profesionalSeleccionada = ref('')
 const menuPerfil = ref(null)
 const horarioHabitual = ref(null)
+const dialogoInstalacion = ref(null)
+const instalandoAgenda = ref(false)
+
+async function descargarAgenda() {
+  instalandoAgenda.value = true
+  try {
+    if (!await solicitarInstalacionAgenda() && !agendaInstalada.value) dialogoInstalacion.value?.showModal()
+  } finally {
+    instalandoAgenda.value = false
+  }
+}
+
 const dialogoDisponibilidad = ref(null)
 const disponibilidadAbierta = ref(false)
 const fechaDisponibilidad = ref('')
@@ -938,6 +951,7 @@ onMounted(() => {
             <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
               {{ !usuario.admin || (perfilEnVista && perfilEnVista === usuario.profesional_id) ? 'Ver mi disponibilidad' : 'Ver disponibilidad' }}
             </button>
+            <button v-if="!agendaInstalada && !sinConexion" type="button" class="secundario" :disabled="instalandoAgenda" @click="descargarAgenda">Descargar app</button>
             <a v-if="usuario.admin && !sinConexion" :href="perfilEnVista ? `/admin?profesional=${perfilEnVista}#horarios-profesionales` : '/admin#horarios-profesionales'" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
           </div>
           <section class="panel solicitudes" aria-labelledby="titulo-solicitudes">
@@ -961,6 +975,16 @@ onMounted(() => {
           </section>
         </aside>
         </div>
+
+        <dialog ref="dialogoInstalacion" aria-labelledby="titulo-descargar-agenda">
+          <div class="barra">
+            <h2 id="titulo-descargar-agenda">Descargar Agenda Zenli</h2>
+            <button type="button" class="secundario" @click="dialogoInstalacion.close()">Cerrar</button>
+          </div>
+          <p><strong>Android.</strong> En Chrome, abrí el menú <strong>⋮</strong>, tocá <strong>Instalar aplicación</strong> o <strong>Agregar a la pantalla principal</strong> y seguí los pasos.</p>
+          <p><strong>iPhone.</strong> En Safari, tocá <strong>Compartir → Agregar a inicio</strong>. Si aparece <strong>Abrir como app web</strong>, activalo y tocá <strong>Agregar</strong>.</p>
+          <p><strong>Computadora.</strong> Buscá la opción <strong>Instalar Agenda Zenli</strong> en la barra de direcciones o en el menú de Chrome.</p>
+        </dialog>
 
         <dialog ref="dialogoDisponibilidad" aria-labelledby="titulo-disponibilidad"
           @close="disponibilidadAbierta = false" @cancel="ocupado && $event.preventDefault()">
