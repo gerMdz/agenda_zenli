@@ -41,7 +41,7 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 
 - La agenda abre después de iniciar sesión. «Mis horarios» y «Horarios no disponibles» son vistas de consulta del perfil propio. Las franjas semanales, las fechas puntuales y las indisponibilidades se editan desde **Administración → Horarios**.
 - Verificamos la compilación del frontend y las dos secciones en Chrome contra el Docker local. Con el perfil de prueba de Micaela vimos el 25/11/2026 como «Todo el día» y el 27/11/2026 de 13:00 a 15:00. Son datos ficticios exclusivos del entorno local.
-- En Chrome a 390 × 844 px verificamos el fondo a pantalla completa y el menú plegado al entrar. En esa resolución, el resumen y el horario habitual quedan antes de la grilla. Si en el uso diario cuesta llegar al calendario, revisar ese orden con las profesionales.
+- En Chrome a 390 × 844 px verificamos el fondo a pantalla completa y el menú plegado al entrar. Las acciones de agenda y la grilla quedan antes del resumen y el horario habitual.
 - Para habilitar el uso interno con datos reales, confirmar y cargar las franjas de cada profesional, revisar sus excepciones y comprobar la agenda con una cuenta profesional y otra administradora. Mantener `/demo` y las reservas públicas desactivadas. «Solicitudes pendientes» sigue como panel informativo.
 - Verificar «Descargar app» en celulares reales con HTTPS. En Android, comprobar el diálogo de Chrome. En iPhone, seguir la guía desde Safari. En ambos, abrir el icono del loto y comprobar que lleve a la agenda después de iniciar sesión.
 - Probar en Android y iPhone la consulta en modo avión tras la primera descarga, la caducidad de la copia y la sincronización al volver a abrir la app con conexión. Las ediciones, cancelaciones y la consulta de disponibilidad en tiempo real requieren conexión. Para habilitarlo en un despliegue, aplicar la migración de identificadores de altas sincronizadas.
@@ -49,7 +49,7 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 
 ## Servicios de la portada
 
-- Las imágenes de los 4 servicios iniciales deben subirse desde `/admin` para reemplazar el placeholder. El archivo `masajes.webp` (sprite de imágenes) deja de ser necesario una vez que cada servicio tiene su imagen.
+- Las imágenes de los 4 servicios iniciales deben subirse desde Sitio público → Servicios en portada (`/admin#servicios-portada`) para reemplazar el placeholder. El archivo `masajes.webp` (sprite de imágenes) deja de ser necesario una vez que cada servicio tiene su imagen.
 - Completar la duración informativa y la cantidad de profesionales de cada servicio cuando el centro las confirme; revisar los tratamientos importados antes de mostrarlos.
 - Revisar la configuración de preparación interna con el centro. Sin configuración se usan cero minutos y la agenda informa que falta definirla.
 - Para cargar datos ficticios en desarrollo, ejecutar `docker compose exec --user www-data app php bin/console zenli:agenda:datos-prueba`. El turno de prueba se crea para el 06/07/2099.

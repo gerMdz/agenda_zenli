@@ -60,7 +60,7 @@ final class ServiciosPortada
         if (mb_strlen($nombre) < 2 || mb_strlen($nombre) > 100) {
             throw new InvalidArgumentException('El nombre debe tener entre 2 y 100 caracteres.');
         }
-        if (mb_strlen($descripcionCorta) < 5 || mb_strlen($descripcionCorta) > 255) {
+        if ($descripcionCorta !== '' && (mb_strlen($descripcionCorta) < 5 || mb_strlen($descripcionCorta) > 255)) {
             throw new InvalidArgumentException('La descripción corta debe tener entre 5 y 255 caracteres.');
         }
 
@@ -90,6 +90,9 @@ final class ServiciosPortada
             $servicio = new ServicioPortada();
             $servicio->nombre = $nombre;
             $servicio->descripcionCorta = $descripcionCorta;
+            if ($descripcionCorta === '') {
+                $servicio->visible = false;
+            }
             $servicio->detalle = $detalle;
             $servicio->orden = $nuevoOrden;
             $servicio->imagenVersion = $version;
@@ -105,7 +108,7 @@ final class ServiciosPortada
 
     public function actualizar(
         int $id,
-        string $nombre,
+        ?string $nombre,
         string $descripcionCorta,
         string $detalle,
         ?UploadedFile $archivo,
@@ -117,11 +120,11 @@ final class ServiciosPortada
             throw new InvalidArgumentException('El servicio no existe.');
         }
 
-        $nombre = trim($nombre);
+        $nombre = $nombre === null ? null : trim($nombre);
         $descripcionCorta = trim($descripcionCorta);
         $detalle = trim($detalle);
 
-        if (mb_strlen($nombre) < 2 || mb_strlen($nombre) > 100) {
+        if ($nombre !== null && (mb_strlen($nombre) < 2 || mb_strlen($nombre) > 100)) {
             throw new InvalidArgumentException('El nombre debe tener entre 2 y 100 caracteres.');
         }
         if (mb_strlen($descripcionCorta) < 5 || mb_strlen($descripcionCorta) > 255) {
@@ -151,7 +154,9 @@ final class ServiciosPortada
         }
 
         $this->conexion->transactional(function () use ($servicio, $nombre, $descripcionCorta, $detalle, $autor, $eliminarImagen, $contenido, $tipo): void {
-            $servicio->nombre = $nombre;
+            if ($nombre !== null) {
+                $servicio->nombre = $nombre;
+            }
             $servicio->descripcionCorta = $descripcionCorta;
             $servicio->detalle = $detalle;
             $this->auditar($servicio, $autor);
@@ -208,12 +213,15 @@ final class ServiciosPortada
         if ($servicio === null) {
             throw new InvalidArgumentException('El servicio no existe.');
         }
+        if ($visible && mb_strlen($servicio->descripcionCorta) < 5) {
+            throw new InvalidArgumentException('Completá la descripción del servicio antes de mostrarlo en la portada.');
+        }
         $servicio->visible = $visible;
         $this->auditar($servicio, $autor);
         $this->entidades->flush();
     }
 
-    public function configurar(int $id, ?int $duracionMinima, ?int $profesionalesRequeridos, string $autor): void
+    public function configurar(int $id, ?int $duracionMinima, ?int $profesionalesRequeridos, string $autor, ?string $nombre = null): void
     {
         if (($duracionMinima !== null && ($duracionMinima < 1 || $duracionMinima > 2147483647))
             || ($profesionalesRequeridos !== null && ($profesionalesRequeridos < 1 || $profesionalesRequeridos > 2147483647))) {
@@ -222,6 +230,13 @@ final class ServiciosPortada
         $servicio = $this->buscar($id);
         if ($servicio === null) {
             throw new InvalidArgumentException('El servicio no existe.');
+        }
+        if ($nombre !== null) {
+            $nombre = trim($nombre);
+            if (mb_strlen($nombre) < 2 || mb_strlen($nombre) > 100) {
+                throw new InvalidArgumentException('El nombre debe tener entre 2 y 100 caracteres.');
+            }
+            $servicio->nombre = $nombre;
         }
         $servicio->duracionMinima = $duracionMinima;
         $servicio->profesionalesRequeridos = $profesionalesRequeridos;

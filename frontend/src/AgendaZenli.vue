@@ -869,6 +869,15 @@ onMounted(() => {
 
       <template v-if="datos">
         <div v-show="seccionAgenda === 'agenda'" class="tablero">
+        <section class="panel acciones-rapidas" aria-label="Acciones de agenda">
+            <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno"><span aria-hidden="true">＋</span> Nuevo turno</button>
+            <button v-if="usuario.admin && !sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
+            <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
+              {{ !usuario.admin || (perfilEnVista && perfilEnVista === usuario.profesional_id) ? 'Ver mi disponibilidad' : 'Ver disponibilidad' }}
+            </button>
+            <button v-if="!agendaInstalada && !sinConexion" type="button" class="secundario" :disabled="instalandoAgenda" @click="descargarAgenda">Descargar app</button>
+            <a v-if="usuario.admin && !sinConexion" :href="perfilEnVista ? `/admin?profesional=${perfilEnVista}#horarios-profesionales` : '/admin#horarios-profesionales'" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
+        </section>
         <section class="panel panel-calendario" aria-labelledby="titulo-agenda">
           <div class="barra cabecera-calendario">
             <div>
@@ -944,16 +953,7 @@ onMounted(() => {
           </template>
         </section>
 
-        <aside class="columna-acciones" aria-label="Acciones y resumen">
-          <div class="panel acciones-rapidas">
-            <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno"><span aria-hidden="true">＋</span> Nuevo turno</button>
-            <button v-if="usuario.admin && !sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
-            <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
-              {{ !usuario.admin || (perfilEnVista && perfilEnVista === usuario.profesional_id) ? 'Ver mi disponibilidad' : 'Ver disponibilidad' }}
-            </button>
-            <button v-if="!agendaInstalada && !sinConexion" type="button" class="secundario" :disabled="instalandoAgenda" @click="descargarAgenda">Descargar app</button>
-            <a v-if="usuario.admin && !sinConexion" :href="perfilEnVista ? `/admin?profesional=${perfilEnVista}#horarios-profesionales` : '/admin#horarios-profesionales'" class="enlace-accion">Editar horarios <span aria-hidden="true">↗</span></a>
-          </div>
+        <aside class="columna-resumen" aria-label="Resumen de agenda">
           <section class="panel solicitudes" aria-labelledby="titulo-solicitudes">
             <h2 id="titulo-solicitudes">Solicitudes pendientes</h2>
             <p>Las reservas se gestionan desde la agenda interna.</p>
@@ -1185,14 +1185,15 @@ onMounted(() => {
 .agenda :deep(nav[aria-label="Menú de administración"] a:hover) { background: #23513c; }
 .agenda :deep(nav[aria-label="Menú de administración"] [aria-current]) { background: #294f3c; box-shadow: inset 3px 0 #dfb969; }
 .agenda :deep(nav[aria-label="Menú de administración"] p) { color: #e0bd77; }
-.tablero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 13rem); gap: .9rem; align-items: start; }
-.panel-calendario { min-width: 0; }
+.tablero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 13rem); grid-template-areas: "calendario acciones" "calendario resumen"; grid-template-rows: auto 1fr; gap: .9rem; align-items: start; }
+.panel-calendario { grid-area: calendario; min-width: 0; }
+.columna-resumen { grid-area: resumen; }
 .cabecera-calendario h1 { margin: 0 0 .15rem; font-size: clamp(1.8rem, 3vw, 2.55rem); }
 .cabecera-calendario p { margin: 0; color: #56645a; }
 .selector-vista { display: flex; gap: .12rem; border: 1px solid #ded9cc; padding: .16rem; border-radius: 2rem; background: #f3eee3; }
 .selector-vista button { border: 0; border-radius: 2rem; background: transparent; color: #244437; padding: .4rem .65rem; }
 .selector-vista button[aria-pressed=true] { background: #174334; color: #fff9e7; }
-.acciones-rapidas { display: grid; gap: .5rem; }
+.panel.acciones-rapidas { grid-area: acciones; display: grid; gap: .5rem; margin-bottom: 0; }
 .acciones-rapidas > :is(button, a) { width: 100%; text-align: center; font-size: .85rem; }
 .acciones-rapidas .nuevo-turno { background: linear-gradient(#ebc77c,#d7a546); border-color: #b4832d; color: #2f2415; font-weight: 750; }
 .nuevo-turno span { margin-right: .15rem; }
@@ -1209,12 +1210,12 @@ onMounted(() => {
 .icono-loto { width: 1rem; height: 1rem; vertical-align: middle; }
 .turnos li:focus { outline: 2px solid #916119; outline-offset: 1px; }
 @media (max-width: 75rem) {
-  .tablero { grid-template-columns: minmax(0, 1fr); }
-  .columna-acciones { grid-row: 1; display: flex; gap: .55rem; flex-wrap: wrap; align-items: start; }
-  .columna-acciones .panel { margin-bottom: 0; }
-  .acciones-rapidas { display: flex; flex-wrap: wrap; }
+  .tablero { grid-template-columns: minmax(0, 1fr); grid-template-areas: "acciones" "calendario" "resumen"; grid-template-rows: auto; }
+  .columna-resumen { display: flex; gap: .55rem; flex-wrap: wrap; align-items: start; }
+  .columna-resumen .panel { margin-bottom: 0; }
+  .panel.acciones-rapidas { display: flex; flex-wrap: wrap; }
   .acciones-rapidas > :is(button, a) { width: auto; }
-  .columna-acciones section { flex: 1; }
+  .columna-resumen section { flex: 1; }
   .resumen { display: flex; gap: .45rem .9rem; flex-wrap: wrap; }
 }
 @media (max-width: 42rem) {

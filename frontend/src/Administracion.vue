@@ -16,6 +16,8 @@ function seccionDeUrl() {
 }
 
 const seccionActiva = ref(seccionDeUrl())
+const serviciosEnPortada = computed(() => seccionActiva.value.id === 'servicios-portada')
+const enServicios = computed(() => seccionActiva.value.id === 'servicios' || serviciosEnPortada.value)
 const contenidoPrincipal = ref(null)
 
 async function actualizarSeccion() {
@@ -98,9 +100,6 @@ const vistaPrevia = computed(() =>
 const servicios = ref([])
 const servicioCreando = ref(false)
 const nuevoNombre = ref('')
-const nuevoDescCorta = ref('')
-const nuevoDetalle = ref('')
-const nuevoArchivo = ref(null)
 const servicioEditando = ref(null)
 const editNombre = ref('')
 const editDescCorta = ref('')
@@ -110,7 +109,6 @@ const editProfesionales = ref('')
 const editArchivo = ref(null)
 const editEliminarImagen = ref(false)
 const servicioImagenTemporal = ref(null)
-const imagenNuevaTemporal = ref(null)
 const dialogoServicio = ref(null)
 const dialogoNuevoServicio = ref(null)
 const entradaImagenEdicion = ref(null)
@@ -591,15 +589,11 @@ function guardarUsuario() {
   })
 }
 
-// --- Servicios de portada ---
+// --- Servicios ---
 
 async function iniciarCreacion() {
   servicioCreando.value = true
   nuevoNombre.value = ''
-  nuevoDescCorta.value = ''
-  nuevoDetalle.value = ''
-  nuevoArchivo.value = null
-  imagenNuevaTemporal.value = null
   crearError.value = ''
   error.value = ''
   mensaje.value = ''
@@ -612,26 +606,7 @@ function cancelarCreacion() {
   if (dialogoNuevoServicio.value?.open) dialogoNuevoServicio.value.close()
   servicioCreando.value = false
   nuevoNombre.value = ''
-  nuevoDescCorta.value = ''
-  nuevoDetalle.value = ''
-  nuevoArchivo.value = null
-  if (imagenNuevaTemporal.value) URL.revokeObjectURL(imagenNuevaTemporal.value)
-  imagenNuevaTemporal.value = null
   crearError.value = ''
-}
-
-function elegirImagenServicio(evento) {
-  const archivo = evento.target.files[0]
-  if (!archivo) return
-  if (archivo.size > 4 * 1024 * 1024) {
-    crearError.value = 'La imagen supera los 4 MB.'
-    evento.target.value = ''
-    return
-  }
-  crearError.value = ''
-  if (imagenNuevaTemporal.value) URL.revokeObjectURL(imagenNuevaTemporal.value)
-  imagenNuevaTemporal.value = URL.createObjectURL(archivo)
-  nuevoArchivo.value = archivo
 }
 
 async function crearServicio() {
@@ -641,9 +616,6 @@ async function crearServicio() {
   try {
     const datos = new FormData()
     datos.set('nombre', nuevoNombre.value)
-    datos.set('descripcion_corta', nuevoDescCorta.value)
-    datos.set('detalle', nuevoDetalle.value)
-    if (nuevoArchivo.value) datos.set('imagen', nuevoArchivo.value)
     const resultado = await api('/api/admin/servicios', { method: 'POST', datos })
     servicios.value = resultado.servicios
     cancelarCreacion()
@@ -673,7 +645,7 @@ async function iniciarEdicion(servicio) {
   mensaje.value = ''
   await nextTick()
   dialogoServicio.value.showModal()
-  document.getElementById('edit-nombre')?.focus()
+  document.getElementById(serviciosEnPortada.value ? 'edit-desc' : 'edit-nombre')?.focus()
 }
 
 function cancelarEdicion() {
@@ -712,7 +684,6 @@ async function guardarEdicion() {
   ocupado.value = true
   try {
     const datos = new FormData()
-    datos.set('nombre', editNombre.value)
     datos.set('descripcion_corta', editDescCorta.value)
     datos.set('detalle', editDetalle.value)
     if (editArchivo.value) datos.set('imagen', editArchivo.value)
@@ -742,6 +713,7 @@ async function guardarConfiguracionServicio() {
     const resultado = await api(`/api/admin/servicios/${servicioEditando.value.id}/configuracion`, {
       method: 'PATCH',
       datos: {
+        nombre: editNombre.value,
         duracion_minima: editMinimo.value === '' ? null : Number(editMinimo.value),
         profesionales_requeridos: editProfesionales.value === '' ? null : Number(editProfesionales.value),
       },
@@ -811,7 +783,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('hashchange', actualizarSeccion)
   limpiarImagenTemporal()
   limpiarImagenTemporalServicio()
-  if (imagenNuevaTemporal.value) URL.revokeObjectURL(imagenNuevaTemporal.value)
 })
 </script>
 
@@ -829,8 +800,8 @@ onBeforeUnmount(() => {
       <h1 id="titulo-seccion-admin">{{ usuario?.admin ? seccionActiva.nombre : 'Administración de Zenli' }}</h1>
       <p v-if="usuario" class="cuenta-actual">{{ usuario.email }}</p>
       <p v-if="cargando" role="status">Cargando…</p>
-      <p v-if="error && (!usuario?.admin || seccionActiva.id !== 'servicios') && !accionProfesional && !accionCuenta && !horarioAnterior" class="error" role="alert">{{ error }}</p>
-      <p v-if="mensaje && (!usuario?.admin || seccionActiva.id !== 'servicios')" class="mensaje" role="status">{{ mensaje }}</p>
+      <p v-if="error && (!usuario?.admin || !enServicios) && !accionProfesional && !accionCuenta && !horarioAnterior" class="error" role="alert">{{ error }}</p>
+      <p v-if="mensaje && (!usuario?.admin || !enServicios)" class="mensaje" role="status">{{ mensaje }}</p>
 
       <section v-if="!cargando && !usuario" class="panel inicio-sesion">
         <h2>Ingresá a tu cuenta</h2>
@@ -1158,39 +1129,45 @@ onBeforeUnmount(() => {
           </section>
         </template>
 
-        <!-- Servicios de la portada -->
-        <section v-show="seccionActiva.id === 'servicios'" class="panel" aria-labelledby="titulo-servicios">
+        <!-- Catálogo operativo y presentación de los mismos servicios -->
+        <section v-show="enServicios" class="panel" aria-labelledby="titulo-servicios">
           <div class="avisos-servicios">
             <p v-if="error" class="error" role="alert">{{ error }}</p>
             <p v-if="mensaje" class="mensaje" role="status">{{ mensaje }}</p>
           </div>
           <div class="panel-header">
-            <h2 id="titulo-servicios">Servicios de la portada</h2>
-            <button v-if="!servicioCreando" type="button" class="secundario" :disabled="ocupado" @click="iniciarCreacion">+ Nuevo servicio</button>
+            <h2 id="titulo-servicios">{{ serviciosEnPortada ? 'Presentación de servicios' : 'Catálogo de agenda' }}</h2>
+            <button v-if="!serviciosEnPortada && !servicioCreando" type="button" class="secundario" :disabled="ocupado" @click="iniciarCreacion">+ Nuevo servicio</button>
           </div>
 
           <ul class="lista-servicios">
-            <li v-for="(servicio, index) in servicios" :key="servicio.id" :class="{ oculto: !servicio.visible }">
+            <li v-for="(servicio, index) in servicios" :key="servicio.id" :class="{ oculto: serviciosEnPortada && !servicio.visible }">
               <div class="servicio-info">
-                <span class="servicio-orden">{{ index + 1 }}</span>
+                <span v-if="serviciosEnPortada" class="servicio-orden">{{ index + 1 }}</span>
                 <div class="servicio-detalle">
                   <strong>{{ servicio.nombre }}</strong>
-                  <small>{{ servicio.descripcion_corta }}</small>
-                  <small v-if="servicio.duracion_minima == null || servicio.profesionales_requeridos == null">Configuración de agenda incompleta</small>
-                  <small v-else>Mínimo: {{ servicio.duracion_minima }} min · Profesionales: {{ servicio.profesionales_requeridos }}</small>
+                  <template v-if="serviciosEnPortada">
+                    <small>{{ servicio.descripcion_corta || 'Falta la descripción para publicar' }}</small>
+                    <span v-if="servicio.imagen_version" class="badge">con imagen</span>
+                    <span v-else class="badge sin-imagen">sin imagen</span>
+                  </template>
+                  <template v-else>
+                    <small v-if="servicio.duracion_minima == null || servicio.profesionales_requeridos == null">Configuración de agenda incompleta</small>
+                    <small v-else>Mínimo {{ servicio.duracion_minima }} min · Profesionales: {{ servicio.profesionales_requeridos }}</small>
+                  </template>
                   <small v-if="resumenAuditoria(servicio.auditoria)" class="meta-auditoria">{{ resumenAuditoria(servicio.auditoria) }}</small>
-                  <span v-if="servicio.imagen_version" class="badge">con imagen</span>
-                  <span v-else class="badge sin-imagen">sin imagen</span>
                 </div>
               </div>
               <div class="servicio-acciones">
+                <template v-if="serviciosEnPortada">
                 <button type="button" class="secundario icono" :disabled="ocupado || index === 0" title="Mover arriba" @click="moverServicio(servicio.id, -1)">↑</button>
                 <button type="button" class="secundario icono" :disabled="ocupado || index === servicios.length - 1" title="Mover abajo" @click="moverServicio(servicio.id, 1)">↓</button>
                 <button type="button" class="secundario" :disabled="ocupado" @click="cambiarVisibilidad(servicio.id, !servicio.visible)">
                   {{ servicio.visible ? 'Ocultar' : 'Mostrar' }}
                 </button>
+                </template>
                 <button type="button" class="secundario" :disabled="ocupado" @click="iniciarEdicion(servicio)">Editar</button>
-                <button type="button" class="peligro" :disabled="ocupado" @click="eliminarServicio(servicio.id)">Eliminar</button>
+                <button type="button" v-if="!serviciosEnPortada" class="peligro" :disabled="ocupado" @click="eliminarServicio(servicio.id)">Eliminar</button>
               </div>
             </li>
           </ul>
@@ -1206,16 +1183,7 @@ onBeforeUnmount(() => {
             <p v-if="crearError" class="error inline" role="alert">{{ crearError }}</p>
             <label for="nuevo-nombre">Nombre</label>
             <input id="nuevo-nombre" v-model="nuevoNombre" type="text" maxlength="100" placeholder="Ej: Descontracturante" :disabled="ocupado" required>
-            <label for="nuevo-desc">Descripción corta</label>
-            <input id="nuevo-desc" v-model="nuevoDescCorta" type="text" maxlength="255" placeholder="Ej: Presión intensa y técnicas de masaje tailandés." :disabled="ocupado" required>
-            <label for="nuevo-detalle">Detalle extenso <small>(opcional)</small></label>
-            <textarea id="nuevo-detalle" v-model="nuevoDetalle" rows="4" placeholder="Descripción completa del masaje, beneficios, técnica…" :disabled="ocupado"></textarea>
-            <label for="nuevo-imagen">Imagen</label>
-            <div v-if="imagenNuevaTemporal" class="vista-previa-servicio">
-              <img :src="imagenNuevaTemporal" alt="Vista previa">
-            </div>
-            <input id="nuevo-imagen" type="file" accept="image/jpeg,image/png,image/webp" :disabled="ocupado" @change="elegirImagenServicio">
-            <small>JPG, PNG o WebP, hasta 4 MB de peso. Se mostrará en la tarjeta de la portada.</small>
+            <p>Podés completar la presentación desde Sitio público cuando quieras publicarlo.</p>
             <div class="acciones">
               <button :disabled="ocupado">Crear servicio</button>
               <button type="button" class="secundario" :disabled="ocupado" @click="cancelarCreacion">Cancelar</button>
@@ -1226,17 +1194,15 @@ onBeforeUnmount(() => {
           <dialog ref="dialogoServicio" class="modal-servicio" aria-labelledby="titulo-editar-servicio" @close="cancelarEdicion" @cancel="ocupado && $event.preventDefault()">
             <template v-if="servicioEditando">
             <div class="modal-cabecera">
-              <div><span class="modal-etiqueta">SERVICIOS DE ZENLI</span><h2 id="titulo-editar-servicio">Editar servicio</h2><p>{{ servicioEditando.nombre }}</p><small v-if="resumenAuditoria(servicioEditando.auditoria)" class="meta-auditoria">{{ resumenAuditoria(servicioEditando.auditoria) }}</small></div>
+              <div><span class="modal-etiqueta">SERVICIOS DE ZENLI</span><h2 id="titulo-editar-servicio">{{ serviciosEnPortada ? 'Editar presentación' : 'Editar servicio' }}</h2><p>{{ servicioEditando.nombre }}</p><small v-if="resumenAuditoria(servicioEditando.auditoria)" class="meta-auditoria">{{ resumenAuditoria(servicioEditando.auditoria) }}</small></div>
               <button type="button" class="cerrar-modal" aria-label="Cerrar edición" :disabled="ocupado" @click="cancelarEdicion">✕</button>
             </div>
             <div class="modal-avisos" aria-live="polite">
               <p v-if="editarError" class="error inline" role="alert">{{ editarError }}</p>
               <p v-if="editarMensaje" class="mensaje" role="status">{{ editarMensaje }}</p>
             </div>
-          <form class="formulario-servicio" :key="servicioEditando.id" @submit.prevent="guardarEdicion">
+          <form v-if="serviciosEnPortada" class="formulario-servicio" :key="servicioEditando.id" @submit.prevent="guardarEdicion">
             <h3>Información para la portada</h3>
-            <label for="edit-nombre">Nombre</label>
-            <input id="edit-nombre" v-model="editNombre" type="text" maxlength="100" :disabled="ocupado" required>
             <label for="edit-desc">Descripción corta</label>
             <input id="edit-desc" v-model="editDescCorta" type="text" maxlength="255" :disabled="ocupado" required>
             <label for="edit-detalle">Detalle extenso <small>(opcional)</small></label>
@@ -1257,14 +1223,15 @@ onBeforeUnmount(() => {
               <button :disabled="ocupado">Guardar cambios</button>
             </div>
           </form>
-          <form class="formulario-servicio configuracion-modal" @submit.prevent="guardarConfiguracionServicio">
+          <form v-else class="formulario-servicio configuracion-modal" @submit.prevent="guardarConfiguracionServicio">
             <h3>Configuración de agenda</h3>
+            <label>Nombre <input id="edit-nombre" v-model="editNombre" type="text" maxlength="100" :disabled="ocupado" required></label>
             <label>Tiempo mínimo (minutos) <input v-model.number="editMinimo" type="number" min="1" :disabled="ocupado"></label>
             <label>Cantidad mínima de profesionales <input v-model.number="editProfesionales" type="number" min="1" :disabled="ocupado"></label>
             <small>Sin estos datos el servicio no puede agendarse. La duración mínima es informativa; se pueden elegir las cuatro duraciones.</small>
             <button :disabled="ocupado">Guardar configuración de agenda</button>
           </form>
-          <form v-if="preparacionIndividual" class="formulario-servicio configuracion-modal" @submit.prevent="guardarPreparacionServicio">
+          <form v-if="!serviciosEnPortada && preparacionIndividual" class="formulario-servicio configuracion-modal" @submit.prevent="guardarPreparacionServicio">
             <h3>Preparación después del turno</h3>
             <label>Tiempo individual (minutos)
               <input v-model.number="editPreparacionMinutos" type="number" min="0" max="1440" :disabled="ocupado">

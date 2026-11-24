@@ -1,21 +1,22 @@
 export const gruposMenu = [
   {
-    nombre: 'Sitio',
-    enlaces: [
-      { id: 'portada', nombre: 'Portada' },
-      { id: 'servicios', nombre: 'Servicios' },
-      { id: 'promociones', nombre: 'Promociones' },
-      { id: 'equipo-portada', nombre: 'Profesionales en portada' },
-    ],
-  },
-  {
     nombre: 'Agenda',
     enlaces: [
-      { id: 'espacios', nombre: 'Espacios de atención' },
+      { id: 'servicios', nombre: 'Servicios' },
       { id: 'profesionales', nombre: 'Profesionales' },
+      { id: 'espacios', nombre: 'Espacios de atención' },
       { id: 'horarios-profesionales', nombre: 'Horarios' },
       { id: 'preparacion', nombre: 'Preparación' },
       { id: 'configuracion-agenda', nombre: 'Guía de configuración' },
+    ],
+  },
+  {
+    nombre: 'Sitio público',
+    enlaces: [
+      { id: 'portada', nombre: 'Portada' },
+      { id: 'servicios-portada', nombre: 'Servicios en portada' },
+      { id: 'promociones', nombre: 'Promociones' },
+      { id: 'equipo-portada', nombre: 'Profesionales en portada' },
     ],
   },
   {

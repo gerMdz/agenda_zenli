@@ -208,8 +208,8 @@ final readonly class AdministracionController
             $nombre = $peticion->request->getString('nombre');
             $descripcionCorta = $peticion->request->getString('descripcion_corta');
             $detalle = $peticion->request->getString('detalle');
-            if ($nombre === '' || $descripcionCorta === '') {
-                return $this->error('Completá nombre y descripción corta.', 422);
+            if ($nombre === '' || ($peticion->request->has('descripcion_corta') && trim($descripcionCorta) === '')) {
+                return $this->error('Ingresá un nombre y, si cargás la descripción corta, completala.', 422);
             }
             $id = $this->servicios->crear($nombre, $descripcionCorta, $detalle, $archivo, $usuario['id']);
         } catch (InvalidArgumentException $error) {
@@ -229,7 +229,7 @@ final readonly class AdministracionController
         }
 
         try {
-            $nombre = $peticion->request->getString('nombre');
+            $nombre = $peticion->request->has('nombre') ? $peticion->request->getString('nombre') : null;
             $descripcionCorta = $peticion->request->getString('descripcion_corta');
             $detalle = $peticion->request->getString('detalle');
             $eliminarImagen = $peticion->request->getString('eliminar_imagen') === '1';
@@ -290,7 +290,11 @@ final readonly class AdministracionController
                     throw new InvalidArgumentException('La duración y la cantidad de profesionales deben ser enteros positivos o null.');
                 }
             }
-            $this->servicios->configurar((int) $id, $datos['duracion_minima'], $datos['profesionales_requeridos'], $usuario['id']);
+            $nombre = $datos['nombre'] ?? null;
+            if (array_key_exists('nombre', $datos) && !is_string($nombre)) {
+                throw new InvalidArgumentException('Ingresá un nombre válido.');
+            }
+            $this->servicios->configurar((int) $id, $datos['duracion_minima'], $datos['profesionales_requeridos'], $usuario['id'], $nombre);
         } catch (JsonException) {
             return $this->error('Revisá los datos de configuración.', 400);
         } catch (InvalidArgumentException $error) {
