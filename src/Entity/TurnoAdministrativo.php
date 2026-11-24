@@ -22,6 +22,9 @@ class TurnoAdministrativo
     #[ORM\Column(name: 'servicio_nombre', length: 100)]
     public string $servicioNombre;
 
+    #[ORM\Column(name: 'cliente_id', type: 'bigint', nullable: true)]
+    public int|string|null $clienteId = null;
+
     #[ORM\Column(name: 'cliente_nombre', length: 150)]
     public string $clienteNombre;
 

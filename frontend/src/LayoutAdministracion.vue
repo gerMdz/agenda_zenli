@@ -26,6 +26,7 @@ const menuAbierto = ref(false)
             <a href="/admin/agenda#mis-horarios" :aria-current="seccion === 'mis-horarios' ? 'page' : undefined" @click="menuAbierto = false">Mis horarios</a>
             <a href="/admin/agenda#horarios-no-disponibles" :aria-current="seccion === 'horarios-no-disponibles' ? 'page' : undefined" @click="menuAbierto = false">Horarios no disponibles</a>
           </template>
+          <a v-if="!soloAgenda" href="/admin/agenda#clientes" :aria-current="seccion === 'clientes' ? 'page' : undefined" @click="menuAbierto = false">Clientes</a>
           <a v-if="!soloAgenda" href="/admin/agenda#mensajes" :aria-current="seccion === 'mensajes' ? 'location' : undefined" @click="menuAbierto = false">Mensajes privados</a>
         </div>
         <template v-if="usuario.admin && !soloAgenda">

@@ -116,6 +116,9 @@ $agenda = [
     'POST /api/admin/agenda/turnos/buscar', 'PUT /api/admin/agenda/turnos/{id}/asistencia',
     'GET /api/admin/agenda/turnos/horario-habitual', 'GET /api/admin/agenda/turnos/disponibilidad',
     'PUT /api/admin/agenda/preparaciones/{id}', 'DELETE /api/admin/agenda/preparaciones/{id}',
+    'GET /api/admin/agenda/clientes', 'POST /api/admin/agenda/clientes',
+    'GET /api/admin/agenda/clientes/{id}', 'PUT /api/admin/agenda/clientes/{id}', 'DELETE /api/admin/agenda/clientes/{id}',
+    'POST /api/admin/agenda/clientes/buscar', 'POST /api/admin/agenda/clientes/{id}/reactivar', 'POST /api/admin/agenda/clientes/{id}/observaciones',
     'GET /api/admin/agenda/mensajes', 'POST /api/admin/agenda/mensajes',
 ];
 $revisadas = 0;

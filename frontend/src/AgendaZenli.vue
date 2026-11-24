@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import LayoutAdministracion from './LayoutAdministracion.vue'
+import ClientesAgenda from './ClientesAgenda.vue'
 import CalendarioHoras from './CalendarioHoras.vue'
 import EntradaHora from './EntradaHora.vue'
 import HorariosPersonales from './HorariosPersonales.vue'
@@ -12,15 +13,18 @@ import { agendaInstalada, solicitarInstalacionAgenda } from './instalacionAgenda
 import lotoUrl from './image/loto.svg?no-inline'
 
 const seccionAgenda = ref('agenda')
+const fichaId = ref(null)
 const esSeccionPersonal = computed(() => ['mis-horarios', 'horarios-no-disponibles'].includes(seccionAgenda.value))
 
 function actualizarSeccion() {
   if (sinConexion.value) {
+    fichaId.value = null
     seccionAgenda.value = 'agenda'
     return
   }
   const seccion = window.location.hash.slice(1)
-  if (seccion === 'mensajes' || (usuario.value?.profesional_id && ['mis-horarios', 'horarios-no-disponibles'].includes(seccion))) {
+  if (seccion !== 'clientes') fichaId.value = null
+  if (seccion === 'mensajes' || seccion === 'clientes' || (usuario.value?.profesional_id && ['mis-horarios', 'horarios-no-disponibles'].includes(seccion))) {
     seccionAgenda.value = seccion
     return
   }
@@ -95,9 +99,19 @@ function buscarTurnos() {
   })
 }
 
+function mostrarFicha(id) {
+  dialogoBusqueda.value?.close()
+  fichaId.value = id
+  window.location.hash = 'clientes'
+}
+
 function abrirResultado(turno) {
   return ejecutar(async () => {
-    dialogoBusqueda.value.close()
+    dialogoBusqueda.value?.close()
+    if (seccionAgenda.value !== 'agenda') {
+      window.location.hash = 'turnos'
+      actualizarSeccion()
+    }
     profesionalSeleccionada.value = ''
     vista.value = 'dia'
     fecha.value = calendario.format(new Date(turno.inicio))
@@ -381,6 +395,21 @@ const ocupado = ref(false)
 const error = ref('')
 const aviso = ref('')
 const cliente = ref('')
+const clienteVinculado = ref(null)
+const fichasCoincidentes = ref(null)
+
+function buscarFichaParaTurno() {
+  return ejecutar(async () => {
+    fichasCoincidentes.value = await api('/api/admin/agenda/clientes/buscar', 'POST', { nombre: cliente.value })
+  })
+}
+
+function seleccionarFichaParaTurno(ficha) {
+  clienteVinculado.value = ficha.id
+  cliente.value = ficha.nombre
+  fichasCoincidentes.value = null
+}
+
 const servicio = ref('')
 const hora = ref('')
 const duracion = ref('')
@@ -458,7 +487,7 @@ async function prepararCopia() {
     const horario = cuenta.profesional_id
       ? (await api('/api/admin/agenda/turnos/horario-habitual')).horario
       : null
-    agenda.turnos = agenda.turnos.map(({ sena_importe_centavos, sena_pagada, ...turno }) => ({
+    agenda.turnos = agenda.turnos.map(({ sena_importe_centavos, sena_pagada, cliente_id, ...turno }) => ({
       ...turno,
       cliente: turno.cliente.trim().split(/\s+/).map(nombre => nombre[0] + '.').join(' '),
       editable: false,
@@ -480,6 +509,8 @@ async function prepararCopia() {
 
 async function mostrarCopia() {
   sinConexion.value = true
+  clienteVinculado.value = null
+  fichasCoincidentes.value = null
   if (editando.value) {
     dialogo.value?.close()
     limpiarTurno()
@@ -696,6 +727,8 @@ function editarTurno(turno) {
   fechaTurno.value = calendario.format(inicio)
   hora.value = reloj.format(inicio)
   cliente.value = turno.cliente
+  clienteVinculado.value = turno.cliente_id ?? null
+  fichasCoincidentes.value = null
   servicio.value = turno.servicio_id ?? ''
   duracion.value = Number(turno.duracion)
   senaPagada.value = turno.sena_pagada
@@ -710,6 +743,8 @@ function limpiarTurno() {
   editando.value = null
   altaEnRevision.value = null
   cliente.value = ''
+  clienteVinculado.value = null
+  fichasCoincidentes.value = null
   hora.value = ''
   duracion.value = 20
   senaPagada.value = false
@@ -725,6 +760,7 @@ function guardarTurno() {
     const anterior = editando.value
     const turno = {
       cliente: cliente.value.trim(),
+      ...(!sinConexion.value && (clienteVinculado.value || anterior?.cliente_id) ? { cliente_id: clienteVinculado.value } : {}),
       servicio: servicio.value,
       espacio: espacio.value,
       profesionales: [...equipo.value],
@@ -923,6 +959,8 @@ onMounted(() => {
           </li>
         </ul>
       </section>
+      <ClientesAgenda v-if="seccionAgenda === 'clientes' && !sinConexion && usuario" :api="api" :ficha-id="fichaId"
+        @seleccionar="fichaId = $event" @ver-turno="abrirResultado" />
       <HorariosPersonales v-if="esSeccionPersonal" :seccion="seccionAgenda" :consultar="api" />
       <h1 v-if="seccionAgenda === 'mensajes'">Mensajes privados</h1>
       <p v-if="error && !modalAbierto && !modoBloqueo && !mensajeAbierto && !preparacionEditada && !disponibilidadAbierta && !buscandoTurnos && !turnoAsistencia" role="alert">{{ error }}</p>
@@ -997,6 +1035,7 @@ onMounted(() => {
                 <span v-else-if="turno.esPreparacion">Preparación del espacio</span>
                 <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
                 <small v-if="turno.asistencia" class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
+                <button v-if="!sinConexion && turno.cliente_id" type="button" class="secundario" :disabled="ocupado" @click="mostrarFicha(turno.cliente_id)">Ver ficha</button>
                 <small v-if="turno.esPreparacion">{{ turno.espacio }}</small>
                 <small v-else><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
                 <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
@@ -1061,7 +1100,10 @@ onMounted(() => {
                   <p>{{ calendario.format(new Date(turno.inicio)) }} · {{ horarioVisible(turno) }} · {{ turno.servicio }}</p>
                   <small class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
                 </div>
-                <button type="button" class="secundario" :disabled="ocupado" @click="abrirResultado(turno)">Ver turno</button>
+                <div class="acciones">
+                  <button v-if="turno.cliente_id" type="button" class="secundario" :disabled="ocupado" @click="mostrarFicha(turno.cliente_id)">Ver ficha</button>
+                  <button type="button" class="secundario" :disabled="ocupado" @click="abrirResultado(turno)">Ver turno</button>
+                </div>
               </li>
             </ul>
             <p v-if="resultadosTurnos.hay_mas">Se muestran los 50 turnos más recientes. Ingresá un nombre más completo para acotar la búsqueda.</p>
@@ -1194,7 +1236,26 @@ onMounted(() => {
               <p v-if="servicio">Preparación del espacio después del turno: {{ preparacion }} min.</p>
               <p v-if="servicioElegido && !servicioCompleto(servicioElegido)">Falta configurar {{ [servicioElegido.duracion_minima == null ? 'la duración informativa' : '', servicioElegido.profesionales_requeridos == null ? 'la cantidad de profesionales' : '', !datos.preparacion ? 'la preparación general' : ''].filter(Boolean).join(', ') }}. Podés guardar el turno igualmente.</p>
               <label>Fecha del turno <input v-model="fechaTurno" type="date" required></label>
-              <label>Nombre del cliente <input v-model="cliente" maxlength="150" required></label>
+              <label>Nombre del cliente <input v-model="cliente" maxlength="150" required :readonly="!!clienteVinculado" @input="fichasCoincidentes = null"></label>
+              <div v-if="!sinConexion">
+                <template v-if="clienteVinculado">
+                  <p>Ficha vinculada al turno.</p>
+                  <button type="button" class="secundario" :disabled="ocupado" @click="clienteVinculado = null">Quitar vínculo</button>
+                </template>
+                <template v-else>
+                  <button type="button" class="secundario" :disabled="ocupado || cliente.trim().length < 2" @click="buscarFichaParaTurno">Buscar ficha</button>
+                  <template v-if="fichasCoincidentes">
+                    <ul v-if="fichasCoincidentes.clientes.length" class="turnos">
+                      <li v-for="ficha in fichasCoincidentes.clientes" :key="ficha.id">
+                        <div><strong>{{ ficha.nombre }}</strong><small v-if="ficha.telefono || ficha.email"> · {{ ficha.telefono || ficha.email }}</small></div>
+                        <button type="button" class="secundario" :disabled="ocupado" @click="seleccionarFichaParaTurno(ficha)">Vincular ficha</button>
+                      </li>
+                    </ul>
+                    <p v-else>No se encontraron fichas con ese nombre.</p>
+                    <p v-if="fichasCoincidentes.hay_mas">Ingresá un nombre más completo.</p>
+                  </template>
+                </template>
+              </div>
               <label v-if="!sinConexion && !altaEnRevision" class="opcion"><input v-model="senaPagada" type="checkbox"> Seña pagada</label>
               <label v-if="!sinConexion && !altaEnRevision">Importe de la seña (opcional) <input v-model.trim="senaImporte" type="text" inputmode="decimal" placeholder="0,00"></label>
               <div class="barra">

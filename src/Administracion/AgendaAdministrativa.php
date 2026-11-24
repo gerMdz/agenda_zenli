@@ -53,7 +53,7 @@ final readonly class AgendaAdministrativa
             DQL;
 
         $filas = $this->consulta(<<<DQL
-            SELECT t.id AS id, t.servicioNombre AS servicio, t.clienteNombre AS cliente, t.inicio AS inicio, t.fin AS fin,
+            SELECT t.id AS id, t.servicioNombre AS servicio, t.clienteNombre AS cliente, t.clienteId AS cliente_id, t.inicio AS inicio, t.fin AS fin,
                    t.revision AS revision, t.asistencia AS asistencia, t.servicioId AS servicio_id, e.id AS espacio_id, e.nombre AS espacio,
                    t.profesionalesRequeridos AS profesionales_requeridos, t.senaPagada AS sena_pagada,
                    t.senaImporteCentavos AS sena_importe_centavos
@@ -67,7 +67,7 @@ final readonly class AgendaAdministrativa
             $equipo = $equipos[$fila['id']]['ids'] ?? [];
             $requeridos = $fila['profesionales_requeridos'];
             $turnos[] = [
-                'id' => (string) $fila['id'], 'servicio' => $fila['servicio'], 'cliente' => $fila['cliente'],
+                'id' => (string) $fila['id'], 'servicio' => $fila['servicio'], 'cliente' => $fila['cliente'], 'cliente_id' => self::texto($fila['cliente_id']),
                 'inicio' => $fila['inicio']->format(DATE_ATOM), 'fin' => $fila['fin']->format(DATE_ATOM),
                 'revision' => $fila['revision'], 'asistencia' => $fila['asistencia'], 'servicio_id' => self::texto($fila['servicio_id']),
                 'espacio_id' => (string) $fila['espacio_id'], 'espacio' => $fila['espacio'], 'equipo' => $equipo,
@@ -152,7 +152,7 @@ final readonly class AgendaAdministrativa
             $parametros['propia'] = $propia;
         }
         $turnos = $this->entidades->getConnection()->fetchAllAssociative(<<<SQL
-            SELECT t.id::text AS id, t.cliente_nombre AS cliente, t.servicio_nombre AS servicio,
+            SELECT t.id::text AS id, t.cliente_id::text AS cliente_id, t.cliente_nombre AS cliente, t.servicio_nombre AS servicio,
                    t.inicio, t.fin, t.asistencia
             FROM turnos_administrativos t
             WHERE t.cancelado_en IS NULL
@@ -343,6 +343,7 @@ final readonly class AgendaAdministrativa
         }
         $revision = $datos['revision'] ?? null;
         $cliente = $datos['cliente'] ?? null;
+        $clienteId = isset($datos['cliente_id']) ? self::id($datos['cliente_id']) : null;
         if (!is_string($cliente) || trim($cliente) === '' || preg_match('/\A[^\x00]{1,150}\z/u', trim($cliente)) !== 1) {
             throw new InvalidArgumentException('Ingresá un nombre de cliente válido.');
         }
@@ -362,9 +363,10 @@ final readonly class AgendaAdministrativa
         }
         $huella = $operacion === null ? null : hash('sha256', serialize([
             $servicio, $espacio, $equipo, trim($cliente), $inicio->format(DATE_ATOM), $duracion, $pagada, $importe,
+            ...($clienteId === null ? [] : [$clienteId]),
         ]));
 
-        return $this->conConcurrencia(fn (): string => TransaccionEntidades::ejecutar($this->entidades, function () use ($servicio, $espacio, $equipo, $cliente, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe, $operacion, $huella): string {
+        return $this->conConcurrencia(fn (): string => TransaccionEntidades::ejecutar($this->entidades, function () use ($servicio, $espacio, $equipo, $cliente, $clienteId, $inicio, $duracion, $autor, $propia, $editar, $revision, $datos, $pagada, $importe, $operacion, $huella): string {
             $conexion = $this->entidades->getConnection();
             if ($operacion !== null) {
                 $conexion->executeQuery('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', ["alta-turno:$autor:$operacion"]);
@@ -384,6 +386,15 @@ final readonly class AgendaAdministrativa
                 }
             }
             $anterior = $editar === null ? null : $this->bloquearEditable($editar, $propia, $revision);
+            $idAnterior = self::texto($anterior['turno']->clienteId ?? null);
+            if (!array_key_exists('cliente_id', $datos)) {
+                $clienteId = $idAnterior;
+            }
+            if ($clienteId !== null) {
+                $cliente = $clienteId === $idAnterior
+                    ? $anterior['turno']->clienteNombre
+                    : (new ClientesAgenda($conexion))->nombreParaVincular($clienteId, $autor, $propia);
+            }
             if ($duracion < 20 && ($anterior === null || $anterior['turno']->fin->getTimestamp() - $anterior['turno']->inicio->getTimestamp() !== $duracion * 60)) {
                 throw new InvalidArgumentException('La duración mínima del turno es de 20 minutos.');
             }
@@ -450,6 +461,7 @@ final readonly class AgendaAdministrativa
             }
             $turno->servicioId = (int) $servicio;
             $turno->servicioNombre = $configuracion->nombre;
+            $turno->clienteId = $clienteId;
             $turno->clienteNombre = trim($cliente);
             $turno->inicio = $inicio;
             $turno->fin = $fin;
@@ -679,7 +691,7 @@ final readonly class AgendaAdministrativa
 
         return [
             'id' => $turno->id, 'servicio_id' => $turno->servicioId, 'servicio_nombre' => $turno->servicioNombre,
-            'cliente_nombre' => $turno->clienteNombre, 'inicio' => $fecha($turno->inicio), 'fin' => $fecha($turno->fin),
+            'cliente_nombre' => $turno->clienteNombre, 'cliente_id' => $turno->clienteId, 'inicio' => $fecha($turno->inicio), 'fin' => $fecha($turno->fin),
             'creado_por' => $turno->creadoPor, 'creado_en' => $fecha($turno->creadoEn), 'cancelado_en' => $fecha($turno->canceladoEn),
             'revision' => $turno->revision, 'asistencia' => $turno->asistencia, 'profesionales_requeridos' => $turno->profesionalesRequeridos,
             'sena_pagada' => $turno->senaPagada, 'sena_importe_centavos' => $turno->senaImporteCentavos,

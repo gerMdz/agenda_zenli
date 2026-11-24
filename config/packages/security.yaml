@@ -32,5 +32,5 @@ security:
     access_control:
         - { path: ^/api/admin/sesion$, roles: PUBLIC_ACCESS }
         - { path: ^/api/admin/agenda$, roles: ROLE_AGENDA }
-        - { path: ^/api/admin/agenda/(turnos|preparaciones|mensajes)(/|$), roles: ROLE_AGENDA }
+        - { path: ^/api/admin/agenda/(turnos|preparaciones|mensajes|clientes)(/|$), roles: ROLE_AGENDA }
         - { path: ^/api/admin, roles: ROLE_ADMIN }
