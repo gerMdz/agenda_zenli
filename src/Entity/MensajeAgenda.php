@@ -14,13 +14,13 @@ class MensajeAgenda
     #[ORM\Id, ORM\Column(type: 'bigint'), ORM\GeneratedValue(strategy: 'IDENTITY')]
     public int|string|null $id = null;
 
-    #[ORM\ManyToOne(targetEntity: UsuarioAdministrativo::class)]
+    #[ORM\ManyToOne(targetEntity: UsuarioInterno::class)]
     #[ORM\JoinColumn(name: 'remitente_id', referencedColumnName: 'id', nullable: false)]
-    public UsuarioAdministrativo $remitente;
+    public UsuarioInterno $remitente;
 
-    #[ORM\ManyToOne(targetEntity: UsuarioAdministrativo::class)]
+    #[ORM\ManyToOne(targetEntity: UsuarioInterno::class)]
     #[ORM\JoinColumn(name: 'destinatario_id', referencedColumnName: 'id', nullable: false)]
-    public UsuarioAdministrativo $destinatario;
+    public UsuarioInterno $destinatario;
 
     #[ORM\Column(length: 2000)]
     public string $texto;

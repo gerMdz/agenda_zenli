@@ -66,7 +66,6 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 ## Integración de agenda
 
 - La lectura y escritura de las imágenes de servicios y de la portada sigue en SQL nativo (`bytea`). Doctrine no carga columnas en forma diferida: mapearlas en `ServicioPortada` cargaría todas las imágenes en cada listado. Decidir si se usa una entidad separada para la imagen, como en presentación de profesionales.
-- Varias entidades parciales comparten tabla (`profesionales`: 4; `usuarios`: 2). Se leen con `HINT_REFRESH`, pero conviene unificarlas antes de que una misma petición modifique la misma fila desde dos entidades.
 - Tras desplegar, confirmar que `eventos_acceso` registre la IP pública real y no una dirección 172.x de Docker (`SELECT tipo, host(ip) FROM eventos_acceso ORDER BY id DESC LIMIT 5`).
 - Definir cuánto tiempo se conservan `eventos_acceso` (contiene direcciones IP, que son datos personales) y decidir si conviene mostrar los accesos en el panel.
 - La demora por cuenta todavía permite que alguien que conozca un correo mantenga demorado su ingreso con un intento por período. El desbloqueo desde el panel lo alivia, pero no lo impide.

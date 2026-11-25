@@ -14,7 +14,7 @@ use App\Entity\PreparacionAgenda;
 use App\Entity\Profesional;
 use App\Entity\ServicioPortada;
 use App\Entity\TurnoAdministrativo;
-use App\Entity\UsuarioAdministrativo;
+use App\Entity\UsuarioInterno;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
@@ -232,7 +232,7 @@ final readonly class AgendaAdministrativa
         return [
             'profesionales' => array_map(static fn (array $p): array => [
                 'id' => (string) $p['id'], 'nombre' => $p['nombre'], 'tiene_cuenta' => $p['usuario'] === null ? 0 : 1,
-                'admin' => $p['roles'] !== null && UsuarioAdministrativo::rolesAdministrativos($p['roles']) ? 1 : 0,
+                'admin' => $p['roles'] !== null && UsuarioInterno::rolesAdministrativos($p['roles']) ? 1 : 0,
             ], $profesionales),
             'espacios' => $this->espacios(true),
             'preparacion' => $this->preparacion(),

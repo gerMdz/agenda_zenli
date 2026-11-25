@@ -41,6 +41,8 @@ foreach ($migracion->getSql() as $consulta) {
 }
 $conexion->executeStatement('ALTER TABLE usuarios ADD creado_por BIGINT REFERENCES usuarios(id), ADD creado_en TIMESTAMPTZ, ADD actualizado_por BIGINT REFERENCES usuarios(id), ADD actualizado_en TIMESTAMPTZ');
 $conexion->executeStatement('ALTER TABLE profesionales ADD creado_por BIGINT REFERENCES usuarios(id), ADD creado_en TIMESTAMPTZ, ADD actualizado_por BIGINT REFERENCES usuarios(id), ADD actualizado_en TIMESTAMPTZ, ADD horarios_actualizado_por BIGINT REFERENCES usuarios(id), ADD horarios_actualizado_en TIMESTAMPTZ');
+// Horarios y portada (Version20261119000900, Version20261120000400 y Version20261121000300): la entidad Profesional mapea la tabla completa.
+$conexion->executeStatement('ALTER TABLE profesionales ADD horario_por_franjas BOOLEAN, ADD horarios_revision INT NOT NULL DEFAULT 0, ADD orden_portada INTEGER, ADD visible_portada BOOLEAN NOT NULL DEFAULT false');
 $conexion->executeStatement('ALTER TABLE recursos ADD creado_por BIGINT REFERENCES usuarios(id), ADD creado_en TIMESTAMPTZ, ADD actualizado_por BIGINT REFERENCES usuarios(id), ADD actualizado_en TIMESTAMPTZ');
 $conexion->executeStatement('ALTER TABLE politicas_reservas ADD actualizado_por BIGINT REFERENCES usuarios(id)');
 $conexion->executeStatement('ALTER TABLE bloqueos ADD creado_en TIMESTAMPTZ');

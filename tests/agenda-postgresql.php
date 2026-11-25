@@ -122,6 +122,8 @@ function aplicarMigracion(Connection $conexion, string $clase): void
     });
 }
 
+// Columnas de portada (Version20261120000400 y Version20261121000300): la entidad Profesional mapea la tabla completa.
+$conexion->executeStatement('ALTER TABLE profesionales ADD orden_portada INTEGER, ADD visible_portada BOOLEAN NOT NULL DEFAULT false');
 $conexion->executeStatement("INSERT INTO profesionales (id, nombre, activa) VALUES (101, 'Prueba A', TRUE), (102, 'Prueba B', TRUE), (103, 'Inactiva', FALSE)");
 $conexion->executeStatement("INSERT INTO clientes (id, nombre) VALUES (101, 'Cliente A'), (102, 'Cliente B')");
 $conexion->executeStatement("INSERT INTO tratamientos (id, codigo, nombre) VALUES (101, 'PRUEBA', 'Tratamiento de prueba')");

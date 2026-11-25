@@ -6,7 +6,7 @@ namespace App\Administracion;
 
 use App\Entity\ConfiguracionPresentacionProfesionales;
 use App\Entity\ImagenPresentacionProfesional;
-use App\Entity\ProfesionalPortada;
+use App\Entity\Profesional;
 use DateTimeImmutable;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
@@ -31,7 +31,7 @@ final readonly class PresentacionProfesionales
             SELECT p.id AS id, p.nombre AS nombre, p.activa AS activa, p.visiblePortada AS visible_portada,
                    p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en,
                    i.imagenVersion AS imagen_version, i.actualizadoPor AS imagen_actualizado_por, i.actualizadoEn AS imagen_actualizado_en
-            FROM App\Entity\ProfesionalPortada p
+            FROM App\Entity\Profesional p
             LEFT JOIN App\Entity\ImagenPresentacionProfesional i WITH i.profesionalId = p.id
             DQL.' '.self::ORDEN)->getArrayResult();
 
@@ -63,7 +63,7 @@ final readonly class PresentacionProfesionales
         // Una sola consulta evita publicar nombres o versiones con una configuración obsoleta.
         $filas = $this->entidades->createQuery(<<<'DQL'
             SELECT p.id AS id, p.nombre AS nombre, c.modo AS modo, i.imagenVersion AS imagen_version
-            FROM App\Entity\ProfesionalPortada p
+            FROM App\Entity\Profesional p
             LEFT JOIN App\Entity\ImagenPresentacionProfesional i WITH i.profesionalId = p.id,
                  App\Entity\ConfiguracionPresentacionProfesionales c
             WHERE c.id = 1 AND c.modo IN ('nombres', 'imagenes') AND p.activa = true AND p.visiblePortada = true
@@ -82,9 +82,7 @@ final readonly class PresentacionProfesionales
         }
         TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $nombre, $autor): void {
             $profesional = $this->profesional($id);
-            $profesional->nombre = trim($nombre);
-            $profesional->actualizadoPor = $autor;
-            $profesional->actualizadoEn = new DateTimeImmutable();
+            $profesional->renombrar(trim($nombre), $autor);
             $this->auditar($autor);
         });
     }
@@ -96,9 +94,7 @@ final readonly class PresentacionProfesionales
         }
         TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $visible, $autor): void {
             $profesional = $this->profesional($id);
-            $profesional->visiblePortada = $visible;
-            $profesional->actualizadoPor = $autor;
-            $profesional->actualizadoEn = new DateTimeImmutable();
+            $profesional->cambiarVisibilidadPortada($visible, $autor);
             $this->auditar($autor);
         });
     }
@@ -111,9 +107,9 @@ final readonly class PresentacionProfesionales
 
         return TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $direccion, $autor): array {
             $this->entidades->getConnection()->executeStatement('LOCK TABLE profesionales IN SHARE ROW EXCLUSIVE MODE');
-            $lista = $this->entidades->createQuery('SELECT p FROM App\Entity\ProfesionalPortada p '.self::ORDEN)
+            $lista = $this->entidades->createQuery('SELECT p FROM App\Entity\Profesional p '.self::ORDEN)
                 ->setHint(Query::HINT_REFRESH, true)->getResult();
-            $indice = array_search($id, array_map(static fn (ProfesionalPortada $p): string => (string) $p->id, $lista), true);
+            $indice = array_search($id, array_map(static fn (Profesional $p): string => $p->id(), $lista), true);
             if ($indice === false) {
                 throw new InvalidArgumentException('La profesional no existe.');
             }
@@ -124,11 +120,10 @@ final readonly class PresentacionProfesionales
             [$lista[$indice], $lista[$destino]] = [$lista[$destino], $lista[$indice]];
             $ahora = new DateTimeImmutable();
             foreach ($lista as $orden => $profesional) {
-                if ($profesional->ordenPortada !== $orden || $orden === $indice || $orden === $destino) {
-                    $profesional->actualizadoPor = $autor;
-                    $profesional->actualizadoEn = $ahora;
+                if ($profesional->ordenPortada() !== $orden || $orden === $indice || $orden === $destino) {
+                    $profesional->registrarModificacion($autor, $ahora);
                 }
-                $profesional->ordenPortada = $orden;
+                $profesional->ubicarEnPortada($orden);
             }
             $this->auditar($autor);
             $this->entidades->flush();
@@ -146,7 +141,7 @@ final readonly class PresentacionProfesionales
             DQL : '';
         $fila = $this->entidades->createQuery(<<<DQL
             SELECT i.imagen AS imagen, i.imagenTipo AS imagen_tipo
-            FROM App\\Entity\\ImagenPresentacionProfesional i JOIN App\\Entity\\ProfesionalPortada p WITH p.id = i.profesionalId
+            FROM App\\Entity\\ImagenPresentacionProfesional i JOIN App\\Entity\\Profesional p WITH p.id = i.profesionalId
             WHERE p.id = :id AND i.imagenVersion = :version $filtro
             DQL)->setParameter('id', $id)->setParameter('version', $version)->getOneOrNullResult();
         if ($fila === null) {
@@ -174,7 +169,7 @@ final readonly class PresentacionProfesionales
 
     public function guardarImagen(string $id, ?UploadedFile $archivo, bool $eliminar, string $autor): void
     {
-        if ((int) $this->entidades->createQuery('SELECT COUNT(p.id) FROM App\Entity\ProfesionalPortada p WHERE p.id = :id')
+        if ((int) $this->entidades->createQuery('SELECT COUNT(p.id) FROM App\Entity\Profesional p WHERE p.id = :id')
             ->setParameter('id', $id)->getSingleScalarResult() === 0) {
             throw new InvalidArgumentException('La profesional no existe.');
         }
@@ -201,7 +196,7 @@ final readonly class PresentacionProfesionales
         $bytes = $archivo->getContent();
         TransaccionEntidades::ejecutar($this->entidades, function () use ($id, $bytes, $datos, $autor): void {
             // El bloqueo de la profesional reemplaza al ON CONFLICT: serializa dos altas simultáneas de su imagen.
-            $this->entidades->createQuery('SELECT p FROM App\Entity\ProfesionalPortada p WHERE p.id = :id')
+            $this->entidades->createQuery('SELECT p FROM App\Entity\Profesional p WHERE p.id = :id')
                 ->setParameter('id', $id)->setLockMode(LockMode::PESSIMISTIC_WRITE)->getOneOrNullResult();
             $imagen = $this->imagenActual($id);
             if ($imagen === null) {
@@ -213,9 +208,9 @@ final readonly class PresentacionProfesionales
         });
     }
 
-    private function profesional(string $id): ProfesionalPortada
+    private function profesional(string $id): Profesional
     {
-        return $this->entidades->createQuery('SELECT p FROM App\Entity\ProfesionalPortada p WHERE p.id = :id')
+        return $this->entidades->createQuery('SELECT p FROM App\Entity\Profesional p WHERE p.id = :id')
             ->setParameter('id', $id)->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult()
             ?? throw new InvalidArgumentException('La profesional no existe.');
     }

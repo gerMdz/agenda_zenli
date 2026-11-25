@@ -6,9 +6,7 @@ namespace App\Administracion;
 
 use App\Entity\MensajeAgenda;
 use App\Entity\Profesional;
-use App\Entity\ProfesionalCuentaAdministrativa;
-use App\Entity\UsuarioAdministrativo;
-use App\Entity\UsuarioPerfil;
+use App\Entity\UsuarioInterno;
 use App\Seguridad\AuditoriaAccesos;
 use DateTimeInterface;
 use Doctrine\DBAL\LockMode;
@@ -28,8 +26,8 @@ final readonly class ComunicacionAgenda
             SELECT m.id AS id, m.texto AS texto, m.creadoEn AS creado_en, IDENTITY(m.remitente) AS remitente,
                    COALESCE(pr.nombre, r.email) AS nombre_remitente, COALESCE(pd.nombre, d.email) AS nombre_destinatario
             FROM App\Entity\MensajeAgenda m JOIN m.remitente r JOIN m.destinatario d
-            LEFT JOIN App\Entity\ProfesionalCuentaAdministrativa pr WITH pr.usuario = r
-            LEFT JOIN App\Entity\ProfesionalCuentaAdministrativa pd WITH pd.usuario = d
+            LEFT JOIN App\Entity\Profesional pr WITH pr.usuario = r
+            LEFT JOIN App\Entity\Profesional pd WITH pd.usuario = d
             WHERE m.remitente = :usuario OR m.destinatario = :usuario
             ORDER BY m.id DESC
             DQL)->setParameter('usuario', $usuario)->setMaxResults(100)->getArrayResult();
@@ -61,8 +59,8 @@ final readonly class ComunicacionAgenda
         }
 
         $mensaje = new MensajeAgenda();
-        $mensaje->remitente = $this->entidades->getReference(UsuarioAdministrativo::class, $autor);
-        $mensaje->destinatario = $this->entidades->getReference(UsuarioAdministrativo::class, $destinatario);
+        $mensaje->remitente = $this->entidades->getReference(UsuarioInterno::class, $autor);
+        $mensaje->destinatario = $this->entidades->getReference(UsuarioInterno::class, $destinatario);
         $mensaje->texto = trim($texto);
         $this->entidades->persist($mensaje);
         $this->entidades->flush();
@@ -86,7 +84,7 @@ final readonly class ComunicacionAgenda
 
         TransaccionEntidades::ejecutar($this->entidades, function () use ($profesional, $email, $hash, $nombre, $admin, $autor): void {
             if ($hash === null) {
-                $usuario = $this->entidades->createQuery('SELECT u FROM App\Entity\UsuarioAdministrativo u WHERE u.email = :email AND u.activo = true')
+                $usuario = $this->entidades->createQuery('SELECT u FROM App\Entity\UsuarioInterno u WHERE u.email = :email AND u.activo = true')
                     ->setParameter('email', $email)->setLockMode(LockMode::PESSIMISTIC_WRITE)
                     ->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
                 if ($usuario === null || !$usuario->esAdministrador()) {
@@ -94,7 +92,7 @@ final readonly class ComunicacionAgenda
                 }
             } else {
                 $ahora = new \DateTimeImmutable();
-                $usuario = new UsuarioAdministrativo();
+                $usuario = new UsuarioInterno();
                 $usuario->email = $email;
                 $usuario->passwordHash = $hash;
                 $usuario->roles = $admin ? [UsuariosAdministrativos::ROL] : [];
@@ -108,10 +106,9 @@ final readonly class ComunicacionAgenda
                 $this->auditoria->registrar('CUENTA_CREADA', $usuario->id, $autor);
             }
             $this->auditoria->registrar('CUENTA_VINCULADA', $usuario->id, $autor);
-            $cuenta = $this->entidades->getReference(UsuarioPerfil::class, $usuario->id);
             if ($profesional === null) {
                 $perfil = new Profesional(trim($nombre), $autor);
-                $perfil->vincularCuenta($cuenta, $autor);
+                $perfil->vincularCuenta($usuario, $autor);
                 $this->entidades->persist($perfil);
 
                 return;
@@ -122,7 +119,7 @@ final readonly class ComunicacionAgenda
             if ($perfil === null || !$perfil->activa() || $perfil->usuario() !== null) {
                 throw new InvalidArgumentException('La profesional no está disponible o ya tiene una cuenta.');
             }
-            $perfil->vincularCuenta($cuenta, $autor);
+            $perfil->vincularCuenta($usuario, $autor);
         });
     }
 
@@ -135,14 +132,14 @@ final readonly class ComunicacionAgenda
     {
         $filas = $this->entidades->createQueryBuilder()
             ->select('u.id AS id, COALESCE(p.nombre, u.email) AS nombre, p.id AS profesional, u.roles AS roles')
-            ->from(UsuarioAdministrativo::class, 'u')
-            ->leftJoin(ProfesionalCuentaAdministrativa::class, 'p', 'WITH', 'p.usuario = u AND p.activa = true')
+            ->from(UsuarioInterno::class, 'u')
+            ->leftJoin(Profesional::class, 'p', 'WITH', 'p.usuario = u AND p.activa = true')
             ->where('u.activo = true')
             ->orderBy('nombre')
             ->getQuery()->getArrayResult();
         $contactos = [];
         foreach ($filas as $fila) {
-            if ($fila['profesional'] !== null || UsuarioAdministrativo::rolesAdministrativos($fila['roles'])) {
+            if ($fila['profesional'] !== null || UsuarioInterno::rolesAdministrativos($fila['roles'])) {
                 $contactos[] = ['id' => (string) $fila['id'], 'nombre' => $fila['nombre']];
             }
         }

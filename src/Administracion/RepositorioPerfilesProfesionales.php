@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Administracion;
 
 use App\Entity\Profesional;
+use App\Entity\UsuarioInterno;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Query;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 final readonly class RepositorioPerfilesProfesionales
@@ -25,22 +25,27 @@ final readonly class RepositorioPerfilesProfesionales
 
     public function listar(): array
     {
-        $profesionales = $this->entidades->createQuery('SELECT p, u FROM App\Entity\Profesional p LEFT JOIN p.usuario u ORDER BY p.nombre, p.id')
-            ->setHint(Query::HINT_REFRESH, true)->getResult();
+        // Se leen solo las columnas necesarias: la cuenta interna no se carga completa en memoria.
+        $profesionales = $this->entidades->createQuery(<<<'DQL'
+            SELECT p.id AS id, p.nombre AS nombre, p.activa AS activa, u.id AS usuario_id, u.roles AS roles,
+                   p.creadoPor AS creado_por, p.creadoEn AS creado_en, p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en
+            FROM App\Entity\Profesional p LEFT JOIN p.usuario u ORDER BY p.nombre, p.id
+            DQL)->getArrayResult();
 
         $autores = new NombresAutores($this->entidades->getConnection());
         $ids = [];
         foreach ($profesionales as $p) {
-            $ids[] = $p->creadoPor();
-            $ids[] = $p->actualizadoPor();
+            $ids[] = $p['creado_por'];
+            $ids[] = $p['actualizado_por'];
         }
         $mapa = $autores->resolver($ids);
 
-        return array_map(static fn (Profesional $p): array => [
-            'id' => $p->id(), 'nombre' => $p->nombre(), 'activa' => $p->activa(),
-            'tiene_cuenta' => $p->usuario() !== null, 'admin' => $p->usuario()?->esAdmin() ?? false,
-            'usuario_id' => $p->usuario()?->id(),
-            'auditoria' => $autores->auditoria($p->creadoPor(), $p->creadoEn(), $p->actualizadoPor(), $p->actualizadoEn(), $mapa),
+        return array_map(static fn (array $p): array => [
+            'id' => (string) $p['id'], 'nombre' => $p['nombre'], 'activa' => $p['activa'],
+            'tiene_cuenta' => $p['usuario_id'] !== null,
+            'admin' => $p['roles'] !== null && UsuarioInterno::rolesAdministrativos($p['roles']),
+            'usuario_id' => $p['usuario_id'] === null ? null : (string) $p['usuario_id'],
+            'auditoria' => $autores->auditoria($p['creado_por'], $p['creado_en'], $p['actualizado_por'], $p['actualizado_en'], $mapa),
         ], $profesionales);
     }
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Administracion\NombresAutores;
-use App\Entity\ProfesionalCuentaAdministrativa;
-use App\Entity\UsuarioAdministrativo;
+use App\Entity\Profesional;
+use App\Entity\UsuarioInterno;
 use App\Seguridad\AuditoriaAccesos;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -22,8 +22,8 @@ final readonly class UsuariosAdministrativosRepository
     {
         $filas = $this->entidades->createQueryBuilder()
             ->select('u.id AS id, u.email AS email, u.activo AS activo, u.roles AS roles, p.nombre AS profesional, u.creadoPor AS creado_por, u.creadoEn AS creado_en, u.actualizadoPor AS actualizado_por, u.actualizadoEn AS actualizado_en')
-            ->from(UsuarioAdministrativo::class, 'u')
-            ->leftJoin(ProfesionalCuentaAdministrativa::class, 'p', 'WITH', 'p.usuario = u AND p.activa = true')
+            ->from(UsuarioInterno::class, 'u')
+            ->leftJoin(Profesional::class, 'p', 'WITH', 'p.usuario = u AND p.activa = true')
             ->orderBy('u.email')
             ->getQuery()->getArrayResult();
 
@@ -55,7 +55,7 @@ final readonly class UsuariosAdministrativosRepository
     {
         $this->entidades->getConnection()->transactional(function () use ($email, $hash, $autor): void {
             $ahora = new DateTimeImmutable();
-            $usuario = new UsuarioAdministrativo();
+            $usuario = new UsuarioInterno();
             $usuario->email = $email;
             $usuario->passwordHash = $hash;
             $usuario->roles = ['ROLE_ADMIN'];
@@ -76,7 +76,7 @@ final readonly class UsuariosAdministrativosRepository
 
     public function idPorEmail(string $email): ?string
     {
-        $id = $this->entidades->createQuery('SELECT u.id FROM App\Entity\UsuarioAdministrativo u WHERE u.email = :email')
+        $id = $this->entidades->createQuery('SELECT u.id FROM App\Entity\UsuarioInterno u WHERE u.email = :email')
             ->setParameter('email', $email)->getOneOrNullResult(Query::HYDRATE_SINGLE_SCALAR);
 
         return $id === null ? null : (string) $id;
@@ -111,13 +111,13 @@ final readonly class UsuariosAdministrativosRepository
         });
     }
 
-    private function buscarActualizado(string $id): ?UsuarioAdministrativo
+    private function buscarActualizado(string $id): ?UsuarioInterno
     {
         if (!preg_match('/\A[1-9][0-9]{0,18}\z/', $id) || (strlen($id) === 19 && strcmp($id, '9223372036854775807') > 0)) {
             return null;
         }
 
-        return $this->entidades->createQuery('SELECT u FROM App\Entity\UsuarioAdministrativo u WHERE u.id = :id')
+        return $this->entidades->createQuery('SELECT u FROM App\Entity\UsuarioInterno u WHERE u.id = :id')
             ->setParameter('id', $id)
             ->setHint(Query::HINT_REFRESH, true)
             ->getOneOrNullResult();

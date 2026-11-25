@@ -35,6 +35,8 @@ if (!preg_match('~\A/tmp/zenli-agenda-pg\.[A-Za-z0-9]+\z~', $socket) || !is_file
 $db = DriverManager::getConnection(['driver' => 'pdo_pgsql', 'host' => $socket, 'user' => 'zenli_pruebas', 'dbname' => 'postgres']);
 $db->executeStatement("CREATE TABLE usuarios (id BIGINT PRIMARY KEY, email TEXT, password_hash TEXT, roles JSONB, activo BOOLEAN DEFAULT true)");
 $db->executeStatement("CREATE TABLE profesionales (id BIGINT PRIMARY KEY, nombre TEXT NOT NULL, activa BOOLEAN NOT NULL DEFAULT true, usuario_id BIGINT, actualizado_por BIGINT, actualizado_en TIMESTAMPTZ)");
+// Columnas de horarios y alta (Version20261119000900 y Version20261121000500): la entidad Profesional mapea la tabla completa.
+$db->executeStatement('ALTER TABLE profesionales ADD horario_por_franjas BOOLEAN, ADD horarios_revision INT NOT NULL DEFAULT 0, ADD creado_por BIGINT, ADD creado_en TIMESTAMPTZ, ADD horarios_actualizado_por BIGINT, ADD horarios_actualizado_en TIMESTAMPTZ');
 $hash = password_hash('prueba', PASSWORD_DEFAULT);
 $db->executeStatement("INSERT INTO usuarios VALUES (1, 'admin@example.test', ?, '[\"ROLE_ADMIN\"]', true), (2, 'prof@example.test', ?, '[]', true)", [$hash, $hash]);
 $db->executeStatement("INSERT INTO profesionales (id, nombre, activa, usuario_id) VALUES (1, 'Nataly', true, 2), (2, 'Micaela', true, NULL), (3, 'Inactiva', false, NULL)");

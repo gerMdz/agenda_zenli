@@ -9,7 +9,6 @@ use App\Entity\Bloqueo;
 use App\Entity\FranjaHoraria;
 use App\Entity\HorarioEspecial;
 use App\Entity\Profesional;
-use App\Entity\ProfesionalHorarios;
 use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\Connection;
@@ -67,7 +66,7 @@ final readonly class HorariosProfesionales
         $perfil = $this->entidades->createQuery(<<<'DQL'
             SELECT p.horariosRevision AS revision, p.horarioPorFranjas AS por_franjas,
                    p.horariosActualizadoPor AS actualizado_por, p.horariosActualizadoEn AS actualizado_en
-            FROM App\Entity\ProfesionalHorarios p WHERE p.id = :id AND p.activa = true
+            FROM App\Entity\Profesional p WHERE p.id = :id AND p.activa = true
             DQL)->setParameter('id', $id)->getOneOrNullResult();
         if ($perfil === null) {
             throw new HttpException(404, 'La profesional no está disponible.');
@@ -141,10 +140,7 @@ final readonly class HorariosProfesionales
                 throw new TurnoNoDisponible('Los horarios cambiaron. Volvé a cargarlos antes de guardar.');
             }
             $perfil = $this->perfil($id);
-            $perfil->horarioPorFranjas = $modo;
-            ++$perfil->horariosRevision;
-            $perfil->horariosActualizadoPor = $autor;
-            $perfil->horariosActualizadoEn = new DateTimeImmutable();
+            $perfil->cambiarModoHorario($modo, $autor);
 
             // Se reemplazan todas las filas; las eliminaciones se confirman antes de insertar las nuevas.
             $anteriores = $this->entidades->createQuery('SELECT f FROM App\Entity\FranjaHoraria f WHERE f.profesionalId = :id')
@@ -212,9 +208,7 @@ final readonly class HorariosProfesionales
             }
             $this->verificarTurnosExistentes($id);
             $perfil = $this->perfil($id);
-            ++$perfil->horariosRevision;
-            $perfil->horariosActualizadoPor = $autor;
-            $perfil->horariosActualizadoEn = new DateTimeImmutable();
+            $perfil->registrarCambioHorarios($autor);
         });
     }
 
@@ -224,9 +218,9 @@ final readonly class HorariosProfesionales
         $this->conexion->executeStatement('LOCK TABLE recursos IN EXCLUSIVE MODE');
     }
 
-    private function perfil(string $id): ProfesionalHorarios
+    private function perfil(string $id): Profesional
     {
-        return $this->entidades->createQuery('SELECT p FROM App\Entity\ProfesionalHorarios p WHERE p.id = :id')
+        return $this->entidades->createQuery('SELECT p FROM App\Entity\Profesional p WHERE p.id = :id')
             ->setParameter('id', $id)->setLockMode(LockMode::PESSIMISTIC_WRITE)
             ->setHint(Query::HINT_REFRESH, true)->getSingleResult();
     }
