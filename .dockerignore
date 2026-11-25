@@ -16,6 +16,7 @@
 !frontend/package-lock.json
 !frontend/index.html
 !frontend/vite.config.js
+!frontend/agenda-sw.js
 !frontend/public/
 !frontend/public/**
 !frontend/src/
