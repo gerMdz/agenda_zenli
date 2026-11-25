@@ -243,6 +243,43 @@ verificar($profesional->pedir('GET', '/api/admin/agenda?fecha=2099-01-01')[0] ==
 verificar($admin->pedir('PUT', "/api/admin/agenda/profesionales/$perfilPro/estado", ['activa' => false])[0] === 200, 'Se da de baja el perfil profesional.');
 verificar($profesional->pedir('GET', '/api/admin/agenda?fecha=2099-01-01')[0] === 401, 'Dar de baja el perfil cierra la sesión de la profesional.');
 $admin->pedir('PUT', "/api/admin/agenda/profesionales/$perfilPro/estado", ['activa' => true]);
+
+// Cuenta de una profesional sin permisos de administración.
+// Tras cerrarse una sesión se pide un token CSRF nuevo antes de volver a ingresar.
+$ingresarPro = static function (string $clave) use ($profesional): int {
+    $profesional->csrf = '';
+
+    return $profesional->ingresar('pro@zenli.test', $clave);
+};
+$agendaPro = static fn (): int => $profesional->pedir('GET', '/api/admin/agenda?fecha=2099-01-01')[0];
+$cuentaPro = static function () use ($admin, $perfilPro): array {
+    $perfiles = $admin->pedir('GET', '/api/admin/agenda/profesionales')[1]['profesionales'];
+
+    return array_values(array_filter($perfiles, static fn ($p) => $p['id'] === $perfilPro))[0];
+};
+verificar($ingresarPro($clave) === 200, 'La profesional ingresa con su contraseña.');
+verificar($cuentaPro()['email'] === 'pro@zenli.test' && $cuentaPro()['cuenta_activa'] === true, 'El panel muestra el correo y el estado de la cuenta profesional.');
+verificar($profesional->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => 'Clave propia de prueba 9'])[0] === 403, 'Una profesional no puede editar cuentas.');
+[$estado, $datos] = $admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => 'corta']);
+verificar($estado === 422 && $datos['error'] === 'La contraseña es muy corta: usá al menos 12 caracteres (faltan 7).', 'El aviso indica cuántos caracteres faltan.');
+[$estado, $datos] = $admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => str_repeat('ñ', 40)]);
+verificar($estado === 422 && str_starts_with($datos['error'], 'La contraseña es muy larga. Las letras con tilde'), 'El aviso explica por qué una contraseña con tildes es larga.');
+verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => 'Clave nueva profesional 3'])[0] === 200, 'Administración cambia la contraseña de la profesional.');
+verificar($agendaPro() === 401, 'Cambiar la contraseña cierra la sesión de la profesional.');
+verificar($ingresarPro($clave) === 401, 'La contraseña anterior deja de funcionar.');
+verificar($ingresarPro('Clave nueva profesional 3') === 200, 'La contraseña nueva ingresa.');
+verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => false, 'clave' => ''])[0] === 200, 'Administración desactiva la cuenta profesional.');
+verificar($agendaPro() === 401, 'Desactivar la cuenta cierra la sesión de la profesional.');
+verificar($ingresarPro('Clave nueva profesional 3') === 401, 'Una cuenta profesional desactivada no ingresa.');
+verificar($cuentaPro()['cuenta_activa'] === false && $cuentaPro()['activa'] === true, 'La cuenta queda desactivada sin dar de baja el perfil.');
+verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => ''])[0] === 200, 'Administración reactiva la cuenta profesional.');
+verificar($ingresarPro('Clave nueva profesional 3') === 200, 'La cuenta reactivada vuelve a ingresar.');
+verificar($eventos('CLAVE_CAMBIADA', $proId) === 1 && $eventos('CUENTA_DESACTIVADA', $proId) === 1 && $eventos('CUENTA_ACTIVADA', $proId) === 1, 'Los cambios de la cuenta profesional quedan auditados.');
+$sinPerfil = (string) $conexion->fetchOne("INSERT INTO usuarios (email, password_hash, roles) VALUES ('suelta@zenli.test', ?, '[]') RETURNING id", [$hash]);
+verificar($admin->pedir('PATCH', "/api/admin/usuarios/$sinPerfil", ['activo' => false, 'clave' => ''])[0] === 409, 'Una cuenta sin administración ni perfil profesional no se gestiona.');
+// Las pruebas siguientes usan la contraseña inicial.
+verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => $clave])[0] === 200, 'Se restablece la contraseña inicial.');
+fwrite(STDOUT, "Cuentas profesionales gestionadas desde administración verificadas.\n");
 fwrite(STDOUT, "Invalidación de sesiones por cambios de cuenta verificada.\n");
 
 // Una hora sin actividad cierra la sesión.

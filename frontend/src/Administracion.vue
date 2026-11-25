@@ -624,6 +624,7 @@ function guardarUsuario() {
       datos: { activo: editarActivo.value, clave: editarClave.value },
     })
     usuarios.value = listado.usuarios
+    perfilesProfesionales.value = (await api('/api/admin/agenda/profesionales')).profesionales
     cerrarDialogoCuenta()
     if (renovarSesion) await cargarSesion()
     mensaje.value = renovarSesion ? 'Contraseña actualizada. Ingresá nuevamente.' : 'Cuenta actualizada.'
@@ -926,43 +927,45 @@ onBeforeUnmount(() => {
             </li>
           </ul>
           <p v-if="!usuarios.length" class="vacío">Todavía no hay cuentas cargadas.</p>
-          <dialog ref="dialogoCuenta" class="modal-servicio" aria-labelledby="titulo-dialogo-cuenta" @close="cerrarDialogoCuenta" @cancel="ocupado && $event.preventDefault()">
-            <div class="modal-cabecera">
-              <div><span class="modal-etiqueta">ADMINISTRACIÓN DE ZENLI</span><h2 id="titulo-dialogo-cuenta">{{ accionCuenta === 'editar' ? 'Editar cuenta' : 'Nueva cuenta' }}</h2><p>{{ accionCuenta === 'editar' ? usuarioEditado?.email : 'Creá una cuenta de acceso para administración.' }}</p></div>
-              <button type="button" class="cerrar-modal" aria-label="Cerrar" :disabled="ocupado" @click="cerrarDialogoCuenta">✕</button>
-            </div>
-            <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
-          <form v-if="accionCuenta === 'editar' && usuarioEditado" :key="usuarioEditado.id" class="formulario-cuenta" @submit.prevent="guardarUsuario">
-            <label v-if="usuarioEditado.id !== usuario.id" class="casilla"><input v-model="editarActivo" type="checkbox"> Cuenta activa</label>
-            <label for="editar-clave">Nueva contraseña (opcional)</label>
-            <input id="editar-clave" v-model="editarClave" type="password" autocomplete="new-password" minlength="12" maxlength="72">
-            <div class="acciones">
-              <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar cuenta</button>
-            </div>
-          </form>
-
-          <form v-else-if="accionCuenta === 'crear'" class="formulario-cuenta" @submit.prevent="crearUsuario">
-            <label for="alta-email">Correo</label>
-            <input id="alta-email" v-model="altaEmail" type="email" autocomplete="off" maxlength="180" required>
-            <label for="alta-clave">Contraseña inicial</label>
-            <input id="alta-clave" v-model="altaClave" type="password" autocomplete="new-password" minlength="12" maxlength="72" aria-describedby="ayuda-clave" required>
-            <small id="ayuda-clave">Usá al menos 12 caracteres.</small>
-            <label class="casilla"><input v-model="altaProfesional" type="checkbox"> También es profesional</label>
-            <template v-if="altaProfesional">
-              <label>Perfil profesional
-                <select v-model="altaPerfil" required>
-                  <option disabled value="">Elegí una opción</option>
-                  <option value="nueva">Crear nueva profesional</option>
-                  <option v-for="persona in perfilesSinCuenta" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
-                </select>
-              </label>
-              <label v-if="altaPerfil === 'nueva'">Nombre <input v-model.trim="altaNombre" maxlength="120" required></label>
-            </template>
-            <button type="submit" :disabled="ocupado || (altaProfesional && !ajustesAgenda)" class="boton-formulario boton-formulario--guardar">Crear cuenta</button>
-          </form>
-            <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrarDialogoCuenta">Cancelar</button></div>
-          </dialog>
         </section>
+
+        <!-- Fuera de las secciones: se abre desde «Cuentas» y desde «Profesionales». -->
+        <dialog ref="dialogoCuenta" class="modal-servicio" aria-labelledby="titulo-dialogo-cuenta" @close="cerrarDialogoCuenta" @cancel="ocupado && $event.preventDefault()">
+          <div class="modal-cabecera">
+            <div><span class="modal-etiqueta">ADMINISTRACIÓN DE ZENLI</span><h2 id="titulo-dialogo-cuenta">{{ accionCuenta === 'editar' ? 'Editar cuenta' : 'Nueva cuenta' }}</h2><p>{{ accionCuenta === 'editar' ? (usuarioEditado?.nombre ? `${usuarioEditado.nombre} · ${usuarioEditado.email}` : usuarioEditado?.email) : 'Creá una cuenta de acceso para administración.' }}</p></div>
+            <button type="button" class="cerrar-modal" aria-label="Cerrar" :disabled="ocupado" @click="cerrarDialogoCuenta">✕</button>
+          </div>
+          <div class="modal-avisos"><p v-if="error" class="error" role="alert">{{ error }}</p></div>
+        <form v-if="accionCuenta === 'editar' && usuarioEditado" :key="usuarioEditado.id" class="formulario-cuenta" @submit.prevent="guardarUsuario">
+          <label v-if="usuarioEditado.id !== usuario.id" class="casilla"><input v-model="editarActivo" type="checkbox"> Cuenta activa</label>
+          <label for="editar-clave">Nueva contraseña (opcional)</label>
+          <input id="editar-clave" v-model="editarClave" type="password" autocomplete="new-password" minlength="12" maxlength="72">
+          <div class="acciones">
+            <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar cuenta</button>
+          </div>
+        </form>
+
+        <form v-else-if="accionCuenta === 'crear'" class="formulario-cuenta" @submit.prevent="crearUsuario">
+          <label for="alta-email">Correo</label>
+          <input id="alta-email" v-model="altaEmail" type="email" autocomplete="off" maxlength="180" required>
+          <label for="alta-clave">Contraseña inicial</label>
+          <input id="alta-clave" v-model="altaClave" type="password" autocomplete="new-password" minlength="12" maxlength="72" aria-describedby="ayuda-clave" required>
+          <small id="ayuda-clave">Usá al menos 12 caracteres.</small>
+          <label class="casilla"><input v-model="altaProfesional" type="checkbox"> También es profesional</label>
+          <template v-if="altaProfesional">
+            <label>Perfil profesional
+              <select v-model="altaPerfil" required>
+                <option disabled value="">Elegí una opción</option>
+                <option value="nueva">Crear nueva profesional</option>
+                <option v-for="persona in perfilesSinCuenta" :key="persona.id" :value="persona.id">{{ persona.nombre }}</option>
+              </select>
+            </label>
+            <label v-if="altaPerfil === 'nueva'">Nombre <input v-model.trim="altaNombre" maxlength="120" required></label>
+          </template>
+          <button type="submit" :disabled="ocupado || (altaProfesional && !ajustesAgenda)" class="boton-formulario boton-formulario--guardar">Crear cuenta</button>
+        </form>
+          <div class="modal-pie"><button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrarDialogoCuenta">Cancelar</button></div>
+        </dialog>
 
         <section v-show="seccionActiva.id === 'configuracion-agenda'" id="configuracion-agenda" class="panel">
           <h2>Primeros pasos</h2>
@@ -1014,10 +1017,11 @@ onBeforeUnmount(() => {
             </div>
             <ul class="lista">
               <li v-for="persona in perfilesProfesionales" :key="persona.id">
-                <div><strong>{{ persona.nombre }}</strong><small>{{ persona.activa ? (persona.admin ? 'Profesional y administradora' : persona.tiene_cuenta ? 'Profesional' : 'Sin cuenta') : 'Dada de baja' }}<template v-if="persona.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(persona.demora_hasta) }}</template></small><small v-if="resumenAuditoria(persona.auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(persona.auditoria, true) }}</small></div>
+                <div><strong>{{ persona.nombre }}</strong><small>{{ persona.activa ? (persona.admin ? 'Profesional y administradora' : persona.tiene_cuenta ? 'Profesional' : 'Sin cuenta') : 'Dada de baja' }}<template v-if="persona.tiene_cuenta && !persona.cuenta_activa"> · Cuenta desactivada</template><template v-if="persona.demora_hasta"> · Ingreso demorado hasta las {{ horaDemora(persona.demora_hasta) }}</template></small><small v-if="resumenAuditoria(persona.auditoria, true)" class="meta-auditoria">{{ resumenAuditoria(persona.auditoria, true) }}</small></div>
                 <div class="acciones">
                   <button v-if="persona.demora_hasta" type="button" class="secundario" :disabled="ocupado" @click="desbloquearCuenta(persona.usuario_id, persona.nombre)">Desbloquear</button>
                   <button v-if="persona.activa && !persona.tiene_cuenta" type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('cuenta', persona.id)">Vincular cuenta</button>
+                  <button v-if="persona.tiene_cuenta" type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoCuenta({ id: persona.usuario_id, email: persona.email, activo: persona.cuenta_activa, nombre: persona.nombre })">Cuenta</button>
                   <button type="button" class="secundario" :disabled="ocupado" @click="abrirDialogoProfesional('editar', persona)">Editar</button>
                   <button type="button" class="secundario" :disabled="ocupado" @click="cambiarEstadoProfesional(persona)">{{ persona.activa ? 'Dar de baja' : 'Reactivar' }}</button>
                 </div>

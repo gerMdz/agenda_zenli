@@ -27,7 +27,7 @@ final readonly class RepositorioPerfilesProfesionales
     {
         // Se leen solo las columnas necesarias: la cuenta interna no se carga completa en memoria.
         $profesionales = $this->entidades->createQuery(<<<'DQL'
-            SELECT p.id AS id, p.nombre AS nombre, p.activa AS activa, u.id AS usuario_id, u.roles AS roles,
+            SELECT p.id AS id, p.nombre AS nombre, p.activa AS activa, u.id AS usuario_id, u.email AS email, u.activo AS cuenta_activa, u.roles AS roles,
                    p.creadoPor AS creado_por, p.creadoEn AS creado_en, p.actualizadoPor AS actualizado_por, p.actualizadoEn AS actualizado_en
             FROM App\Entity\Profesional p LEFT JOIN p.usuario u ORDER BY p.nombre, p.id
             DQL)->getArrayResult();
@@ -45,6 +45,8 @@ final readonly class RepositorioPerfilesProfesionales
             'tiene_cuenta' => $p['usuario_id'] !== null,
             'admin' => $p['roles'] !== null && UsuarioInterno::rolesAdministrativos($p['roles']),
             'usuario_id' => $p['usuario_id'] === null ? null : (string) $p['usuario_id'],
+            'email' => $p['email'],
+            'cuenta_activa' => $p['cuenta_activa'],
             'auditoria' => $autores->auditoria($p['creado_por'], $p['creado_en'], $p['actualizado_por'], $p['actualizado_en'], $mapa),
         ], $profesionales);
     }

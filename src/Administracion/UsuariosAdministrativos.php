@@ -80,8 +80,19 @@ final readonly class UsuariosAdministrativos
 
     public static function hashClave(string $clave): string
     {
-        if (strlen($clave) < 12 || strlen($clave) > 72 || str_contains($clave, "\0")) {
-            throw new InvalidArgumentException('La contraseña debe tener entre 12 y 72 bytes.');
+        if (!mb_check_encoding($clave, 'UTF-8') || str_contains($clave, "\0")) {
+            throw new InvalidArgumentException('La contraseña tiene un carácter no permitido.');
+        }
+        $caracteres = mb_strlen($clave, 'UTF-8');
+        if ($caracteres < 12) {
+            $faltan = 12 - $caracteres;
+            throw new InvalidArgumentException(sprintf('La contraseña es muy corta: usá al menos 12 caracteres (%s).', $faltan === 1 ? 'falta 1' : "faltan $faltan"));
+        }
+        // El algoritmo de contraseñas solo usa los primeros 72 bytes; las letras con tilde, la ñ y algunos símbolos ocupan más de uno.
+        if (strlen($clave) > 72) {
+            throw new InvalidArgumentException($caracteres > 72
+                ? 'La contraseña es muy larga: usá como máximo 72 caracteres.'
+                : 'La contraseña es muy larga. Las letras con tilde, la ñ y algunos símbolos ocupan más lugar: acortala un poco.');
         }
 
         return password_hash($clave, PASSWORD_DEFAULT);

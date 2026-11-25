@@ -91,8 +91,9 @@ final readonly class UsuariosAdministrativosRepository
                 || !hash_equals($huella, hash('sha256', $usuarioAutor->passwordHash))) {
                 return false;
             }
+            // Se gestionan las cuentas internas: administradoras o vinculadas a un perfil profesional.
             $usuario = $this->buscarActualizado($id);
-            if ($usuario === null || !$usuario->esAdministrador()) {
+            if ($usuario === null || (!$usuario->esAdministrador() && !$this->tienePerfilProfesional($usuario->id))) {
                 return false;
             }
             if ($usuario->activo !== $activo) {
@@ -109,6 +110,12 @@ final readonly class UsuariosAdministrativosRepository
 
             return true;
         });
+    }
+
+    private function tienePerfilProfesional(string $id): bool
+    {
+        return (int) $this->entidades->createQuery('SELECT COUNT(p.id) FROM App\Entity\Profesional p WHERE p.usuario = :id')
+            ->setParameter('id', $id)->getSingleScalarResult() > 0;
     }
 
     private function buscarActualizado(string $id): ?UsuarioInterno
