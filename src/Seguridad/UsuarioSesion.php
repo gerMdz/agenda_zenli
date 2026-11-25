@@ -20,7 +20,7 @@ final class UsuarioSesion implements UserInterface, PasswordAuthenticatedUserInt
     public const ADMIN = 'ROLE_ADMIN';
     public const PROFESIONAL = 'ROLE_PROFESIONAL';
 
-    public readonly string $huella;
+    public private(set) string $huella;
 
     public function __construct(
         public readonly string $id,
@@ -48,6 +48,13 @@ final class UsuarioSesion implements UserInterface, PasswordAuthenticatedUserInt
     public function getPassword(): ?string
     {
         return $this->passwordHash;
+    }
+
+    /** Refleja la reconversión del hash al ingresar, para que la sesión recién abierta siga siendo válida. */
+    public function actualizarHash(string $passwordHash): void
+    {
+        $this->passwordHash = $passwordHash;
+        $this->huella = hash('sha256', $passwordHash);
     }
 
     public function getUserIdentifier(): string

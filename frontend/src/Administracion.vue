@@ -939,7 +939,7 @@ onBeforeUnmount(() => {
         <form v-if="accionCuenta === 'editar' && usuarioEditado" :key="usuarioEditado.id" class="formulario-cuenta" @submit.prevent="guardarUsuario">
           <label v-if="usuarioEditado.id !== usuario.id" class="casilla"><input v-model="editarActivo" type="checkbox"> Cuenta activa</label>
           <label for="editar-clave">Nueva contraseña (opcional)</label>
-          <input id="editar-clave" v-model="editarClave" type="password" autocomplete="new-password" minlength="12" maxlength="72">
+          <input id="editar-clave" v-model="editarClave" type="password" autocomplete="new-password" minlength="12" maxlength="128">
           <div class="acciones">
             <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">Guardar cuenta</button>
           </div>
@@ -949,7 +949,7 @@ onBeforeUnmount(() => {
           <label for="alta-email">Correo</label>
           <input id="alta-email" v-model="altaEmail" type="email" autocomplete="off" maxlength="180" required>
           <label for="alta-clave">Contraseña inicial</label>
-          <input id="alta-clave" v-model="altaClave" type="password" autocomplete="new-password" minlength="12" maxlength="72" aria-describedby="ayuda-clave" required>
+          <input id="alta-clave" v-model="altaClave" type="password" autocomplete="new-password" minlength="12" maxlength="128" aria-describedby="ayuda-clave" required>
           <small id="ayuda-clave">Usá al menos 12 caracteres.</small>
           <label class="casilla"><input v-model="altaProfesional" type="checkbox"> También es profesional</label>
           <template v-if="altaProfesional">
@@ -1054,7 +1054,7 @@ onBeforeUnmount(() => {
               <label class="casilla"><input v-model="cuenta.cuenta_existente" type="checkbox"> Vincular una cuenta administradora existente</label>
               <label>Correo <input v-model="cuenta.email" type="email" maxlength="180" autocomplete="off" required></label>
               <template v-if="!cuenta.cuenta_existente">
-                <label>Contraseña inicial <input v-model="cuenta.clave" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></label>
+                <label>Contraseña inicial <input v-model="cuenta.clave" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
                 <label class="casilla"><input v-model="cuenta.admin" type="checkbox"> También es administradora</label>
               </template>
               <button type="submit" :disabled="ocupado" class="boton-formulario boton-formulario--guardar">{{ cuenta.cuenta_existente ? 'Vincular cuenta' : 'Crear cuenta profesional' }}</button>

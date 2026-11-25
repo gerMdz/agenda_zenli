@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Seguridad;
 
+use App\Administracion\UsuariosAdministrativos;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
@@ -71,7 +72,7 @@ final readonly class ClavesAcceso
         if ($demora > 0) {
             throw new HttpException(429, 'Demasiados intentos. Probá más tarde.', headers: ['Retry-After' => (string) $demora]);
         }
-        if (!is_string($clave) || strlen($clave) > 72 || str_contains($clave, "\0")
+        if (!is_string($clave) || !mb_check_encoding($clave, 'UTF-8') || mb_strlen($clave, 'UTF-8') > UsuariosAdministrativos::CLAVE_MAXIMA || str_contains($clave, "\0")
             || !$this->hashers->getPasswordHasher(UsuarioSesion::class)->verify($cuenta->getPassword() ?? '', $clave)) {
             $this->limite->registrarFallo($cuenta->email, $ip);
             $this->auditoria->registrar('FALLO', $cuenta->id);

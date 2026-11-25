@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Seguridad;
 
+use App\Administracion\UsuariosAdministrativos;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -18,6 +19,7 @@ use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Http\Authenticator\AbstractAuthenticator;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
+use Symfony\Component\Security\Http\Authenticator\Passport\Badge\PasswordUpgradeBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\Credentials\PasswordCredentials;
 use Symfony\Component\Security\Http\Authenticator\Passport\Passport;
 use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
@@ -33,8 +35,8 @@ final class AutenticadorAdministrativo extends AbstractAuthenticator implements 
 {
     public const RUTA = '/api/admin/sesion';
     public const RUTA_CLAVE_ACCESO = '/api/admin/sesion/clave-acceso';
-    /** Hash bcrypt de costo 12 sin contraseña conocida: iguala el tiempo de respuesta de correos inexistentes. */
-    private const HASH_FICTICIO = '$2y$12$EC4XFX7Oz4bARSA8nzjewOKSV2XSTtNv8W8yJAcRuOVEfr3.J3R6O';
+    /** Hash Argon2id sin contraseña conocida, con los parámetros del hasher: iguala el tiempo de respuesta de correos inexistentes. */
+    private const HASH_FICTICIO = '$argon2id$v=19$m=65536,t=4,p=1$otsylGp5cAlQsoT1lAN1pw$2Jyz04Etesdce+i5YeKZ2ZtOiautdPNHx8Gl8dxislQ';
 
     public function __construct(
         private readonly ProveedorUsuarios $usuarios,
@@ -72,7 +74,8 @@ final class AutenticadorAdministrativo extends AbstractAuthenticator implements 
         }
         $email = $datos['email'] ?? null;
         $clave = $datos['clave'] ?? null;
-        if (!is_string($email) || strlen($email) > 180 || !is_string($clave) || strlen($clave) > 72
+        if (!is_string($email) || strlen($email) > 180 || !is_string($clave) || !mb_check_encoding($clave, 'UTF-8')
+            || mb_strlen($clave, 'UTF-8') > UsuariosAdministrativos::CLAVE_MAXIMA
             || str_contains($email, "\0") || str_contains($clave, "\0") || !filter_var(trim($email), FILTER_VALIDATE_EMAIL)) {
             throw new IngresoRechazado('Correo o contraseña incorrectos.', Response::HTTP_UNAUTHORIZED);
         }
@@ -95,6 +98,8 @@ final class AutenticadorAdministrativo extends AbstractAuthenticator implements 
                 }
             }),
             new PasswordCredentials($clave),
+            // Convierte al ingresar los hashes con parámetros o método anteriores.
+            [new PasswordUpgradeBadge($clave, $this->usuarios)],
         );
     }
 

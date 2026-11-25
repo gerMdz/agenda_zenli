@@ -82,7 +82,7 @@ defineExpose({ abrir, cerrar })
     </ul>
     <form @submit.prevent="registrar">
       <label>Contraseña de Zenli
-        <input v-model="clave" type="password" autocomplete="current-password" maxlength="72" required :disabled="ocupado">
+        <input v-model="clave" type="password" autocomplete="current-password" maxlength="128" required :disabled="ocupado">
       </label>
       <p>Confirmala una vez para registrar una clave de acceso.</p>
       <div class="acciones-formulario">

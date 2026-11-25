@@ -53,6 +53,7 @@ final readonly class ProveedorUsuarios implements UserProviderInterface, Passwor
     {
         if ($user instanceof UsuarioSesion) {
             $this->conexion->executeStatement('UPDATE usuarios SET password_hash = ? WHERE id = ?', [$newHashedPassword, $user->id]);
+            $user->actualizarHash($newHashedPassword);
         }
     }
 

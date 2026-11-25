@@ -1,9 +1,12 @@
 security:
     password_hashers:
-        # Igual que los hashes existentes (password_hash de PHP 8.4): bcrypt de costo 12.
+        # Argon2id, sin el límite de 72 bytes de bcrypt. Los hashes bcrypt anteriores se siguen
+        # aceptando y se convierten al ingresar con contraseña. Los parámetros coinciden con
+        # UsuariosAdministrativos::hashClave() para que los hashes nuevos no pidan reconversión.
         App\Seguridad\UsuarioSesion:
-            algorithm: bcrypt
-            cost: 12
+            algorithm: argon2id
+            time_cost: 4
+            memory_cost: 65536
 
     providers:
         usuarios:

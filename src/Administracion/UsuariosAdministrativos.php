@@ -12,6 +12,8 @@ use InvalidArgumentException;
 final readonly class UsuariosAdministrativos
 {
     public const ROL = 'ROLE_ADMIN';
+    public const CLAVE_MINIMA = 12;
+    public const CLAVE_MAXIMA = 128;
 
     public function __construct(
         private UsuariosAdministrativosRepository $repositorio,
@@ -84,17 +86,15 @@ final readonly class UsuariosAdministrativos
             throw new InvalidArgumentException('La contraseña tiene un carácter no permitido.');
         }
         $caracteres = mb_strlen($clave, 'UTF-8');
-        if ($caracteres < 12) {
-            $faltan = 12 - $caracteres;
-            throw new InvalidArgumentException(sprintf('La contraseña es muy corta: usá al menos 12 caracteres (%s).', $faltan === 1 ? 'falta 1' : "faltan $faltan"));
+        if ($caracteres < self::CLAVE_MINIMA) {
+            $faltan = self::CLAVE_MINIMA - $caracteres;
+            throw new InvalidArgumentException(sprintf('La contraseña es muy corta: usá al menos %d caracteres (%s).', self::CLAVE_MINIMA, $faltan === 1 ? 'falta 1' : "faltan $faltan"));
         }
-        // El algoritmo de contraseñas solo usa los primeros 72 bytes; las letras con tilde, la ñ y algunos símbolos ocupan más de uno.
-        if (strlen($clave) > 72) {
-            throw new InvalidArgumentException($caracteres > 72
-                ? 'La contraseña es muy larga: usá como máximo 72 caracteres.'
-                : 'La contraseña es muy larga. Las letras con tilde, la ñ y algunos símbolos ocupan más lugar: acortala un poco.');
+        if ($caracteres > self::CLAVE_MAXIMA) {
+            throw new InvalidArgumentException(sprintf('La contraseña es muy larga: usá como máximo %d caracteres.', self::CLAVE_MAXIMA));
         }
 
-        return password_hash($clave, PASSWORD_DEFAULT);
+        // Mismos parámetros que el hasher de config/packages/security.yaml.
+        return password_hash($clave, PASSWORD_ARGON2ID, ['time_cost' => 4, 'memory_cost' => 65536, 'threads' => 1]);
     }
 }

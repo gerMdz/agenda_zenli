@@ -111,6 +111,8 @@ verificar($estado === 200 && $datos['usuario'] === ['id' => $adminId, 'email' =>
 verificar($admin->cookies !== $sesionAnterior && $admin->csrf !== $csrfAnterior, 'Ingresar regenera la sesión y el token CSRF.');
 $cookie = array_values(array_filter($admin->ultima->headers->getCookies(), static fn ($c) => $c->getName() === session_name()))[0] ?? null;
 verificar($cookie !== null && $cookie->isHttpOnly() && $cookie->isSecure() && $cookie->getSameSite() === 'lax' && $cookie->getExpiresTime() === 0, 'La cookie de sesión es HttpOnly, Secure, SameSite=Lax y de navegador.');
+verificar(str_starts_with((string) $conexion->fetchOne('SELECT password_hash FROM usuarios WHERE id = ?', [$adminId]), '$argon2id$'), 'El ingreso convierte el hash bcrypt a Argon2id.');
+verificar($admin->pedir('GET', '/api/admin/agenda/configuracion')[0] === 200, 'La conversión del hash no cierra la sesión recién abierta.');
 verificar($admin->pedir('PATCH', '/api/admin/portada/modo', ['solo_imagen' => false], true, $csrfAnterior)[0] === 403, 'El token anterior al ingreso deja de valer.');
 verificar($admin->pedir('PATCH', '/api/admin/portada/modo', ['solo_imagen' => false])[0] === 200, 'El token nuevo permite escribir.');
 verificar($conexion->fetchOne("SELECT host(ip) FROM eventos_acceso WHERE tipo = 'INGRESO' AND usuario_id = ?", [$adminId]) === '203.0.113.11', 'El ingreso queda auditado con la IP.');
@@ -262,18 +264,22 @@ verificar($cuentaPro()['email'] === 'pro@zenli.test' && $cuentaPro()['cuenta_act
 verificar($profesional->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => 'Clave propia de prueba 9'])[0] === 403, 'Una profesional no puede editar cuentas.');
 [$estado, $datos] = $admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => 'corta']);
 verificar($estado === 422 && $datos['error'] === 'La contraseña es muy corta: usá al menos 12 caracteres (faltan 7).', 'El aviso indica cuántos caracteres faltan.');
-[$estado, $datos] = $admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => str_repeat('ñ', 40)]);
-verificar($estado === 422 && str_starts_with($datos['error'], 'La contraseña es muy larga. Las letras con tilde'), 'El aviso explica por qué una contraseña con tildes es larga.');
-verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => 'Clave nueva profesional 3'])[0] === 200, 'Administración cambia la contraseña de la profesional.');
+[$estado, $datos] = $admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => str_repeat('ñ', 129)]);
+verificar($estado === 422 && $datos['error'] === 'La contraseña es muy larga: usá como máximo 128 caracteres.', 'El aviso indica el máximo en caracteres.');
+// 96 caracteres con tildes y eñes: supera los 72 bytes que admitía bcrypt.
+$nuevaPro = str_repeat('Ñandú añejo ', 8);
+verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => $nuevaPro])[0] === 200, 'Administración cambia la contraseña de la profesional.');
 verificar($agendaPro() === 401, 'Cambiar la contraseña cierra la sesión de la profesional.');
 verificar($ingresarPro($clave) === 401, 'La contraseña anterior deja de funcionar.');
-verificar($ingresarPro('Clave nueva profesional 3') === 200, 'La contraseña nueva ingresa.');
+verificar($ingresarPro($nuevaPro) === 200, 'La contraseña nueva ingresa.');
+verificar(str_starts_with((string) $conexion->fetchOne('SELECT password_hash FROM usuarios WHERE id = ?', [$proId]), '$argon2id$'), 'El panel guarda la contraseña con Argon2id.');
+verificar($ingresarPro(mb_strcut($nuevaPro, 0, 72, 'UTF-8')) === 401, 'La contraseña larga no se recorta a 72 bytes.');
 verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => false, 'clave' => ''])[0] === 200, 'Administración desactiva la cuenta profesional.');
 verificar($agendaPro() === 401, 'Desactivar la cuenta cierra la sesión de la profesional.');
-verificar($ingresarPro('Clave nueva profesional 3') === 401, 'Una cuenta profesional desactivada no ingresa.');
+verificar($ingresarPro($nuevaPro) === 401, 'Una cuenta profesional desactivada no ingresa.');
 verificar($cuentaPro()['cuenta_activa'] === false && $cuentaPro()['activa'] === true, 'La cuenta queda desactivada sin dar de baja el perfil.');
 verificar($admin->pedir('PATCH', "/api/admin/usuarios/$proId", ['activo' => true, 'clave' => ''])[0] === 200, 'Administración reactiva la cuenta profesional.');
-verificar($ingresarPro('Clave nueva profesional 3') === 200, 'La cuenta reactivada vuelve a ingresar.');
+verificar($ingresarPro($nuevaPro) === 200, 'La cuenta reactivada vuelve a ingresar.');
 verificar($eventos('CLAVE_CAMBIADA', $proId) === 1 && $eventos('CUENTA_DESACTIVADA', $proId) === 1 && $eventos('CUENTA_ACTIVADA', $proId) === 1, 'Los cambios de la cuenta profesional quedan auditados.');
 $sinPerfil = (string) $conexion->fetchOne("INSERT INTO usuarios (email, password_hash, roles) VALUES ('suelta@zenli.test', ?, '[]') RETURNING id", [$hash]);
 verificar($admin->pedir('PATCH', "/api/admin/usuarios/$sinPerfil", ['activo' => false, 'clave' => ''])[0] === 409, 'Una cuenta sin administración ni perfil profesional no se gestiona.');

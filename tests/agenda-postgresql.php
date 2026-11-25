@@ -472,7 +472,7 @@ verificar($comunicacion->consultar($destinataria)['mensajes'][0]['texto'] === 'M
 verificar($comunicacion->consultar('101')['mensajes'] === [], 'Una cuenta ajena al mensaje no puede leerlo.');
 fwrite(STDOUT, "PostgreSQL: edición, cancelación, alcance profesional y mensajes privados verificados.\n");
 
-// El firewall autentica con ProveedorUsuarios y el hasher bcrypt; acá se prueba qué cuenta carga.
+// El firewall autentica con ProveedorUsuarios y el hasher Argon2id; acá se prueba qué cuenta carga.
 $proveedor = new App\Seguridad\ProveedorUsuarios($conexion);
 $ingresar = static function (string $email, string $clave) use ($proveedor): App\Seguridad\UsuarioSesion {
     $cuenta = $proveedor->loadUserByIdentifier($email);
