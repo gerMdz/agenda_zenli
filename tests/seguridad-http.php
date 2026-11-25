@@ -88,6 +88,14 @@ $eventos = static fn (string $tipo, ?string $usuario = null): int => (int) $cone
 $anonima = new Cliente($kernel, '203.0.113.10');
 [$estado, $datos] = $anonima->pedir('GET', '/api/admin/sesion');
 verificar($estado === 200 && $datos['usuario'] === null && strlen($datos['csrf']) > 20, 'La sesión anónima debe entregar un token CSRF.');
+$rutaPasskey = '/api/admin/sesion/clave-acceso';
+verificar($anonima->pedir('POST', $rutaPasskey.'/opciones', [], false)[0] === 403, 'El desafío WebAuthn exige CSRF.');
+verificar($anonima->pedir('POST', $rutaPasskey, [], false)[0] === 403, 'El ingreso WebAuthn exige CSRF.');
+verificar($anonima->pedir('POST', $rutaPasskey, [])[0] === 401, 'WebAuthn exige un desafío vigente.');
+[$estado, $opciones] = $anonima->pedir('POST', $rutaPasskey.'/opciones', []);
+verificar($estado === 200 && $opciones['userVerification'] === 'required' && strlen($opciones['challenge']) >= 43, 'WebAuthn exige verificar a la usuaria.');
+verificar($anonima->pedir('POST', $rutaPasskey, ['id' => 'falsa'])[0] === 401, 'WebAuthn rechaza una respuesta incompleta.');
+
 [$estado, $datos] = $anonima->pedir('POST', '/api/admin/sesion', ['email' => 'admin@zenli.test', 'clave' => $clave], false);
 verificar($estado === 403 && $datos['error'] === 'La sesión del formulario venció. Recargá la página.', 'El ingreso exige CSRF y responde en JSON.');
 verificar($anonima->pedir('POST', '/api/admin/sesion', ['email' => 'admin@zenli.test', 'clave' => $clave], true, 'incorrecto')[0] === 403, 'El ingreso exige un CSRF válido.');
@@ -112,6 +120,7 @@ fwrite(STDOUT, "Ingreso, CSRF y regeneración de sesión verificados.\n");
 $profesional = new Cliente($kernel, '203.0.113.12');
 verificar($profesional->ingresar('pro@zenli.test', $clave) === 200, 'La profesional ingresa.');
 $agenda = [
+    'GET /api/admin/claves-acceso', 'POST /api/admin/claves-acceso', 'POST /api/admin/claves-acceso/opciones', 'DELETE /api/admin/claves-acceso/{id}',
     'GET /api/admin/agenda', 'POST /api/admin/agenda/turnos', 'PUT /api/admin/agenda/turnos/{id}', 'DELETE /api/admin/agenda/turnos/{id}',
     'POST /api/admin/agenda/turnos/buscar', 'PUT /api/admin/agenda/turnos/{id}/asistencia',
     'GET /api/admin/agenda/turnos/horario-habitual', 'GET /api/admin/agenda/turnos/disponibilidad',
@@ -125,10 +134,11 @@ $revisadas = 0;
 $agendaRevisadas = [];
 foreach ($kernel->getContainer()->get('router')->getRouteCollection() as $ruta) {
     $plantilla = $ruta->getPath();
-    if (!str_starts_with($plantilla, '/api/admin') || $plantilla === '/api/admin/sesion') {
+    if (!str_starts_with($plantilla, '/api/admin') || str_starts_with($plantilla, '/api/admin/sesion')) {
         continue;
     }
-    $url = strtr($plantilla, ['{id}' => '999999', '{version}' => str_repeat('a', 64), '{fecha}' => '2099-06-18']);
+    $idRuta = $plantilla === '/api/admin/claves-acceso/{id}' ? str_repeat('a', 64) : '999999';
+    $url = strtr($plantilla, ['{id}' => $idRuta, '{version}' => str_repeat('a', 64), '{fecha}' => '2099-06-18']);
     foreach ($ruta->getMethods() as $metodo) {
         $clave_ruta = "$metodo $plantilla";
         $esAgenda = in_array($clave_ruta, $agenda, true);

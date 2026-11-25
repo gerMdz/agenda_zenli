@@ -30,7 +30,8 @@ security:
     # Se evalúa en orden y aplica la primera regla que coincide. Lo que no figura exige
     # administración: una ruta nueva bajo /api/admin queda protegida por defecto.
     access_control:
-        - { path: ^/api/admin/sesion$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/sesion(?:/clave-acceso(?:/opciones)?)?$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/claves-acceso(/|$), roles: ROLE_AGENDA }
         - { path: ^/api/admin/agenda$, roles: ROLE_AGENDA }
         - { path: ^/api/admin/agenda/(turnos|preparaciones|mensajes|clientes)(/|$), roles: ROLE_AGENDA }
         - { path: ^/api/admin, roles: ROLE_ADMIN }

@@ -18,6 +18,7 @@ services:
         restart: unless-stopped
         environment:
             APP_ENV: prod
+            ZENLI_ORIGEN_CLAVES_ACCESO: ${ZENLI_ORIGEN_CLAVES_ACCESO:-https://zenli.ar}
             APP_DEBUG: '0'
             APP_SECRET: ${APP_SECRET:?Definí APP_SECRET en .env.production}
             DATABASE_URL: ${DATABASE_URL:?Definí DATABASE_URL en .env.production}

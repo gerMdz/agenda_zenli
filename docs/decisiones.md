@@ -91,3 +91,5 @@
 - En modo avión la agenda muestra, por sala y día seleccionado, los horarios ocupados de la última descarga sin identificar a clientes ni profesionales. «Borrar caché de agenda» elimina exclusivamente la copia descargada de la cuenta. Conserva la cola de turnos, la caché de archivos de la app y cualquier otra caché.
 
 - El alta sin conexión avisa si el turno o su preparación se superponen con la ocupación de la sala en la última copia. El aviso permite guardar un pendiente. PostgreSQL decide al sincronizar con la ocupación vigente.
+
+- La agenda permite registrar y revocar claves de acceso WebAuthn desde el menú de cuenta. El alta exige confirmar la contraseña actual. El inicio mediante clave requiere verificación del usuario por el autenticador y crea la misma sesión de una hora de inactividad. El servidor guarda únicamente la credencial pública, comprueba el origen configurado y usa desafíos de un solo uso.

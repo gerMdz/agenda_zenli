@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { avisarCambioCuenta, borrarDatosLocales, leerAltas } from './agendaSinConexion.js'
+import { admiteClavesAcceso, usarClaveAcceso } from './clavesAcceso.js'
 import portadaOriginal from './image/portada.webp'
 import LayoutAdministracion from './LayoutAdministracion.vue'
 import EntradaHora from './EntradaHora.vue'
@@ -240,14 +241,28 @@ onMounted(async () => {
   cargando.value = false
 })
 
+async function completarIngreso(sesion) {
+  aplicarSesion(sesion)
+  if (usuario.value) {
+    await avisarCambioCuenta(usuario.value.id).catch(() => {})
+    await cargarPanel()
+  }
+}
+
+function ingresarConClaveAcceso() {
+  return ejecutar(async () => {
+    clave.value = ''
+    const ruta = '/api/admin/sesion/clave-acceso'
+    const opciones = await api(ruta + '/opciones', { method: 'POST', datos: {} })
+    const credencial = await usarClaveAcceso(opciones)
+    await completarIngreso(await api(ruta, { method: 'POST', datos: credencial }))
+  })
+}
+
 function ingresar() {
   return ejecutar(async () => {
     try {
-      aplicarSesion(await api('/api/admin/sesion', { method: 'POST', datos: { email: email.value, clave: clave.value } }))
-      if (usuario.value) {
-        await avisarCambioCuenta(usuario.value.id).catch(() => {})
-        await cargarPanel()
-      }
+      await completarIngreso(await api('/api/admin/sesion', { method: 'POST', datos: { email: email.value, clave: clave.value } }))
     } finally {
       clave.value = ''
     }
@@ -838,6 +853,7 @@ onBeforeUnmount(() => {
           <input id="clave" v-model="clave" type="password" autocomplete="current-password" required>
           <button :disabled="ocupado || !csrf">Ingresar</button>
         </form>
+        <button v-if="admiteClavesAcceso" type="button" class="secundario acceso-passkey" :disabled="ocupado || !csrf" @click="ingresarConClaveAcceso">Ingresar con clave de acceso</button>
       </section>
 
       <div v-if="usuario?.admin" class="paneles">
@@ -1357,6 +1373,7 @@ small { font-size: .79rem; color: #526255; }
 .error.inline { margin: 0 0 .5rem; }
 .mensaje { background: #e4efdf; color: #194832; }
 
+.acceso-passkey { margin-top: .75rem; }
 .editar-portada { margin-top: 1rem; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .lista-servicios { margin: .75rem 0 0; padding: 0; list-style: none; }

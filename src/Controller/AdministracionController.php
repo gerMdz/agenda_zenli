@@ -39,6 +39,7 @@ final readonly class AdministracionController
 
     /** El autenticador ya validó el ingreso; si llega acá, la sesión es nueva y está autenticada. */
     #[Route('/sesion', methods: ['POST'])]
+    #[Route('/sesion/clave-acceso', methods: ['POST'])]
     public function ingresar(): JsonResponse
     {
         return $this->sesion();

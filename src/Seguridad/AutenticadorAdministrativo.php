@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Seguridad;
 
+use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\Serializer\Exception\ExceptionInterface;
+use Webauthn\Exception\WebauthnException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -16,6 +20,7 @@ use Symfony\Component\Security\Http\Authenticator\AbstractAuthenticator;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\Credentials\PasswordCredentials;
 use Symfony\Component\Security\Http\Authenticator\Passport\Passport;
+use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
 use Symfony\Component\Security\Http\EntryPoint\AuthenticationEntryPointInterface;
 
 /**
@@ -27,6 +32,7 @@ use Symfony\Component\Security\Http\EntryPoint\AuthenticationEntryPointInterface
 final class AutenticadorAdministrativo extends AbstractAuthenticator implements AuthenticationEntryPointInterface
 {
     public const RUTA = '/api/admin/sesion';
+    public const RUTA_CLAVE_ACCESO = '/api/admin/sesion/clave-acceso';
     /** Hash bcrypt de costo 12 sin contraseña conocida: iguala el tiempo de respuesta de correos inexistentes. */
     private const HASH_FICTICIO = '$2y$12$EC4XFX7Oz4bARSA8nzjewOKSV2XSTtNv8W8yJAcRuOVEfr3.J3R6O';
 
@@ -36,18 +42,28 @@ final class AutenticadorAdministrativo extends AbstractAuthenticator implements 
         private readonly LimiteIngresos $limite,
         private readonly AuditoriaAccesos $auditoria,
         private readonly TokenCsrf $csrf,
+        private readonly ClavesAcceso $clavesAcceso,
     ) {
     }
 
     public function supports(Request $request): bool
     {
-        return $request->getPathInfo() === self::RUTA && $request->isMethod('POST');
+        return $request->isMethod('POST') && in_array($request->getPathInfo(), [self::RUTA, self::RUTA_CLAVE_ACCESO], true);
     }
 
     public function authenticate(Request $request): Passport
     {
         if (!$this->csrf->valido($request)) {
             throw new IngresoRechazado(TokenCsrf::MENSAJE, Response::HTTP_FORBIDDEN);
+        }
+        if ($request->getPathInfo() === self::RUTA_CLAVE_ACCESO) {
+            try {
+                $cuenta = $this->clavesAcceso->autenticar($request);
+
+                return new SelfValidatingPassport(new UserBadge($cuenta->email, static fn () => $cuenta));
+            } catch (InvalidArgumentException|ExceptionInterface|WebauthnException|UserNotFoundException|HttpException) {
+                throw new IngresoRechazado('No se pudo ingresar con esa clave de acceso. Volvé a intentar.', Response::HTTP_UNAUTHORIZED);
+            }
         }
         try {
             $datos = $request->toArray();

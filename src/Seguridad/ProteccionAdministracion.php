@@ -45,7 +45,7 @@ final readonly class ProteccionAdministracion
     {
         $peticion = $evento->getRequest();
         if (!$evento->isMainRequest() || !self::administracion($peticion->getPathInfo()) || $peticion->isMethodSafe()
-            || ($peticion->getPathInfo() === AutenticadorAdministrativo::RUTA && $peticion->isMethod('POST'))) {
+            || ($peticion->isMethod('POST') && in_array($peticion->getPathInfo(), [AutenticadorAdministrativo::RUTA, AutenticadorAdministrativo::RUTA_CLAVE_ACCESO], true))) {
             return;
         }
         if (!$this->csrf->valido($peticion)) {

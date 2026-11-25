@@ -16,13 +16,16 @@
         "symfony/filesystem": "7.4.*",
         "symfony/framework-bundle": "7.4.*",
         "symfony/password-hasher": "7.4.*",
+        "symfony/property-info": "7.4.*",
         "symfony/routing": "7.4.*",
         "symfony/runtime": "7.4.*",
         "symfony/security-bundle": "7.4.*",
         "symfony/security-core": "7.4.*",
         "symfony/security-csrf": "7.4.*",
         "symfony/security-http": "7.4.*",
-        "symfony/yaml": "7.4.*"
+        "symfony/serializer": "7.4.*",
+        "symfony/yaml": "7.4.*",
+        "web-auth/webauthn-lib": "^5.3"
     },
     "autoload": {
         "psr-4": {

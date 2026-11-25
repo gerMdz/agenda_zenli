@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import LayoutAdministracion from './LayoutAdministracion.vue'
 import ClientesAgenda from './ClientesAgenda.vue'
 import FichaClienteDialog from './FichaClienteDialog.vue'
+import ClavesAccesoAgenda from './ClavesAccesoAgenda.vue'
+import { admiteClavesAcceso } from './clavesAcceso.js'
 import CalendarioHoras from './CalendarioHoras.vue'
 import EntradaHora from './EntradaHora.vue'
 import HorariosPersonales from './HorariosPersonales.vue'
@@ -61,6 +63,12 @@ const canalSesion = canalAgendaLocal()
 const vista = ref('semana')
 const profesionalSeleccionada = ref('')
 const menuPerfil = ref(null)
+const clavesAccesoAgenda = ref(null)
+
+function gestionarClavesAcceso() {
+  cerrarMenuPerfil(true)
+  clavesAccesoAgenda.value?.abrir()
+}
 const horarioHabitual = ref(null)
 const dialogoInstalacion = ref(null)
 const instalandoAgenda = ref(false)
@@ -578,6 +586,7 @@ async function prepararCopia() {
 
 async function mostrarCopia() {
   sinConexion.value = true
+  clavesAccesoAgenda.value?.cerrar()
   nuevaFichaTurno.value?.cerrar()
   clienteVinculado.value = null
   fichasCoincidentes.value = null
@@ -1004,10 +1013,12 @@ onMounted(() => {
           </div>
           <button v-if="copia" type="button" :disabled="ocupado" @click="confirmarBorradoCopia">Borrar caché de agenda</button>
           <button v-else-if="!sinConexion" type="button" :disabled="ocupado" @click="ejecutar(prepararCopia)">Descargar copia de la agenda</button>
+          <button v-if="admiteClavesAcceso && !sinConexion" type="button" :disabled="ocupado" @click="gestionarClavesAcceso">Claves de acceso</button>
           <button type="button" :disabled="ocupado || sinConexion" @click="salir">Cerrar sesión</button>
         </div>
       </details>
     </header>
+    <ClavesAccesoAgenda v-if="usuario && !sinConexion && admiteClavesAcceso" ref="clavesAccesoAgenda" :api="api" />
     <LayoutAdministracion :usuario="usuario" :seccion="seccionAgenda" :solo-agenda="sinConexion">
     <main id="turnos">
       <section v-if="sinConexion" class="panel" aria-label="Conexión">
