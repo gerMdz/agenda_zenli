@@ -48,7 +48,7 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 - Para desplegar los estados de asistencia, aplicar la migración `Version20261124000200`. La búsqueda por nombre y el registro de asistencia se usan con conexión.
 - Al desplegar las fichas, aplicar `Version20261124000300`. Vincular manualmente los turnos anteriores cuando se confirme la identidad del cliente.
 - Probar en celulares reales la consulta de ocupaciones anónimas y el borrado de la copia de agenda en modo avión. El borrado actúa solo sobre la entrada de IndexedDB de la cuenta y conserva la cola de turnos.
-- Antes de habilitar el ingreso con claves de acceso, aplicar `Version20261124000400` y verificar `ZENLI_ORIGEN_CLAVES_ACCESO` con el origen HTTPS canónico. Probar en Android real el alta desde el menú de cuenta, el ingreso con huella o PIN, y la revocación.
+- Antes de habilitar el ingreso con claves de acceso, aplicar `Version20261124000400` y verificar `ZENLI_ORIGEN_CLAVES_ACCESO` con el origen HTTPS canónico. El flujo completo (registro con confirmación de clave, ingreso biométrico por Passkey y revocación con auditoría) fue probado exitosamente en local mediante Chrome E2E con autenticador virtual. En el celular real con HTTPS se puede enrolar la huella directamente en el VPS activo.
 - Los commits, el push y el despliegue los realiza Gerardo.
 
 ## Servicios de la portada
