@@ -64,19 +64,25 @@ final readonly class AgendaAdministrativa
             DQL, $periodo, $propia);
         $equipos = $this->equipos(array_column($filas, 'id'));
         $clienteIds = array_values(array_filter(array_unique(array_column($filas, 'cliente_id'))));
-        $telefonos = empty($clienteIds) ? [] : $this->entidades->getConnection()->fetchAllKeyValue(
-            "SELECT id::text, telefono FROM clientes WHERE id::text IN (?) AND telefono IS NOT NULL AND trim(telefono) <> ''",
+        $clientesDatos = empty($clienteIds) ? [] : $this->entidades->getConnection()->fetchAllAssociative(
+            "SELECT id::text, telefono, no_contactar FROM clientes WHERE id::text IN (?)",
             [$clienteIds],
             [ArrayParameterType::STRING],
         );
+        $clientesMapa = [];
+        foreach ($clientesDatos as $cd) {
+            $clientesMapa[$cd['id']] = $cd;
+        }
         $turnos = [];
         foreach ($filas as $fila) {
             $equipo = $equipos[$fila['id']]['ids'] ?? [];
             $requeridos = $fila['profesionales_requeridos'];
             $clienteIdStr = self::texto($fila['cliente_id']);
+            $clienteInfo = $clienteIdStr !== null ? ($clientesMapa[$clienteIdStr] ?? null) : null;
             $turnos[] = [
                 'id' => (string) $fila['id'], 'servicio' => $fila['servicio'], 'cliente' => $fila['cliente'], 'cliente_id' => $clienteIdStr,
-                'cliente_telefono' => $clienteIdStr !== null ? ($telefonos[$clienteIdStr] ?? null) : null,
+                'cliente_telefono' => $clienteInfo['telefono'] ?? null,
+                'cliente_no_contactar' => (bool) ($clienteInfo['no_contactar'] ?? false),
                 'inicio' => $fila['inicio']->format(DATE_ATOM), 'fin' => $fila['fin']->format(DATE_ATOM),
                 'revision' => $fila['revision'], 'asistencia' => $fila['asistencia'], 'servicio_id' => self::texto($fila['servicio_id']),
                 'espacio_id' => (string) $fila['espacio_id'], 'espacio' => $fila['espacio'], 'equipo' => $equipo,
@@ -196,7 +202,7 @@ final readonly class AgendaAdministrativa
         }
         $turnos = $this->entidades->getConnection()->fetchAllAssociative(<<<SQL
             SELECT t.id::text AS id, t.cliente_id::text AS cliente_id, t.cliente_nombre AS cliente, t.servicio_nombre AS servicio,
-                   t.inicio, t.fin, t.asistencia, c.telefono AS cliente_telefono
+                   t.inicio, t.fin, t.asistencia, c.telefono AS cliente_telefono, COALESCE(c.no_contactar, FALSE) AS cliente_no_contactar
             FROM turnos_administrativos t
             LEFT JOIN clientes c ON c.id = t.cliente_id
             WHERE t.cancelado_en IS NULL

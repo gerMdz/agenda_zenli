@@ -50,6 +50,7 @@ La compilación del frontend y las pruebas de agenda y permisos pasaron en Postg
 - Probar en celulares reales la consulta de ocupaciones anónimas y el borrado de la copia de agenda en modo avión. El borrado actúa solo sobre la entrada de IndexedDB de la cuenta y conserva la cola de turnos.
 - Antes de habilitar el ingreso con claves de acceso, aplicar `Version20261124000400` y verificar `ZENLI_ORIGEN_CLAVES_ACCESO` con el origen HTTPS canónico. El flujo completo (registro con confirmación de clave, ingreso biométrico por Passkey y revocación con auditoría) fue probado exitosamente en local mediante Chrome E2E con autenticador virtual. En el celular real con HTTPS se puede enrolar la huella directamente en el VPS activo.
 - Para desplegar la persistencia de sesiones en PostgreSQL, aplicar la migración `Version20261128000100` (`sesiones_php`). Esto evita que los despliegues o reinicios del contenedor deslogueen a las profesionales o administradoras.
+- Para desplegar la opción «No contactar» en clientes y turnos, aplicar la migración `Version20261128000200` (`ALTER TABLE clientes ADD COLUMN no_contactar BOOLEAN NOT NULL DEFAULT FALSE`).
 - Los commits, el push y el despliegue los realiza Gerardo.
 
 ## Servicios de la portada

@@ -173,6 +173,8 @@ const finPreparacion = ref('')
 const bloqueoNuevo = ref({ profesional: '', fecha: '', todo_el_dia: false, hora_inicio: '', hora_fin: '' })
 const dialogoHojaDia = ref(null)
 const hojaDiaAbierta = ref(false)
+const dialogoConfirmarWA = ref(null)
+const turnoConfirmarWA = ref(null)
 
 function abrirHojaDelDia() {
   hojaDiaAbierta.value = true
@@ -181,6 +183,22 @@ function abrirHojaDelDia() {
 
 function imprimirHojaDelDia() {
   window.print()
+}
+
+function accionarWhatsApp(turno, evento) {
+  if (turno?.cliente_no_contactar) {
+    if (evento) evento.preventDefault()
+    turnoConfirmarWA.value = turno
+    nextTick(() => dialogoConfirmarWA.value?.showModal())
+  }
+}
+
+function abrirWhatsAppConfirmado() {
+  if (!turnoConfirmarWA.value) return
+  const url = enlaceWhatsAppTurno(turnoConfirmarWA.value)
+  dialogoConfirmarWA.value?.close()
+  turnoConfirmarWA.value = null
+  if (url) window.open(url, '_blank', 'noopener,noreferrer')
 }
 const nombreDia = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
 const tituloMes = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -634,7 +652,7 @@ async function mostrarCopia() {
     dialogo.value?.close()
     limpiarTurno()
   }
-  for (const modal of [dialogoDisponibilidad, dialogoBloqueo, dialogoMensaje, dialogoPreparacion, dialogoBusqueda, dialogoAsistencia, dialogoHojaDia]) modal.value?.close()
+  for (const modal of [dialogoDisponibilidad, dialogoBloqueo, dialogoMensaje, dialogoPreparacion, dialogoBusqueda, dialogoAsistencia, dialogoHojaDia, dialogoConfirmarWA]) modal.value?.close()
   clearTimeout(vencimientoCopia)
   datos.value = null
   const muestra = await leerCopia().catch(() => null)
@@ -1187,13 +1205,23 @@ onMounted(() => {
               <div class="detalle-turno">
                 <span v-if="turno.bloqueado" class="marca-bloqueo">Profesional no disponible</span>
                 <span v-else-if="turno.esPreparacion">Preparación del espacio</span>
-                <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
+                <span v-else>
+                  {{ turno.servicio }} · {{ turno.cliente }}
+                  <span v-if="turno.cliente_no_contactar" class="badge-no-contactar" title="El cliente solicitó no ser contactado">🚫 No contactar</span>
+                  <small v-if="esPropio(turno)" class="mio">Mi turno</small>
+                </span>
                 <small v-if="turno.asistencia" class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
                 <button v-if="!sinConexion && turno.cliente_id" type="button" class="secundario" :disabled="ocupado" @click="mostrarFicha(turno.cliente_id)">Ver ficha</button>
                 <a v-if="!sinConexion && turno.cliente_telefono && enlaceWhatsAppTurno(turno)"
-                   :href="enlaceWhatsAppTurno(turno)"
-                   target="_blank" rel="noopener noreferrer" class="boton-wa-turno" title="Enviar recordatorio por WhatsApp">
+                   :href="turno.cliente_no_contactar ? '#' : enlaceWhatsAppTurno(turno)"
+                   :target="turno.cliente_no_contactar ? undefined : '_blank'"
+                   rel="noopener noreferrer"
+                   class="boton-wa-turno"
+                   :class="{ 'boton-wa-turno--precaucion': turno.cliente_no_contactar }"
+                   :title="turno.cliente_no_contactar ? 'Precaución: El cliente solicitó NO ser contactado' : 'Enviar recordatorio por WhatsApp'"
+                   @click="accionarWhatsApp(turno, $event)">
                   <span class="icono-wa" aria-hidden="true">💬</span> WhatsApp
+                  <span v-if="turno.cliente_no_contactar" class="alerta-wa-no-contactar" aria-hidden="true">⚠</span>
                 </a>
                 <!-- Para habilitar llamadas directas en el futuro, descomentar la siguiente línea:
                 <a v-if="!sinConexion && turno.cliente_telefono" :href="'tel:' + turno.cliente_telefono" class="boton-telefono-turno" title="Llamar al cliente">Llamar</a>
@@ -1259,14 +1287,21 @@ onMounted(() => {
               <li v-for="turno in resultadosTurnos.turnos" :key="turno.id">
                 <div>
                   <strong>{{ turno.cliente }}</strong>
+                  <span v-if="turno.cliente_no_contactar" class="badge-no-contactar" title="El cliente solicitó no ser contactado">🚫 No contactar</span>
                   <p>{{ calendario.format(new Date(turno.inicio)) }} · {{ horarioVisible(turno) }} · {{ turno.servicio }}</p>
                   <small class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
                 </div>
                 <div class="acciones">
                   <a v-if="turno.cliente_telefono && enlaceWhatsAppTurno(turno)"
-                     :href="enlaceWhatsAppTurno(turno)"
-                     target="_blank" rel="noopener noreferrer" class="boton-wa-turno" title="Enviar recordatorio por WhatsApp">
+                     :href="turno.cliente_no_contactar ? '#' : enlaceWhatsAppTurno(turno)"
+                     :target="turno.cliente_no_contactar ? undefined : '_blank'"
+                     rel="noopener noreferrer"
+                     class="boton-wa-turno"
+                     :class="{ 'boton-wa-turno--precaucion': turno.cliente_no_contactar }"
+                     :title="turno.cliente_no_contactar ? 'Precaución: El cliente solicitó NO ser contactado' : 'Enviar recordatorio por WhatsApp'"
+                     @click="accionarWhatsApp(turno, $event)">
                     <span class="icono-wa" aria-hidden="true">💬</span> WhatsApp
+                    <span v-if="turno.cliente_no_contactar" class="alerta-wa-no-contactar" aria-hidden="true">⚠</span>
                   </a>
                   <!-- Para habilitar llamadas directas en el futuro, descomentar la siguiente línea:
                   <a v-if="turno.cliente_telefono" :href="'tel:' + turno.cliente_telefono" class="boton-telefono-turno" title="Llamar al cliente">Llamar</a>
@@ -1586,6 +1621,7 @@ onMounted(() => {
                   <template v-else>
                     <td class="col-cliente">
                       <strong>{{ item.cliente }}</strong>
+                      <div v-if="item.cliente_no_contactar" class="aviso-hoja-no-contactar">🚫 NO CONTACTAR</div>
                     </td>
                     <td class="col-telefono">
                       {{ item.cliente_telefono || '—' }}
@@ -1639,6 +1675,27 @@ onMounted(() => {
               </div>
             </footer>
           </article>
+        </dialog>
+
+        <dialog ref="dialogoConfirmarWA" class="modal-confirmar-wa" aria-labelledby="titulo-confirmar-wa" @close="turnoConfirmarWA = null" @cancel="turnoConfirmarWA = null">
+          <div class="caja-confirmar-wa">
+            <div class="icono-alerta-wa" aria-hidden="true">🚫</div>
+            <h3 id="titulo-confirmar-wa">Atención: Cliente no contactable</h3>
+            <p class="advertencia-wa">
+              El cliente <strong>{{ turnoConfirmarWA?.cliente }}</strong> solicitó explícitamente <em>NO ser contactado</em> por ningún medio.
+            </p>
+            <p class="detalle-advertencia-wa">
+              Para evitar enviar mensajes o recordatorios por error, se requiere confirmación consciente. ¿Realmente necesitás abrir WhatsApp para este cliente?
+            </p>
+            <div class="acciones-modal-wa">
+              <button type="button" class="boton-formulario boton-formulario--cancelar" autofocus @click="dialogoConfirmarWA.close()">
+                Cancelar (No contactar)
+              </button>
+              <button type="button" class="boton-forzar-wa" @click="abrirWhatsAppConfirmado">
+                Sí, abrir WhatsApp de todos modos
+              </button>
+            </div>
+          </div>
         </dialog>
       </template>
     </main>
@@ -1778,6 +1835,20 @@ button:disabled { opacity: .55; }
   line-height: 1.2;
 }
 .boton-wa-turno:hover { background: #20ba59; color: #000; }
+.boton-wa-turno--precaucion { background: #fce8e6; border-color: #f1b3ad; color: #8a2a20; }
+.boton-wa-turno--precaucion:hover { background: #f8d5d1; color: #641911; }
+.alerta-wa-no-contactar { font-weight: 800; margin-left: .15rem; }
+.badge-no-contactar { display: inline-block; padding: .15rem .45rem; background: #fae2dc; color: #8e1c13; font-size: .75rem; font-weight: 700; border-radius: .3rem; margin-left: .45rem; vertical-align: middle; }
+.modal-confirmar-wa { width: min(calc(100% - 1.5rem), 32rem); padding: 1.5rem; border: 2px solid #e27a6e; border-radius: .85rem; background: #fffbf9; color: #211210; box-shadow: 0 1rem 3rem rgba(80, 20, 10, .25); }
+.caja-confirmar-wa { display: flex; flex-direction: column; gap: .9rem; text-align: center; }
+.icono-alerta-wa { font-size: 2.5rem; line-height: 1; }
+.caja-confirmar-wa h3 { margin: 0; font-size: 1.25rem; color: #8a2016; }
+.advertencia-wa { margin: 0; font-size: .95rem; line-height: 1.4; color: #3b1915; }
+.detalle-advertencia-wa { margin: 0; font-size: .85rem; line-height: 1.35; color: #69433e; background: #fdedea; padding: .65rem .85rem; border-radius: .4rem; border-left: 3px solid #d45b4e; text-align: left; }
+.acciones-modal-wa { display: flex; flex-direction: column; gap: .6rem; margin-top: .5rem; }
+.boton-forzar-wa { background: transparent; border: 1px solid #d45b4e; color: #8a2016; padding: .5rem .8rem; font-size: .85rem; border-radius: .45rem; cursor: pointer; transition: background .15s; }
+.boton-forzar-wa:hover { background: #fbe6e3; }
+.aviso-hoja-no-contactar { display: inline-block; font-size: .68rem; font-weight: 800; color: #8e1c13; background: #fae2dc; padding: .1rem .35rem; border-radius: .2rem; margin-top: .15rem; letter-spacing: .03em; }
 .boton-telefono-turno { color: #214d3a; font-weight: 600; text-decoration: none; }
 dialog { max-height: 88dvh; width: min(calc(100% - 1.5rem), 38rem); padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
 dialog::backdrop { background: #071b13a8; }

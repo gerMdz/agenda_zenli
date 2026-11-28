@@ -21,7 +21,7 @@ final readonly class ClientesAgenda
              WHERE e.turno_id = t.id AND e.tipo = 'CANCELADO' AND equipo.id = :profesional
          )))
         SQL;
-    private const CAMPOS = 'c.id::text AS id, c.nombre, c.telefono, c.email, c.archivado_en';
+    private const CAMPOS = 'c.id::text AS id, c.nombre, c.telefono, c.email, c.no_contactar, c.archivado_en';
 
     public function __construct(private Connection $conexion)
     {
@@ -87,6 +87,7 @@ final readonly class ClientesAgenda
             'nombre' => self::texto($datos['nombre'] ?? null, 150, 'el nombre', true),
             'telefono' => self::texto($datos['telefono'] ?? null, 30, 'el teléfono'),
             'email' => self::texto($datos['email'] ?? null, 180, 'el correo'),
+            'no_contactar' => !empty($datos['no_contactar']) ? 'true' : 'false',
             'autor' => $cuenta['id'],
         ];
         if ($campos['email'] !== null && !filter_var($campos['email'], FILTER_VALIDATE_EMAIL)) {
@@ -94,7 +95,7 @@ final readonly class ClientesAgenda
         }
         if ($id === null) {
             return (string) $this->conexion->fetchOne(
-                'INSERT INTO clientes (nombre, telefono, email, creado_por, actualizado_por, actualizado_en) VALUES (:nombre, :telefono, :email, :autor, :autor, now()) RETURNING id',
+                'INSERT INTO clientes (nombre, telefono, email, no_contactar, creado_por, actualizado_por, actualizado_en) VALUES (:nombre, :telefono, :email, :no_contactar, :autor, :autor, now()) RETURNING id',
                 $campos,
             );
         }
@@ -106,7 +107,7 @@ final readonly class ClientesAgenda
                 throw new HttpException(409, 'Reactivá la ficha antes de editarla.');
             }
             $this->conexion->executeStatement(<<<'SQL'
-                UPDATE clientes SET nombre = :nombre, telefono = :telefono, email = :email,
+                UPDATE clientes SET nombre = :nombre, telefono = :telefono, email = :email, no_contactar = :no_contactar,
                     telefono_verificado = CASE WHEN telefono IS DISTINCT FROM :telefono THEN FALSE ELSE telefono_verificado END,
                     actualizado_por = :autor, actualizado_en = now()
                 WHERE id = :id

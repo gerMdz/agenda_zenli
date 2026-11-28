@@ -5,13 +5,18 @@ const props = defineProps({ api: { type: Function, required: true } })
 const emit = defineEmits(['guardada'])
 const dialogo = ref(null)
 const id = ref(null)
-const datos = ref({ nombre: '', telefono: '', email: '' })
+const datos = ref({ nombre: '', telefono: '', email: '', no_contactar: false })
 const ocupado = ref(false)
 const error = ref('')
 
 function abrir(cliente = {}) {
   id.value = cliente.id ?? null
-  datos.value = { nombre: cliente.nombre ?? '', telefono: cliente.telefono ?? '', email: cliente.email ?? '' }
+  datos.value = {
+    nombre: cliente.nombre ?? '',
+    telefono: cliente.telefono ?? '',
+    email: cliente.email ?? '',
+    no_contactar: Boolean(cliente.no_contactar),
+  }
   error.value = ''
   dialogo.value.showModal()
 }
@@ -48,6 +53,10 @@ defineExpose({ abrir, cerrar })
       <label>Nombre <input v-model.trim="datos.nombre" required maxlength="150" autofocus :disabled="ocupado"></label>
       <label>Teléfono (opcional) <input v-model.trim="datos.telefono" type="tel" maxlength="30" :disabled="ocupado"></label>
       <label>Correo (opcional) <input v-model.trim="datos.email" type="email" maxlength="180" :disabled="ocupado"></label>
+      <label class="casilla-no-contactar">
+        <input v-model="datos.no_contactar" type="checkbox" :disabled="ocupado">
+        <span><strong>No contactar</strong> · Solicitó explícitamente no recibir mensajes ni llamadas</span>
+      </label>
       <div class="acciones-formulario">
         <button type="button" class="boton-formulario boton-formulario--cancelar" :disabled="ocupado" @click="cerrar">Cancelar</button>
         <button type="submit" class="boton-formulario boton-formulario--guardar" :disabled="ocupado">Guardar ficha</button>
@@ -60,7 +69,9 @@ defineExpose({ abrir, cerrar })
 dialog { width: min(36rem, calc(100% - 2rem)); max-height: 88dvh; box-sizing: border-box; padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
 dialog::backdrop { background: #071b13a8; }
 h2 { margin-block: .4rem; }
-form, label { display: grid; gap: .45rem; }
-input { min-width: 0; padding: .55rem; border: 1px solid #a4ad9f; border-radius: .35rem; background: #fffdf7; font: inherit; }
+form, label:not(.casilla-no-contactar) { display: grid; gap: .45rem; }
+.casilla-no-contactar { display: flex; align-items: center; gap: .6rem; padding: .6rem .8rem; background: #fff0ed; border: 1px solid #f2c7be; border-radius: .45rem; color: #75271f; font-size: .88rem; cursor: pointer; margin-block: .2rem; }
+.casilla-no-contactar input[type=checkbox] { width: 1.15rem; height: 1.15rem; cursor: pointer; flex-shrink: 0; }
+input:not([type=checkbox]) { min-width: 0; padding: .55rem; border: 1px solid #a4ad9f; border-radius: .35rem; background: #fffdf7; font: inherit; }
 [role=alert] { padding: .65rem; background: #f9e3df; color: #75271f; }
 </style>
