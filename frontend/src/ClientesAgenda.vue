@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import FichaClienteDialog from './FichaClienteDialog.vue'
+import { enlaceWhatsApp } from './formatoWhatsApp.js'
 
 const props = defineProps({
   api: { type: Function, required: true },
@@ -111,7 +112,22 @@ function cambiarArchivo() {
       <p v-if="!ocupado && !listado.clientes.length">No se encontraron fichas.</p>
       <ul v-else class="filas">
         <li v-for="cliente in listado.clientes" :key="cliente.id">
-          <div><strong>{{ cliente.nombre }}</strong><small v-if="cliente.telefono">{{ cliente.telefono }}</small><small v-if="cliente.email">{{ cliente.email }}</small><small v-if="cliente.archivado_en">Archivada</small></div>
+          <div>
+            <strong>{{ cliente.nombre }}</strong>
+            <small v-if="cliente.telefono">
+              {{ cliente.telefono }}
+              <a v-if="enlaceWhatsApp(cliente.telefono)"
+                 :href="enlaceWhatsApp(cliente.telefono, `Hola ${cliente.nombre}, te escribimos desde Zenli Masoterapia.`)"
+                 target="_blank" rel="noopener noreferrer" class="enlace-wa-linea" title="Escribir por WhatsApp">
+                · WhatsApp
+              </a>
+              <!-- Para habilitar llamadas directas en el futuro, descomentar la siguiente línea:
+              <a :href="'tel:' + cliente.telefono" class="enlace-telefono-linea"> · Llamar</a>
+              -->
+            </small>
+            <small v-if="cliente.email">{{ cliente.email }}</small>
+            <small v-if="cliente.archivado_en">Archivada</small>
+          </div>
           <button type="button" class="secundario" :disabled="ocupado" @click="emit('seleccionar', cliente.id)">Ver ficha</button>
         </li>
       </ul>
@@ -127,7 +143,20 @@ function cambiarArchivo() {
         </div>
       </div>
       <dl v-if="ficha.cliente.telefono || ficha.cliente.email" class="contacto">
-        <template v-if="ficha.cliente.telefono"><dt>Teléfono</dt><dd>{{ ficha.cliente.telefono }}</dd></template>
+        <template v-if="ficha.cliente.telefono">
+          <dt>Teléfono</dt>
+          <dd class="dato-telefono">
+            <span>{{ ficha.cliente.telefono }}</span>
+            <a v-if="enlaceWhatsApp(ficha.cliente.telefono)"
+               :href="enlaceWhatsApp(ficha.cliente.telefono, `Hola ${ficha.cliente.nombre}, te escribimos desde Zenli Masoterapia.`)"
+               target="_blank" rel="noopener noreferrer" class="boton-wa" title="Escribir por WhatsApp">
+              <span class="icono-wa" aria-hidden="true">💬</span> WhatsApp
+            </a>
+            <!-- Para habilitar llamadas directas en el futuro, descomentar la siguiente línea:
+            <a :href="'tel:' + ficha.cliente.telefono" class="boton-telefono" title="Llamar al cliente">Llamar</a>
+            -->
+          </dd>
+        </template>
         <template v-if="ficha.cliente.email"><dt>Correo</dt><dd>{{ ficha.cliente.email }}</dd></template>
       </dl>
       <h2>Historial de turnos</h2>
@@ -193,6 +222,13 @@ small { display: block; color: #526255; }
 .contacto { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .35rem .8rem; }
 dt { font-weight: 700; }
 dd { margin: 0; overflow-wrap: anywhere; }
+.dato-telefono { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.boton-wa { display: inline-flex; align-items: center; gap: .35rem; padding: .25rem .55rem; background: #25d366; color: #072a15; font-size: .82rem; font-weight: 600; border-radius: .35rem; text-decoration: none; border: 1px solid #1ebe5d; line-height: 1.2; }
+.boton-wa:hover { background: #20ba59; color: #000; }
+.icono-wa { font-size: .95rem; }
+.enlace-wa-linea { color: #167a3f; font-weight: 600; text-decoration: none; margin-left: .35rem; }
+.enlace-wa-linea:hover { text-decoration: underline; }
+.boton-telefono, .enlace-telefono-linea { color: #214d3a; font-weight: 600; text-decoration: none; }
 dialog { width: min(36rem, calc(100% - 2rem)); max-height: 88dvh; box-sizing: border-box; padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
 dialog::backdrop { background: #071b13a8; }
 </style>

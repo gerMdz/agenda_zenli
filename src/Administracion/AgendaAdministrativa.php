@@ -18,6 +18,7 @@ use App\Entity\UsuarioInterno;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\ParameterType;
@@ -62,12 +63,20 @@ final readonly class AgendaAdministrativa
             ORDER BY t.inicio, t.id
             DQL, $periodo, $propia);
         $equipos = $this->equipos(array_column($filas, 'id'));
+        $clienteIds = array_values(array_filter(array_unique(array_column($filas, 'cliente_id'))));
+        $telefonos = empty($clienteIds) ? [] : $this->entidades->getConnection()->fetchAllKeyValue(
+            "SELECT id::text, telefono FROM clientes WHERE id::text IN (?) AND telefono IS NOT NULL AND trim(telefono) <> ''",
+            [$clienteIds],
+            [ArrayParameterType::STRING],
+        );
         $turnos = [];
         foreach ($filas as $fila) {
             $equipo = $equipos[$fila['id']]['ids'] ?? [];
             $requeridos = $fila['profesionales_requeridos'];
+            $clienteIdStr = self::texto($fila['cliente_id']);
             $turnos[] = [
-                'id' => (string) $fila['id'], 'servicio' => $fila['servicio'], 'cliente' => $fila['cliente'], 'cliente_id' => self::texto($fila['cliente_id']),
+                'id' => (string) $fila['id'], 'servicio' => $fila['servicio'], 'cliente' => $fila['cliente'], 'cliente_id' => $clienteIdStr,
+                'cliente_telefono' => $clienteIdStr !== null ? ($telefonos[$clienteIdStr] ?? null) : null,
                 'inicio' => $fila['inicio']->format(DATE_ATOM), 'fin' => $fila['fin']->format(DATE_ATOM),
                 'revision' => $fila['revision'], 'asistencia' => $fila['asistencia'], 'servicio_id' => self::texto($fila['servicio_id']),
                 'espacio_id' => (string) $fila['espacio_id'], 'espacio' => $fila['espacio'], 'equipo' => $equipo,
@@ -187,8 +196,9 @@ final readonly class AgendaAdministrativa
         }
         $turnos = $this->entidades->getConnection()->fetchAllAssociative(<<<SQL
             SELECT t.id::text AS id, t.cliente_id::text AS cliente_id, t.cliente_nombre AS cliente, t.servicio_nombre AS servicio,
-                   t.inicio, t.fin, t.asistencia
+                   t.inicio, t.fin, t.asistencia, c.telefono AS cliente_telefono
             FROM turnos_administrativos t
+            LEFT JOIN clientes c ON c.id = t.cliente_id
             WHERE t.cancelado_en IS NULL
               AND strpos(lower(translate(t.cliente_nombre, 'áéíóúüÁÉÍÓÚÜÑ', 'aeiouuAEIOUUñ')),
                          lower(translate(:nombre, 'áéíóúüÁÉÍÓÚÜÑ', 'aeiouuAEIOUUñ'))) > 0

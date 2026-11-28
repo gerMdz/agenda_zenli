@@ -289,12 +289,23 @@ fwrite(STDOUT, "Cuentas profesionales gestionadas desde administración verifica
 fwrite(STDOUT, "Invalidación de sesiones por cambios de cuenta verificada.\n");
 
 // Una hora sin actividad cierra la sesión.
-$envejecer = static function (Cliente $cliente, int $segundos) use ($sesiones): void {
-    $archivo = $sesiones.'/sess_'.$cliente->cookies[session_name()];
-    $contenido = file_get_contents($archivo);
-    $nuevo = preg_replace('/s:1:"u";i:\d+;/', 's:1:"u";i:'.(time() - $segundos).';', $contenido, 1, $reemplazos);
+$envejecer = static function (Cliente $cliente, int $segundos) use ($kernel): void {
+    $conexion = $kernel->getContainer()->get('doctrine.dbal.default_connection');
+    $sessId = $cliente->cookies[session_name()];
+    $contenido = $conexion->fetchOne('SELECT sess_data FROM sesiones_php WHERE sess_id = :id', ['id' => $sessId]);
+    if (is_resource($contenido)) {
+        $contenido = stream_get_contents($contenido);
+    }
+    $nuevo = preg_replace('/s:1:"u";i:\d+;/', 's:1:"u";i:'.(time() - $segundos).';', (string) $contenido, 1, $reemplazos);
     verificar($reemplazos === 1, 'La sesión debe tener metadatos de último uso.');
-    file_put_contents($archivo, $nuevo);
+    $stream = fopen('php://memory', 'r+');
+    fwrite($stream, $nuevo);
+    rewind($stream);
+    $conexion->executeStatement(
+        'UPDATE sesiones_php SET sess_data = :data WHERE sess_id = :id',
+        ['data' => $stream, 'id' => $sessId],
+        ['data' => \Doctrine\DBAL\ParameterType::BINARY],
+    );
 };
 $inactiva = new Cliente($kernel, '203.0.113.14');
 verificar($inactiva->ingresar('pro@zenli.test', $clave) === 200, 'La profesional vuelve a ingresar.');

@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Administracion\AuditoriaDatos;
 use App\Administracion\HistorialTurnos;
+use App\Seguridad\AuditoriaAccesos;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,6 +23,7 @@ final readonly class AuditoriaController
     public function __construct(
         private HistorialTurnos $historial,
         private AuditoriaDatos $auditoria,
+        private AuditoriaAccesos $accesos,
     ) {
     }
 
@@ -65,6 +67,24 @@ final readonly class AuditoriaController
     public function datos(): JsonResponse
     {
         return $this->respuesta($this->auditoria->resumen());
+    }
+
+    #[Route('/accesos', methods: ['GET'])]
+    public function listarAccesos(Request $peticion): JsonResponse
+    {
+        try {
+            $limite = $peticion->query->has('limite') && $peticion->query->getString('limite') !== ''
+                ? filter_var($peticion->query->getString('limite'), FILTER_VALIDATE_INT)
+                : 100;
+            if ($limite === false) {
+                throw new InvalidArgumentException('El límite debe ser un número entero.');
+            }
+            $tipo = $peticion->query->getString('tipo') ?: null;
+
+            return $this->respuesta($this->accesos->listar($limite, $tipo));
+        } catch (InvalidArgumentException $error) {
+            return $this->respuesta(['error' => $error->getMessage()], 422);
+        }
     }
 
     private function respuesta(array $datos, int $estado = 200): JsonResponse

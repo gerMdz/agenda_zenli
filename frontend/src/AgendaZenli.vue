@@ -13,6 +13,7 @@ import {
   guardarAlta, guardarCopia, leerAltas, leerCopia,
 } from './agendaSinConexion.js'
 import { agendaInstalada, solicitarInstalacionAgenda } from './instalacionAgenda.js'
+import { enlaceWhatsApp } from './formatoWhatsApp.js'
 import lotoUrl from './image/loto.svg?no-inline'
 
 const seccionAgenda = ref('agenda')
@@ -170,6 +171,17 @@ const preparacionEditada = ref(null)
 const inicioPreparacion = ref('')
 const finPreparacion = ref('')
 const bloqueoNuevo = ref({ profesional: '', fecha: '', todo_el_dia: false, hora_inicio: '', hora_fin: '' })
+const dialogoHojaDia = ref(null)
+const hojaDiaAbierta = ref(false)
+
+function abrirHojaDelDia() {
+  hojaDiaAbierta.value = true
+  nextTick(() => dialogoHojaDia.value?.showModal())
+}
+
+function imprimirHojaDelDia() {
+  window.print()
+}
 const nombreDia = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
 const tituloMes = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 const etiquetaDia = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
@@ -281,6 +293,16 @@ function horarioVisible(turno) {
   return `${reloj.format(new Date(turno.inicio))}–${turno.bloqueado && fin === '00:00' ? '24:00' : fin}`
 }
 
+function enlaceWhatsAppTurno(turno) {
+  if (!turno?.cliente_telefono) return null
+  const horaTexto = reloj.format(new Date(turno.inicio))
+  const diaTexto = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: zona,
+  }).format(diaUtc(turno.inicio.slice(0, 10)))
+  const mensaje = `Hola ${turno.cliente}, te recordamos tu turno en Zenli para ${turno.servicio} el ${diaTexto} a las ${horaTexto} hs. ¡Te esperamos!`
+  return enlaceWhatsApp(turno.cliente_telefono, mensaje)
+}
+
 function turnosEnDia(dia) {
   return turnosVisibles.value.filter(turno =>
     calendario.format(new Date(turno.inicio)) <= dia &&
@@ -343,6 +365,24 @@ const dias = computed(() => {
   return resultado
 })
 const turnosDia = computed(() => turnosEnDia(fecha.value))
+
+const turnosValidosHoja = computed(() => turnosDia.value.filter(t => !t.bloqueado && !t.esPreparacion))
+const senasPagadasHoja = computed(() => turnosValidosHoja.value.filter(t => t.sena_pagada).length)
+const nombreProfesionalEnVista = computed(() => {
+  if (!perfilEnVista.value) return 'Todas las profesionales'
+  return datos.value?.profesionales.find(p => p.id === perfilEnVista.value)?.nombre ?? 'Mi agenda'
+})
+const fechaFormateadaHoja = computed(() => {
+  const dt = diaUtc(fecha.value)
+  const semana = new Intl.DateTimeFormat('es-AR', { weekday: 'long', timeZone: 'UTC' }).format(dt)
+  const dia = new Intl.DateTimeFormat('es-AR', { day: 'numeric', timeZone: 'UTC' }).format(dt)
+  const mesAno = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(dt)
+  return {
+    semana: semana.charAt(0).toUpperCase() + semana.slice(1),
+    dia,
+    mesAno: mesAno.charAt(0).toUpperCase() + mesAno.slice(1),
+  }
+})
 
 function alternarFeriado() {
   const dia = fecha.value
@@ -594,7 +634,7 @@ async function mostrarCopia() {
     dialogo.value?.close()
     limpiarTurno()
   }
-  for (const modal of [dialogoDisponibilidad, dialogoBloqueo, dialogoMensaje, dialogoPreparacion, dialogoBusqueda, dialogoAsistencia]) modal.value?.close()
+  for (const modal of [dialogoDisponibilidad, dialogoBloqueo, dialogoMensaje, dialogoPreparacion, dialogoBusqueda, dialogoAsistencia, dialogoHojaDia]) modal.value?.close()
   clearTimeout(vencimientoCopia)
   datos.value = null
   const muestra = await leerCopia().catch(() => null)
@@ -1073,6 +1113,7 @@ onMounted(() => {
         <section class="panel acciones-rapidas" aria-label="Acciones de agenda">
             <button type="button" class="nuevo-turno" :disabled="ocupado" @click="abrirNuevoTurno"><span aria-hidden="true">＋</span> Nuevo turno</button>
             <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado" @click="abrirBusqueda">Buscar turnos</button>
+            <button type="button" class="secundario boton-hoja-dia-rapida" :disabled="ocupado" @click="abrirHojaDelDia">📋 Hoja del día</button>
             <button v-if="usuario.admin && !sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirNuevoBloqueo">Agregar horario no disponible</button>
             <button v-if="!sinConexion" type="button" class="secundario" :disabled="ocupado || !datos.profesionales.length" @click="abrirDisponibilidad">
               {{ !usuario.admin || (perfilEnVista && perfilEnVista === usuario.profesional_id) ? 'Ver mi disponibilidad' : 'Ver disponibilidad' }}
@@ -1131,7 +1172,10 @@ onMounted(() => {
             <li><i class="muestra-preparacion"></i> Preparación</li>
             <li v-if="dias.some(dia => dia.franjasAtencion !== null)"><i class="muestra-sin-atencion"></i> Sin atención</li>
           </ul>
-          <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
+          <div class="barra cabecera-detalle-dia">
+            <h2 class="detalle-dia">Turnos del {{ etiquetaDia.format(diaUtc(fecha)) }}</h2>
+            <button type="button" class="secundario boton-hoja-dia" :disabled="ocupado" @click="abrirHojaDelDia">📋 Ver hoja del día</button>
+          </div>
           <p v-if="feriadoSeleccionado">Feriado · Sin atención habitual</p>
           <button v-if="usuario.admin && !sinConexion" type="button" class="secundario" :disabled="ocupado" @click="alternarFeriado">
             {{ feriadoSeleccionado ? 'Quitar feriado de este día' : 'Marcar este día como feriado' }}
@@ -1146,6 +1190,14 @@ onMounted(() => {
                 <span v-else>{{ turno.servicio }} · {{ turno.cliente }} <small v-if="esPropio(turno)" class="mio">Mi turno</small></span>
                 <small v-if="turno.asistencia" class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
                 <button v-if="!sinConexion && turno.cliente_id" type="button" class="secundario" :disabled="ocupado" @click="mostrarFicha(turno.cliente_id)">Ver ficha</button>
+                <a v-if="!sinConexion && turno.cliente_telefono && enlaceWhatsAppTurno(turno)"
+                   :href="enlaceWhatsAppTurno(turno)"
+                   target="_blank" rel="noopener noreferrer" class="boton-wa-turno" title="Enviar recordatorio por WhatsApp">
+                  <span class="icono-wa" aria-hidden="true">💬</span> WhatsApp
+                </a>
+                <!-- Para habilitar llamadas directas en el futuro, descomentar la siguiente línea:
+                <a v-if="!sinConexion && turno.cliente_telefono" :href="'tel:' + turno.cliente_telefono" class="boton-telefono-turno" title="Llamar al cliente">Llamar</a>
+                -->
                 <small v-if="turno.esPreparacion">{{ turno.espacio }}</small>
                 <small v-else><template v-if="!turno.bloqueado && datos.espacios.length > 1">{{ turno.espacio }} · </template>{{ turno.profesionales }}</small>
                 <small v-if="!turno.bloqueado && turno.equipo_incompleto" class="marca-bloqueo">⚠ Faltan profesionales por asignar</small>
@@ -1211,6 +1263,14 @@ onMounted(() => {
                   <small class="asistencia" :class="turno.asistencia">{{ estadosAsistencia[turno.asistencia] }}</small>
                 </div>
                 <div class="acciones">
+                  <a v-if="turno.cliente_telefono && enlaceWhatsAppTurno(turno)"
+                     :href="enlaceWhatsAppTurno(turno)"
+                     target="_blank" rel="noopener noreferrer" class="boton-wa-turno" title="Enviar recordatorio por WhatsApp">
+                    <span class="icono-wa" aria-hidden="true">💬</span> WhatsApp
+                  </a>
+                  <!-- Para habilitar llamadas directas en el futuro, descomentar la siguiente línea:
+                  <a v-if="turno.cliente_telefono" :href="'tel:' + turno.cliente_telefono" class="boton-telefono-turno" title="Llamar al cliente">Llamar</a>
+                  -->
                   <button v-if="turno.cliente_id" type="button" class="secundario" :disabled="ocupado" @click="mostrarFicha(turno.cliente_id)">Ver ficha</button>
                   <button type="button" class="secundario" :disabled="ocupado" @click="abrirResultado(turno)">Ver turno</button>
                 </div>
@@ -1439,6 +1499,147 @@ onMounted(() => {
               </li>
             </ul>
         </section>
+
+        <dialog ref="dialogoHojaDia" class="modal-hoja-dia" aria-labelledby="titulo-hoja-dia" @close="hojaDiaAbierta = false" @cancel="ocupado && $event.preventDefault()">
+          <div class="barra-acciones-hoja no-imprimir">
+            <div class="titulo-modal">
+              <h2 id="titulo-hoja-dia">Hoja del día · Agenda Zenli</h2>
+              <small>Planilla diaria para trabajo en gabinete y control de jornada</small>
+            </div>
+            <div class="acciones">
+              <button type="button" class="boton-imprimir-hoja" @click="imprimirHojaDelDia">
+                🖨️ Imprimir / Guardar PDF
+              </button>
+              <button type="button" class="boton-formulario boton-formulario--cancelar" @click="dialogoHojaDia.close()">
+                Cerrar
+              </button>
+            </div>
+          </div>
+
+          <article class="hoja-papel-agenda">
+            <header class="encabezado-hoja">
+              <div class="logo-y-marca">
+                <img class="icono-loto-hoja" :src="lotoUrl" alt="Zenli">
+                <div>
+                  <h1 class="marca-zenli-hoja">ZENLI MASOTERAPIA</h1>
+                  <p class="sede-zenli-hoja">Sede Mendoza · Planilla de Jornada</p>
+                </div>
+              </div>
+              <div class="caja-fecha-hoja">
+                <span class="fecha-dia-semana">{{ fechaFormateadaHoja.semana }}</span>
+                <span class="fecha-dia-numero">{{ fechaFormateadaHoja.dia }}</span>
+                <span class="fecha-mes-ano">{{ fechaFormateadaHoja.mesAno }}</span>
+              </div>
+            </header>
+
+            <div class="franja-meta-hoja">
+              <div class="meta-item">
+                <span class="meta-etiqueta">Profesional:</span>
+                <strong class="meta-valor">{{ nombreProfesionalEnVista }}</strong>
+              </div>
+              <div class="meta-item">
+                <span class="meta-etiqueta">Turnos programados:</span>
+                <strong class="meta-valor">{{ turnosValidosHoja.length }}</strong>
+              </div>
+              <div class="meta-item">
+                <span class="meta-etiqueta">Señas abonadas:</span>
+                <strong class="meta-valor">{{ senasPagadasHoja }} de {{ turnosValidosHoja.length }}</strong>
+              </div>
+              <div v-if="feriadoSeleccionado" class="meta-item meta-feriado">
+                <span class="meta-etiqueta">Atención:</span>
+                <strong class="meta-valor">Feriado declarado</strong>
+              </div>
+            </div>
+
+            <table class="tabla-hoja-agenda">
+              <thead>
+                <tr>
+                  <th class="col-hora">Horario</th>
+                  <th class="col-cliente">Cliente</th>
+                  <th class="col-telefono">Teléfono</th>
+                  <th class="col-servicio">Tratamiento / Servicio</th>
+                  <th class="col-espacio">Espacio</th>
+                  <th class="col-profesional">Profesional</th>
+                  <th class="col-sena">Seña</th>
+                  <th class="col-asistencia">Asistencia</th>
+                  <th class="col-notas">Observaciones de sesión</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!turnosDia.length">
+                  <td colspan="9" class="sin-turnos-hoja">No hay turnos registrados para esta fecha.</td>
+                </tr>
+                <tr v-for="item in turnosDia" :key="item.id" :class="{ 'fila-bloqueo': item.bloqueado, 'fila-preparacion': item.esPreparacion }">
+                  <td class="col-hora celda-hora">
+                    <strong>{{ horarioVisible(item) }}</strong>
+                  </td>
+                  <template v-if="item.bloqueado">
+                    <td colspan="8" class="celda-bloqueo-texto">
+                      ⛔ Horario no disponible · {{ item.profesionales }}
+                    </td>
+                  </template>
+                  <template v-else-if="item.esPreparacion">
+                    <td colspan="8" class="celda-preparacion-texto">
+                      🧴 Preparación de espacio: {{ item.espacio }}
+                    </td>
+                  </template>
+                  <template v-else>
+                    <td class="col-cliente">
+                      <strong>{{ item.cliente }}</strong>
+                    </td>
+                    <td class="col-telefono">
+                      {{ item.cliente_telefono || '—' }}
+                    </td>
+                    <td class="col-servicio">
+                      {{ item.servicio }}
+                      <small class="minutos-duracion">({{ item.duracion }} min)</small>
+                    </td>
+                    <td class="col-espacio">
+                      {{ item.espacio }}
+                    </td>
+                    <td class="col-profesional">
+                      {{ item.profesionales }}
+                    </td>
+                    <td class="col-sena">
+                      <span v-if="item.sena_pagada" class="sena-si">
+                        ✓ Pagada<template v-if="item.sena_importe_centavos"> ${{ importeVisible(item.sena_importe_centavos) }}</template>
+                      </span>
+                      <span v-else class="sena-no">
+                        [ ] Pendiente<template v-if="item.sena_importe_centavos"> ${{ importeVisible(item.sena_importe_centavos) }}</template>
+                      </span>
+                    </td>
+                    <td class="col-asistencia">
+                      <span v-if="item.asistencia" class="asistencia-impresa">{{ estadosAsistencia[item.asistencia] }}</span>
+                      <span v-else class="casilleros-asistencia">[ ] Asistió &nbsp; [ ] Ausente</span>
+                    </td>
+                    <td class="col-notas celda-renglones">
+                      <div class="linea-punteada"></div>
+                      <div class="linea-punteada"></div>
+                    </td>
+                  </template>
+                </tr>
+              </tbody>
+            </table>
+
+            <footer class="pie-hoja-agenda">
+              <div class="bloque-anotaciones">
+                <h3>Anotaciones de la jornada (zonas de dolor, preferencias, productos sugeridos):</h3>
+                <div class="renglon-cuaderno"></div>
+                <div class="renglon-cuaderno"></div>
+                <div class="renglon-cuaderno"></div>
+              </div>
+              <div class="bloque-cierre">
+                <div class="checks-cierre">
+                  <span>[ ] Planilla y caja controladas</span>
+                  <span>[ ] Gabinetes e insumos listos</span>
+                </div>
+                <div class="firma-responsable">
+                  <span>Firma responsable de turno: ____________________________________</span>
+                </div>
+              </div>
+            </footer>
+          </article>
+        </dialog>
       </template>
     </main>
     </LayoutAdministracion>
@@ -1559,6 +1760,25 @@ button:disabled { opacity: .55; }
 .turnos li.bloqueado { background: #f4e8d6; border-left: 4px solid #95642d; padding-left: .5rem; }
 .marca-bloqueo { color: #61411b; font-weight: 700; }
 .detalle-dia { margin-top: 1rem; }
+.cabecera-detalle-dia { margin-top: 1rem; margin-bottom: .4rem; }
+.boton-hoja-dia { font-size: .85rem; padding: .35rem .65rem; }
+.boton-hoja-dia-rapida { background: #fffaf1; color: #174334; font-weight: 600; }
+.boton-wa-turno {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .2rem .55rem;
+  background: #25d366;
+  color: #072a15;
+  font-size: .8rem;
+  font-weight: 600;
+  border-radius: .35rem;
+  text-decoration: none;
+  border: 1px solid #1ebe5d;
+  line-height: 1.2;
+}
+.boton-wa-turno:hover { background: #20ba59; color: #000; }
+.boton-telefono-turno { color: #214d3a; font-weight: 600; text-decoration: none; }
 dialog { max-height: 88dvh; width: min(calc(100% - 1.5rem), 38rem); padding: 1.2rem; border: 1px solid #e4dac3; border-radius: .8rem; background: #fffaf1; color: #15372a; }
 dialog::backdrop { background: #071b13a8; }
 .resultado-disponibilidad { margin-top: 1rem; }
@@ -1566,6 +1786,230 @@ dialog::backdrop { background: #071b13a8; }
 .huecos { display: flex; flex-wrap: wrap; gap: .45rem; list-style: none; padding: 0; margin: .45rem 0; }
 .huecos li { padding: .4rem .65rem; border-radius: .3rem; background: #e5f2e6; color: #15372a; font-variant-numeric: tabular-nums; }
 dialog form { margin-top: .7rem; }
+
+/* Estilo Hoja de Agenda física / Printable daily agenda */
+.modal-hoja-dia {
+  width: min(calc(100% - 2rem), 66rem) !important;
+  max-height: 94dvh;
+  padding: 1.2rem;
+  background: #fdfaf3;
+  color: #1a2a22;
+  border: 1px solid #d4c7b0;
+  border-radius: .8rem;
+  box-shadow: 0 1rem 3rem rgba(11, 43, 32, .25);
+  overflow-y: auto;
+}
+.barra-acciones-hoja {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .8rem;
+  padding-bottom: .8rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #e2d7c3;
+}
+.barra-acciones-hoja h2 { margin: 0; font-size: 1.25rem; }
+.barra-acciones-hoja small { color: #625d52; }
+.boton-imprimir-hoja {
+  background: #174334;
+  color: #fff9e7;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #0f2e23;
+  padding: .5rem .9rem;
+  border-radius: .4rem;
+}
+.boton-imprimir-hoja:hover { background: #215a46; }
+
+.hoja-papel-agenda {
+  background: #fffdf9;
+  border: 1px solid #e0d6c3;
+  border-radius: .4rem;
+  padding: 1.4rem;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  box-shadow: 0 2px 8px rgba(0,0,0,.03);
+}
+.encabezado-hoja {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 3px double #d8bc78;
+  padding-bottom: .8rem;
+  margin-bottom: .9rem;
+}
+.logo-y-marca {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+}
+.icono-loto-hoja {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+.marca-zenli-hoja {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 1.45rem;
+  color: #0b2b20;
+  letter-spacing: .08em;
+}
+.sede-zenli-hoja {
+  margin: 0;
+  font-size: .82rem;
+  color: #796644;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.caja-fecha-hoja {
+  text-align: right;
+  background: #fbf5e8;
+  border: 1px solid #dfcfad;
+  border-radius: .5rem;
+  padding: .4rem .9rem;
+  display: grid;
+  justify-items: end;
+}
+.fecha-dia-semana {
+  font-size: .85rem;
+  font-weight: 700;
+  color: #174334;
+  text-transform: capitalize;
+}
+.fecha-dia-numero {
+  font-size: 1.8rem;
+  font-family: Georgia, serif;
+  font-weight: 700;
+  line-height: 1;
+  color: #0b2b20;
+}
+.fecha-mes-ano {
+  font-size: .78rem;
+  color: #605747;
+  text-transform: capitalize;
+}
+
+.franja-meta-hoja {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  background: #f6efe1;
+  border-radius: .35rem;
+  padding: .45rem .8rem;
+  font-size: .82rem;
+  margin-bottom: 1rem;
+}
+.meta-etiqueta { color: #5c5547; margin-right: .3rem; }
+.meta-valor { color: #15372a; }
+.meta-feriado { color: #8e4420; font-weight: 700; }
+
+.tabla-hoja-agenda {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .83rem;
+  margin-bottom: 1.2rem;
+}
+.tabla-hoja-agenda th {
+  background: #15372a;
+  color: #fcf6e8;
+  font-weight: 600;
+  text-align: left;
+  padding: .5rem .45rem;
+  border: 1px solid #0f2a20;
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.tabla-hoja-agenda td {
+  padding: .5rem .45rem;
+  border: 1px solid #ddd1ba;
+  vertical-align: top;
+  background: #fffdf9;
+}
+.tabla-hoja-agenda tbody tr:nth-child(even) td {
+  background: #faf6ed;
+}
+.celda-hora { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; color: #0b2b20; }
+.minutos-duracion { display: block; color: #625c50; font-size: .75rem; }
+.sena-si { color: #166534; font-weight: 600; }
+.sena-no { color: #854d0e; }
+.asistencia-impresa { font-weight: 600; color: #15372a; }
+.casilleros-asistencia { font-size: .75rem; color: #5a5242; white-space: nowrap; }
+.sin-turnos-hoja { text-align: center; padding: 1.8rem; font-style: italic; color: #6b6352; }
+.fila-bloqueo td { background: #fdf2e4 !important; color: #78350f; font-style: italic; }
+.fila-preparacion td { background: #f0f7f3 !important; color: #166534; font-style: italic; }
+
+.celda-renglones {
+  min-width: 9rem;
+}
+.linea-punteada {
+  border-bottom: 1px dashed #d1c5ae;
+  height: 1.1rem;
+}
+
+.pie-hoja-agenda {
+  margin-top: 1rem;
+  padding-top: .9rem;
+  border-top: 2px solid #dfd3bd;
+  font-size: .8rem;
+}
+.bloque-anotaciones h3 {
+  font-size: .82rem;
+  font-family: Georgia, serif;
+  margin: 0 0 .4rem;
+  color: #2b251a;
+}
+.renglon-cuaderno {
+  border-bottom: 1px solid #e2d7c3;
+  height: 1.4rem;
+}
+.bloque-cierre {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: .6rem;
+  color: #4f4738;
+}
+.checks-cierre { display: flex; gap: 1.2rem; font-weight: 600; }
+.firma-responsable { font-family: Georgia, serif; }
+
+/* Impresión física de la hoja del día */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .modal-hoja-dia, .modal-hoja-dia * {
+    visibility: visible !important;
+  }
+  .modal-hoja-dia {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+  .hoja-papel-agenda {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+  .no-imprimir {
+    display: none !important;
+  }
+  @page {
+    size: portrait;
+    margin: 8mm;
+  }
+}
+
 @media (max-width: 42rem) {
   .celda { font-size: .72rem; padding: .25rem; }
 }

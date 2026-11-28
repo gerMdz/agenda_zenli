@@ -24,6 +24,11 @@ const errorTurno = ref('')
 // Auditoría de datos
 const datos = ref(null)
 
+// Auditoría de accesos y seguridad
+const accesos = ref([])
+const filtroTipoAcceso = ref('todos')
+const limiteAccesos = ref(100)
+
 async function consultarJson(ruta) {
   const respuesta = await fetch(ruta, { headers: { Accept: 'application/json' } })
   const contenido = respuesta.headers.get('content-type')?.includes('application/json') ? await respuesta.json() : null
@@ -63,11 +68,32 @@ async function cargarAuditoriaDatos() {
   }
 }
 
+async function cargarAuditoriaAccesos() {
+  if (ocupado.value) return
+  ocupado.value = true
+  error.value = ''
+  try {
+    const parametros = new URLSearchParams()
+    if (filtroTipoAcceso.value && filtroTipoAcceso.value !== 'todos') {
+      parametros.set('tipo', filtroTipoAcceso.value)
+    }
+    parametros.set('limite', String(limiteAccesos.value))
+    const qs = parametros.toString()
+    accesos.value = await consultarJson(`/api/admin/auditoria/accesos?${qs}`)
+  } catch (fallo) {
+    error.value = fallo.message
+  } finally {
+    ocupado.value = false
+  }
+}
+
 function cambiarPestana(nueva) {
   pestana.value = nueva
   error.value = ''
   if (nueva === 'datos' && !datos.value) {
     cargarAuditoriaDatos()
+  } else if (nueva === 'accesos' && !accesos.value.length) {
+    cargarAuditoriaAccesos()
   }
 }
 
@@ -108,6 +134,33 @@ function claseBadge(evento) {
   return 'editado'
 }
 
+const etiquetasAcceso = {
+  INGRESO: 'Ingreso exitoso',
+  FALLO: 'Fallo de acceso',
+  DEMORA: 'Demora / Bloqueo temporal',
+  SALIDA: 'Cierre de sesión',
+  DESBLOQUEO: 'Desbloqueo de cuenta',
+  PASSKEY_CREADA: 'Clave de acceso creada',
+  PASSKEY_REVOCADA: 'Clave de acceso revocada',
+  CLAVE_CAMBIADA: 'Contraseña cambiada',
+  CUENTA_CREADA: 'Cuenta creada',
+  CUENTA_ACTIVADA: 'Cuenta activada',
+  CUENTA_DESACTIVADA: 'Cuenta desactivada',
+  CUENTA_VINCULADA: 'Cuenta vinculada',
+}
+
+function etiquetaTipoAcceso(tipo) {
+  return etiquetasAcceso[tipo] || tipo
+}
+
+function claseBadgeAcceso(tipo) {
+  if (tipo === 'INGRESO') return 'creado'
+  if (tipo === 'FALLO' || tipo === 'DEMORA') return 'cancelado'
+  if (tipo === 'PASSKEY_CREADA' || tipo === 'PASSKEY_REVOCADA' || tipo === 'CLAVE_CAMBIADA') return 'sena'
+  if (tipo === 'CUENTA_CREADA' || tipo === 'CUENTA_ACTIVADA' || tipo === 'CUENTA_DESACTIVADA') return 'editado'
+  return 'neutro'
+}
+
 onMounted(() => {
   cargarHistorialTurnos()
 })
@@ -140,6 +193,16 @@ onMounted(() => {
           @click="cambiarPestana('datos')"
         >
           Auditoría de datos
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="pestana === 'accesos'"
+          :class="{ secundario: pestana !== 'accesos' }"
+          :disabled="ocupado"
+          @click="cambiarPestana('accesos')"
+        >
+          Accesos y seguridad
         </button>
       </div>
     </div>
@@ -300,6 +363,70 @@ onMounted(() => {
       </template>
     </div>
 
+    <div v-if="pestana === 'accesos'" class="bloque-tab">
+      <p class="ayuda">Registro de inicios de sesión, fallos de autenticación, demoras de seguridad, administración de cuentas y uso de claves de acceso (passkeys).</p>
+      <form class="filtros" @submit.prevent="cargarAuditoriaAccesos">
+        <label>
+          Tipo de evento
+          <select v-model="filtroTipoAcceso" :disabled="ocupado">
+            <option value="todos">Todos los eventos</option>
+            <option value="INGRESO">Ingresos exitosos</option>
+            <option value="FALLO">Fallos de acceso</option>
+            <option value="DEMORA">Demoras por intentos fallidos</option>
+            <option value="SALIDA">Cierres de sesión</option>
+            <option value="PASSKEY_CREADA">Claves de acceso creadas</option>
+            <option value="PASSKEY_REVOCADA">Claves de acceso revocadas</option>
+            <option value="CLAVE_CAMBIADA">Contraseñas cambiadas</option>
+            <option value="DESBLOQUEO">Desbloqueos de cuenta</option>
+            <option value="CUENTA_CREADA">Cuentas creadas</option>
+            <option value="CUENTA_ACTIVADA">Cuentas activadas</option>
+            <option value="CUENTA_DESACTIVADA">Cuentas desactivadas</option>
+          </select>
+        </label>
+        <label>
+          Cantidad
+          <select v-model.number="limiteAccesos" :disabled="ocupado">
+            <option :value="50">Últimos 50 eventos</option>
+            <option :value="100">Últimos 100 eventos</option>
+            <option :value="200">Últimos 200 eventos</option>
+          </select>
+        </label>
+        <div class="acciones-filtros">
+          <button type="submit" :disabled="ocupado">Filtrar</button>
+          <button type="button" class="secundario" :disabled="ocupado" @click="filtroTipoAcceso = 'todos'; limiteAccesos = 100; cargarAuditoriaAccesos()">Restablecer</button>
+        </div>
+      </form>
+
+      <p v-if="!ocupado && !accesos.length" class="vacio">No se registraron eventos de acceso con los filtros seleccionados.</p>
+      <div v-else class="contenedor-tabla-accesos">
+        <table class="tabla-accesos">
+          <thead>
+            <tr>
+              <th>Fecha y hora</th>
+              <th>Evento</th>
+              <th>Cuenta / Profesional</th>
+              <th>Dirección IP</th>
+              <th>Autor</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="evento in accesos" :key="evento.id">
+              <td class="col-fecha">{{ formatearFechaHora(evento.creado_en) }}</td>
+              <td>
+                <span class="badge" :class="claseBadgeAcceso(evento.tipo)">{{ etiquetaTipoAcceso(evento.tipo) }}</span>
+              </td>
+              <td>
+                <strong>{{ evento.usuario }}</strong>
+                <small v-if="evento.usuario_email && evento.usuario !== evento.usuario_email" class="email-sub">{{ evento.usuario_email }}</small>
+              </td>
+              <td class="col-ip"><code>{{ evento.ip }}</code></td>
+              <td class="col-autor">{{ evento.autor || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <dialog ref="dialogoTurno" class="modal-historial" aria-labelledby="titulo-modal-historial" @close="cerrarDetalleTurno">
       <div class="modal-cabecera">
         <div>
@@ -389,7 +516,21 @@ button.cerrar-modal { flex-shrink: 0; border: 1px solid #e4dac3; border-radius: 
 .resumen-estado-turno { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-block: .85rem; }
 .linea-tiempo > li { display: grid; gap: .25rem; padding: .7rem 0 .7rem .85rem; border-left: 3px solid #d5c8aa; border-bottom: 1px solid #efe7d5; }
 .modal-pie { display: flex; justify-content: flex-end; margin-top: 1.2rem; padding-top: .9rem; border-top: 1px solid #e4dac3; }
+
+/* Tabla de accesos y seguridad */
+.contenedor-tabla-accesos { overflow-x: auto; margin-top: .8rem; }
+.tabla-accesos { width: 100%; border-collapse: collapse; font-size: .88rem; background: #fffdf7; border: 1px solid #e4dac3; border-radius: .5rem; overflow: hidden; }
+.tabla-accesos th { background: #174334; color: #fff9e7; font-weight: 650; text-align: left; padding: .65rem .8rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.tabla-accesos td { padding: .6rem .8rem; border-bottom: 1px solid #e8dfcf; vertical-align: middle; }
+.tabla-accesos tr:hover td { background: #fcf6eb; }
+.col-fecha { white-space: nowrap; color: #34483d; font-size: .84rem; }
+.col-ip { white-space: nowrap; }
+.col-ip code { background: #f0eae1; padding: .15rem .35rem; border-radius: .25rem; font-size: .82rem; }
+.col-autor { color: #526255; font-size: .82rem; }
+.email-sub { display: block; color: #627265; font-size: .78rem; font-weight: normal; }
+
 @media (max-width: 46rem) {
   .lista-eventos > li.evento { flex-direction: column; }
+  .tabla-accesos th, .tabla-accesos td { padding: .45rem .5rem; font-size: .8rem; }
 }
 </style>

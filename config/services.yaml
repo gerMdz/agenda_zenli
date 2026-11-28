@@ -24,3 +24,12 @@ services:
 
     App\Command\:
         resource: ../src/Command/
+
+    app.session_pdo:
+        class: PDO
+        factory: ['@doctrine.dbal.default_connection', 'getNativeConnection']
+
+    Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler:
+        arguments:
+            - '@app.session_pdo'
+            - { db_table: 'sesiones_php', lock_mode: 1 }

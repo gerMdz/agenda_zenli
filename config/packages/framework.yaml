@@ -2,6 +2,7 @@ framework:
     secret: '%env(APP_SECRET)%'
     csrf_protection: true
     session:
+        handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler
         # Una hora sin actividad cierra la sesión (App\Seguridad\ProteccionAdministracion).
         gc_maxlifetime: 3600
         cookie_lifetime: 0

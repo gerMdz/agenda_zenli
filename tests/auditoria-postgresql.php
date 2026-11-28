@@ -100,7 +100,7 @@ verificar($laura->ingresar('laura@zenli.test', $clave) === 200, 'Laura debe ingr
 verificar($profesional->ingresar('pro@zenli.test', $clave) === 200, 'La profesional debe ingresar.');
 
 // 1. Acceso exclusivo de administración.
-foreach (['/api/admin/portada', '/api/admin/auditoria/datos', '/api/admin/auditoria/turnos', '/api/admin/auditoria/turnos/999999'] as $ruta) {
+foreach (['/api/admin/portada', '/api/admin/auditoria/datos', '/api/admin/auditoria/turnos', '/api/admin/auditoria/turnos/999999', '/api/admin/auditoria/accesos'] as $ruta) {
     verificar($anonima->pedir('GET', $ruta)[0] === 401, "Sin sesión, $ruta debe responder 401.");
     verificar($profesional->pedir('GET', $ruta)[0] === 403, "Profesional no debe acceder a $ruta.");
 }
@@ -255,3 +255,14 @@ verificar($est === 200 && count($soloCancelados['eventos']) === 1 && $soloCancel
 verificar($est === 200 && count($porPeriodo['cancelados']) === 1 && $porPeriodo['cancelados'][0]['cancelado_por'] === 'Laura' && $porPeriodo['cancelados'][0]['sena_pagada'] === true, 'La consulta por período de turno incluye cancelados con autora y seña.');
 
 fwrite(STDOUT, "Historial de turnos (señas, ediciones, preparaciones y cancelaciones) verificado.\n");
+
+// 4. Auditoría de accesos y seguridad.
+[$est, $accesos] = $ana->pedir('GET', '/api/admin/auditoria/accesos?limite=10');
+verificar($est === 200 && is_array($accesos) && count($accesos) >= 1, 'GET /api/admin/auditoria/accesos debe devolver 200 con lista de eventos.');
+verificar(isset($accesos[0]['id'], $accesos[0]['tipo'], $accesos[0]['ip'], $accesos[0]['creado_en']), 'Cada evento de acceso debe contener id, tipo, ip y creado_en.');
+[$estFiltro, $accesosFiltro] = $ana->pedir('GET', '/api/admin/auditoria/accesos?tipo=INGRESO');
+verificar($estFiltro === 200 && is_array($accesosFiltro), 'Filtrar por tipo INGRESO debe responder 200.');
+foreach ($accesosFiltro as $ev) {
+    verificar($ev['tipo'] === 'INGRESO', 'El filtro por tipo solo debe traer eventos del tipo solicitado.');
+}
+fwrite(STDOUT, "Auditoría de eventos de acceso verificada.\n");
